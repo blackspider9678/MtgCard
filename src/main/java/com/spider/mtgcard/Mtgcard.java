@@ -70,7 +70,7 @@ public final class Mtgcard implements ModInitializer {
         MtgRootCommand.register();
 
         // Ticks / loot / events
-        ServerTickEvents.END_LEVEL_TICK.register(LifePlayGroups::tickWorld);
+        ServerTickEvents.END_WORLD_TICK.register(LifePlayGroups::tickWorld);
         MtgLootInject.init();
         ModEvents.register();
 

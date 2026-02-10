@@ -402,19 +402,19 @@ public final class CardStorePackets {
 
     // ---------- CODEC registration ----------
     public static void registerTypes() {
-        PayloadTypeRegistry.serverboundPlay().register(ConfirmPurchaseC2S.ID, ConfirmPurchaseC2S.CODEC);
-        PayloadTypeRegistry.serverboundPlay().register(SearchC2S.ID, SearchC2S.CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(SearchS2C.ID, SearchS2C.CODEC);
+        PayloadTypeRegistry.playC2S().register(ConfirmPurchaseC2S.ID, ConfirmPurchaseC2S.CODEC);
+        PayloadTypeRegistry.playC2S().register(SearchC2S.ID, SearchC2S.CODEC);
+        PayloadTypeRegistry.playS2C().register(SearchS2C.ID, SearchS2C.CODEC);
 
-        PayloadTypeRegistry.serverboundPlay().register(SearchPrintsC2S.ID, SearchPrintsC2S.CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(SearchPrintsS2C.ID, SearchPrintsS2C.CODEC);
+        PayloadTypeRegistry.playC2S().register(SearchPrintsC2S.ID, SearchPrintsC2S.CODEC);
+        PayloadTypeRegistry.playS2C().register(SearchPrintsS2C.ID, SearchPrintsS2C.CODEC);
 
-        PayloadTypeRegistry.clientboundPlay().register(SearchPrintsStartS2C.ID, SearchPrintsStartS2C.CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(SearchPrintsAddS2C.ID,   SearchPrintsAddS2C.CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(SearchPrintsDoneS2C.ID,  SearchPrintsDoneS2C.CODEC);
+        PayloadTypeRegistry.playS2C().register(SearchPrintsStartS2C.ID, SearchPrintsStartS2C.CODEC);
+        PayloadTypeRegistry.playS2C().register(SearchPrintsAddS2C.ID,   SearchPrintsAddS2C.CODEC);
+        PayloadTypeRegistry.playS2C().register(SearchPrintsDoneS2C.ID,  SearchPrintsDoneS2C.CODEC);
 
-        PayloadTypeRegistry.serverboundPlay().register(ImportDeckC2S.ID, ImportDeckC2S.CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(ImportDeckS2C.ID, ImportDeckS2C.CODEC);
+        PayloadTypeRegistry.playC2S().register(ImportDeckC2S.ID, ImportDeckC2S.CODEC);
+        PayloadTypeRegistry.playS2C().register(ImportDeckS2C.ID, ImportDeckS2C.CODEC);
     }
 
     // ---------- Server receivers ----------

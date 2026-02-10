@@ -460,32 +460,32 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
 
             // redraw overlay buttons on TOP of overlay so they are visible
             if (overlayCancel != null && overlayCancel.visible)
-                overlayCancel.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
+            overlayCancel.render(ctx, mouseX, mouseY, delta);
 
             if (overlay == OverlayMode.CASCADE) {
                 if (btnCascadeCast != null && btnCascadeCast.visible)
-                    btnCascadeCast.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
+            btnCascadeCast.render(ctx, mouseX, mouseY, delta);
                 if (btnCascadeExile != null && btnCascadeExile.visible)
-                    btnCascadeExile.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
+            btnCascadeExile.render(ctx, mouseX, mouseY, delta);
             }
 
             if (overlay == OverlayMode.PLACE_CARD) {
                 if (btnPlaceTop != null && btnPlaceTop.visible)
-                    btnPlaceTop.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
+            btnPlaceTop.render(ctx, mouseX, mouseY, delta);
                 if (btnPlaceBottomMode != null && btnPlaceBottomMode.visible)
-                    btnPlaceBottomMode.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
+            btnPlaceBottomMode.render(ctx, mouseX, mouseY, delta);
                 if (btnPlaceMinus != null && btnPlaceMinus.visible)
-                    btnPlaceMinus.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
+            btnPlaceMinus.render(ctx, mouseX, mouseY, delta);
                 if (btnPlacePlus != null && btnPlacePlus.visible)
-                    btnPlacePlus.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
+            btnPlacePlus.render(ctx, mouseX, mouseY, delta);
             }
 
             if (btnOverlayPlaceConfirm != null && btnOverlayPlaceConfirm.visible)
-                btnOverlayPlaceConfirm.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
+            btnOverlayPlaceConfirm.render(ctx, mouseX, mouseY, delta);
             if (btnOverlayConfirm != null && btnOverlayConfirm.visible)
-                btnOverlayConfirm.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
+            btnOverlayConfirm.render(ctx, mouseX, mouseY, delta);
             if (btnOverlayDone != null && btnOverlayDone.visible)
-                btnOverlayDone.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
+            btnOverlayDone.render(ctx, mouseX, mouseY, delta);
 
         } else {
             // Draw the "x#" counts on the main screen (text only)

@@ -2,168 +2,156 @@ package com.spider.mtgcard.deckbox;
 
 import com.mojang.serialization.MapCodec;
 import com.spider.mtgcard.registry.ModBlocks;
-import net.minecraft.block.*;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.NbtComponent;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.fluid.FluidState;
-import net.minecraft.fluid.Fluids;
-import net.minecraft.item.ItemPlacementContext;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtList;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
-import net.minecraft.screen.NamedScreenHandlerFactory;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.state.StateManager;
-import net.minecraft.state.property.BooleanProperty;
-import net.minecraft.state.property.EnumProperty;
-import net.minecraft.state.property.Properties;
-import net.minecraft.util.*;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.shape.VoxelShape;
-import net.minecraft.util.shape.VoxelShapes;
-import net.minecraft.world.BlockView;
-import net.minecraft.world.World;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.stats.Stats;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.Containers;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LevelReader;
+import net.minecraft.world.level.ScheduledTickAccess;
+import net.minecraft.world.level.block.BaseEntityBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Mirror;
+import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.block.SimpleWaterloggedBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
+import net.minecraft.world.level.block.state.properties.EnumProperty;
+import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.level.material.Fluids;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import org.jetbrains.annotations.Nullable;
 
-public class DeckboxBlock extends BlockWithEntity implements Waterloggable {
+public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBlock {
 
-    public static final MapCodec<DeckboxBlock> CODEC = createCodec(DeckboxBlock::new);
-    public static final BooleanProperty OPEN = BooleanProperty.of("open");
-    public static final EnumProperty<Direction> FACING = Properties.FACING;
-
-    // "spin" is the horizontal orientation used when FACING is UP/DOWN
-    public static final EnumProperty<Direction> SPIN = EnumProperty.of(
+    public static final MapCodec<DeckboxBlock> CODEC = simpleCodec(DeckboxBlock::new);
+    public static final BooleanProperty OPEN = BooleanProperty.create("open");
+    public static final EnumProperty<Direction> FACING = BlockStateProperties.FACING;
+    public static final EnumProperty<Direction> SPIN = EnumProperty.create(
             "spin",
             Direction.class,
             Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST
     );
+    public static final BooleanProperty WATERLOGGED = BlockStateProperties.WATERLOGGED;
 
-    public static final BooleanProperty WATERLOGGED = Properties.WATERLOGGED;
-
-
-    public DeckboxBlock(Settings settings) {
+    public DeckboxBlock(BlockBehaviour.Properties settings) {
         super(settings);
-        this.setDefaultState(
-                this.getStateManager().getDefaultState()
-                        .with(FACING, Direction.NORTH)
-                        .with(SPIN, Direction.NORTH)
-                        .with(OPEN, false)
-                        .with(WATERLOGGED, false)
+        this.registerDefaultState(
+                this.getStateDefinition().any()
+                        .setValue(FACING, Direction.NORTH)
+                        .setValue(SPIN, Direction.NORTH)
+                        .setValue(OPEN, false)
+                        .setValue(WATERLOGGED, false)
         );
-
     }
 
     @Override
-    protected boolean isTransparent(BlockState state) {
-        return true;
-    }
-
-    @Override
-    protected boolean isShapeFullCube(BlockState state, BlockView world, BlockPos pos) {
-        return false;
-    }
-
-    @Override
-    public BlockState getPlacementState(ItemPlacementContext ctx) {
-        boolean water = ctx.getWorld().getFluidState(ctx.getBlockPos()).isOf(Fluids.WATER);
-
-        // Look direction: if player looks DOWN, this becomes UP (box faces up)
-        Direction facing = ctx.getPlayerLookDirection().getOpposite();
-
-        // Horizontal “spin” always follows the player yaw (opposite = faces player)
-        Direction spin = ctx.getHorizontalPlayerFacing().getOpposite();
-
-        return this.getDefaultState()
-                .with(FACING, facing)
-                .with(SPIN, spin)
-                .with(OPEN, false)
-                .with(WATERLOGGED, water);
-    }
-
-
-    @Override
-    public FluidState getFluidState(BlockState state) {
-        return state.get(WATERLOGGED) ? Fluids.WATER.getStill(false) : super.getFluidState(state);
-    }
-
-    @Override
-    protected BlockState getStateForNeighborUpdate(
-            BlockState state,
-            net.minecraft.world.WorldView world,
-            net.minecraft.world.tick.ScheduledTickView tickView,
-            BlockPos pos,
-            Direction direction,
-            BlockPos neighborPos,
-            BlockState neighborState,
-            net.minecraft.util.math.random.Random random
-    ) {
-        if (state.get(WATERLOGGED)) {
-            tickView.scheduleFluidTick(pos, Fluids.WATER, Fluids.WATER.getTickRate(world));
-        }
-        return super.getStateForNeighborUpdate(state, world, tickView, pos, direction, neighborPos, neighborState, random);
-    }
-
-    @Override
-    public BlockState rotate(BlockState state, BlockRotation rotation) {
-        Direction f = state.get(FACING);
-        Direction s = state.get(SPIN);
-
-        // Always rotate spin around Y
-        s = rotation.rotate(s);
-
-        // Only rotate facing if it is horizontal (UP/DOWN shouldn't change from a Y-rotation)
-        if (f.getAxis().isHorizontal()) {
-            f = rotation.rotate(f);
-        }
-
-        return state.with(FACING, f).with(SPIN, s);
-    }
-
-    @Override
-    public BlockState mirror(BlockState state, BlockMirror mirror) {
-        Direction f = state.get(FACING);
-        Direction s = state.get(SPIN);
-
-        BlockRotation rot = mirror.getRotation(s);
-        s = rot.rotate(s);
-
-        if (f.getAxis().isHorizontal()) {
-            f = mirror.getRotation(f).rotate(f);
-        }
-
-        return state.with(FACING, f).with(SPIN, s);
-    }
-
-    @Override
-    protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
-        builder.add(FACING, SPIN, OPEN, WATERLOGGED);
-    }
-
-    @Override
-    protected MapCodec<? extends BlockWithEntity> getCodec() {
+    protected MapCodec<? extends BaseEntityBlock> codec() {
         return CODEC;
     }
 
     @Override
-    public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        builder.add(FACING, SPIN, OPEN, WATERLOGGED);
+    }
+
+    @Override
+    public BlockState getStateForPlacement(BlockPlaceContext ctx) {
+        boolean water = ctx.getLevel().getFluidState(ctx.getClickedPos()).is(Fluids.WATER);
+        Direction facing = ctx.getNearestLookingDirection().getOpposite();
+        Direction spin = ctx.getHorizontalDirection().getOpposite();
+
+        return this.defaultBlockState()
+                .setValue(FACING, facing)
+                .setValue(SPIN, spin)
+                .setValue(OPEN, false)
+                .setValue(WATERLOGGED, water);
+    }
+
+    @Override
+    protected FluidState getFluidState(BlockState state) {
+        return state.getValue(WATERLOGGED) ? Fluids.WATER.getSource(false) : super.getFluidState(state);
+    }
+
+    @Override
+    protected BlockState updateShape(
+            BlockState state,
+            LevelReader world,
+            ScheduledTickAccess tickAccess,
+            BlockPos pos,
+            Direction direction,
+            BlockPos neighborPos,
+            BlockState neighborState,
+            RandomSource random
+    ) {
+        if (state.getValue(WATERLOGGED)) {
+            tickAccess.scheduleTick(pos, Fluids.WATER, Fluids.WATER.getTickDelay(world));
+        }
+        return super.updateShape(state, world, tickAccess, pos, direction, neighborPos, neighborState, random);
+    }
+
+    @Override
+    public BlockState rotate(BlockState state, Rotation rotation) {
+        Direction facing = state.getValue(FACING);
+        Direction spin = rotation.rotate(state.getValue(SPIN));
+
+        if (facing.getAxis().isHorizontal()) {
+            facing = rotation.rotate(facing);
+        }
+
+        return state.setValue(FACING, facing).setValue(SPIN, spin);
+    }
+
+    @Override
+    public BlockState mirror(BlockState state, Mirror mirror) {
+        Direction facing = state.getValue(FACING);
+        Direction spin = state.getValue(SPIN);
+
+        Rotation rotation = mirror.getRotation(spin);
+        spin = rotation.rotate(spin);
+
+        if (facing.getAxis().isHorizontal()) {
+            facing = mirror.getRotation(facing).rotate(facing);
+        }
+
+        return state.setValue(FACING, facing).setValue(SPIN, spin);
+    }
+
+    @Nullable
+    @Override
+    public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
         return new DeckboxBlockEntity(pos, state);
     }
 
-    /* ---------------- Comparator output ---------------- */
-
     @Override
-    protected boolean hasComparatorOutput(BlockState state) {
+    public boolean hasAnalogOutputSignal(BlockState state) {
         return true;
     }
 
     @Override
-    protected int getComparatorOutput(BlockState state, World world, BlockPos pos, Direction direction) {
+    protected int getAnalogOutputSignal(BlockState state, Level world, BlockPos pos, Direction direction) {
         BlockEntity be = world.getBlockEntity(pos);
         if (be instanceof DeckboxBlockEntity deckbox) {
             return deckbox.getComparatorLevelMainOnly();
@@ -171,149 +159,123 @@ public class DeckboxBlock extends BlockWithEntity implements Waterloggable {
         return 0;
     }
 
-    /* ---------------- Use (dye or open) ---------------- */
+    @Override
+    protected InteractionResult useWithoutItem(BlockState state, Level world, BlockPos pos, Player player, BlockHitResult hit) {
+        if (world.isClientSide()) return InteractionResult.SUCCESS;
+        return openMenu(world, pos, player);
+    }
 
     @Override
-    public ActionResult onUse(BlockState state, World world, BlockPos pos,
-                              PlayerEntity player, BlockHitResult hit) {
+    protected InteractionResult useItemOn(
+            ItemStack stack,
+            BlockState state,
+            Level world,
+            BlockPos pos,
+            Player player,
+            InteractionHand hand,
+            BlockHitResult hit
+    ) {
+        if (world.isClientSide()) return InteractionResult.SUCCESS;
+        return openMenu(world, pos, player);
+    }
 
-        if (world.isClient()) return ActionResult.SUCCESS;
-
+    private static InteractionResult openMenu(Level world, BlockPos pos, Player player) {
         BlockEntity be = world.getBlockEntity(pos);
-        if (be instanceof DeckboxBlockEntity deckbox) {
-            player.openHandledScreen(deckbox);
-            return ActionResult.CONSUME;
+        if (be instanceof MenuProvider provider) {
+            player.openMenu(provider);
+            return InteractionResult.CONSUME;
         }
-
-        return ActionResult.PASS;
+        return InteractionResult.PASS;
     }
 
     @Override
-    public NamedScreenHandlerFactory createScreenHandlerFactory(BlockState state, World world, BlockPos pos) {
-        BlockEntity be = world.getBlockEntity(pos);
-        return (be instanceof DeckboxBlockEntity dbe) ? dbe : null;
-    }
-
-    /* ---------------- Player break suppression ---------------- */
-
-    // ✅ Your mappings: onBreak returns BlockState (not void)
-    @Override
-    public BlockState onBreak(World world, BlockPos pos, BlockState state, PlayerEntity player) {
+    public BlockState playerWillDestroy(Level world, BlockPos pos, BlockState state, Player player) {
         BlockEntity be = world.getBlockEntity(pos);
 
-        if (!world.isClient() && be instanceof DeckboxBlockEntity deckbox && world instanceof ServerWorld sw) {
+        if (!world.isClientSide() && be instanceof DeckboxBlockEntity deckbox && world instanceof ServerLevel serverLevel) {
             ItemStack drop = new ItemStack(ModBlocks.DECKBOX_ITEM);
 
-            NbtCompound beTag = buildBlockEntityTag(deckbox);
-            NbtCompound carrier = new NbtCompound();
+            CompoundTag beTag = buildBlockEntityTag(deckbox);
+            CompoundTag carrier = new CompoundTag();
             carrier.put("BlockEntityTag", beTag);
-            drop.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(carrier));
+            drop.set(DataComponents.CUSTOM_DATA, CustomData.of(carrier));
 
-            ItemScatterer.spawn(sw, pos.getX(), pos.getY(), pos.getZ(), drop);
+            Containers.dropItemStack(serverLevel, pos.getX(), pos.getY(), pos.getZ(), drop);
 
             deckbox.clearForDropNoSync();
-            sw.removeBlockEntity(pos);
-
-            // IMPORTANT: return state directly (do NOT call super) so vanilla doesn't also drop an empty item
-            return state;
+            serverLevel.removeBlockEntity(pos);
         }
 
-        return super.onBreak(world, pos, state, player);
+        return super.playerWillDestroy(world, pos, state, player);
     }
 
     @Override
-    public void afterBreak(World world, PlayerEntity player, BlockPos pos,
-                           BlockState state, @Nullable BlockEntity blockEntity, ItemStack tool) {
-        // DO NOT remove PLAYER_BREAKING here.
-        // In this version/mappings, afterBreak can run before onStateReplaced.
-        super.afterBreak(world, player, pos, state, blockEntity, tool);
+    public void playerDestroy(Level world, Player player, BlockPos pos, BlockState state, @Nullable BlockEntity blockEntity, ItemStack tool) {
+        player.awardStat(Stats.BLOCK_MINED.get(this));
+        player.causeFoodExhaustion(0.005f);
     }
 
-    /**
-     * Stop vanilla from spilling inventory.
-     * - Player break: do NOT call super() (that's where spill happens), keep BE for loot to read.
-     * - Other removals: clear inventory then call super() so there's nothing to spill.
-     */
     @Override
-    protected void onStateReplaced(BlockState state, ServerWorld world, BlockPos pos, boolean moved) {
-        // If we already cleared inventory in onBreak, this won't spill anything.
-        // And it will still handle comparator updates properly.
-        ItemScatterer.onStateReplaced(state, world, pos);
-        super.onStateReplaced(state, world, pos, moved);
+    protected void affectNeighborsAfterRemoval(BlockState state, ServerLevel world, BlockPos pos, boolean moved) {
+        super.affectNeighborsAfterRemoval(state, world, pos, moved);
     }
 
-
-
-    /* ---------------- Restore from item on place ---------------- */
-
     @Override
-    public void onPlaced(World world, BlockPos pos, BlockState state, LivingEntity placer, ItemStack stack) {
-        if (!world.isClient()) {
-            var comp = stack.get(DataComponentTypes.CUSTOM_DATA);
+    public void setPlacedBy(Level world, BlockPos pos, BlockState state, @Nullable LivingEntity placer, ItemStack stack) {
+        if (!world.isClientSide()) {
+            var comp = stack.get(DataComponents.CUSTOM_DATA);
             if (comp != null) {
-                NbtCompound tag = comp.copyNbt();
-                if (tag != null && tag.contains("BlockEntityTag")) {
-                    var beTagOpt = tag.getCompound("BlockEntityTag");
-                    if (beTagOpt.isPresent()) {
-                        NbtCompound beTag = beTagOpt.get();
+                CompoundTag tag = comp.copyTag();
+                tag.getCompound("BlockEntityTag").ifPresent(beTag -> {
+                    BlockEntity be = world.getBlockEntity(pos);
+                    if (!(be instanceof DeckboxBlockEntity deckbox)) return;
 
-                        BlockEntity be = world.getBlockEntity(pos);
-                        if (be instanceof DeckboxBlockEntity deckbox) {
+                    beTag.getList("Items").ifPresent(items -> {
+                        for (int i = 0; i < items.size(); i++) {
+                            var entryOpt = items.getCompound(i);
+                            if (entryOpt.isEmpty()) continue;
 
-                            var itemsOpt = beTag.getList("Items");
-                            if (itemsOpt.isPresent()) {
-                                NbtList list = itemsOpt.get();
-                                for (int i = 0; i < list.size(); i++) {
-                                    var entryOpt = list.getCompound(i);
-                                    if (entryOpt.isEmpty()) continue;
+                            CompoundTag entry = entryOpt.get();
+                            int slot = entry.getInt("Slot").orElse(-1);
+                            if (slot < 0 || slot >= DeckboxBlockEntity.INVENTORY_SIZE) continue;
 
-                                    NbtCompound st = entryOpt.get();
-                                    int slot = st.getInt("Slot").orElse(-1);
-                                    if (slot < 0 || slot >= DeckboxBlockEntity.INVENTORY_SIZE) continue;
-
-                                    ItemStack stackToSet = ItemStack.EMPTY;
-                                    var innerOpt = st.getCompound("Stack");
-                                    if (innerOpt.isPresent()) {
-                                        stackToSet = ItemStack.CODEC.parse(NbtOps.INSTANCE, innerOpt.get())
-                                                .result().orElse(ItemStack.EMPTY);
-                                    } else {
-                                        stackToSet = ItemStack.CODEC.parse(NbtOps.INSTANCE, st)
-                                                .result().orElse(ItemStack.EMPTY);
-                                    }
-
-                                    deckbox.setStack(slot, stackToSet);
-                                }
+                            ItemStack stackToSet = ItemStack.EMPTY;
+                            var innerOpt = entry.getCompound("Stack");
+                            if (innerOpt.isPresent()) {
+                                stackToSet = ItemStack.CODEC.parse(NbtOps.INSTANCE, innerOpt.get()).result().orElse(ItemStack.EMPTY);
+                            } else {
+                                stackToSet = ItemStack.CODEC.parse(NbtOps.INSTANCE, entry).result().orElse(ItemStack.EMPTY);
                             }
 
-                            int tint = beTag.getInt("Tint").orElse(0xFFFFFF);
-                            deckbox.setRgbTint(tint);
-                            deckbox.sync();
+                            deckbox.setStack(slot, stackToSet);
                         }
-                    }
-                }
+                    });
+
+                    int tint = beTag.getInt("Tint").orElse(0xFFFFFF);
+                    deckbox.setRgbTint(tint);
+                    deckbox.sync();
+                });
             }
         }
 
-        super.onPlaced(world, pos, state, placer, stack);
+        super.setPlacedBy(world, pos, state, placer, stack);
     }
 
-    /* ---------------- helpers ---------------- */
-
-    private static NbtCompound buildBlockEntityTag(DeckboxBlockEntity deckbox) {
-        NbtCompound beTag = new NbtCompound();
-        NbtList list = new NbtList();
+    private static CompoundTag buildBlockEntityTag(DeckboxBlockEntity deckbox) {
+        CompoundTag beTag = new CompoundTag();
+        ListTag list = new ListTag();
 
         for (int i = 0; i < DeckboxBlockEntity.INVENTORY_SIZE; i++) {
-            ItemStack s = deckbox.getStack(i);
-            if (!s.isEmpty()) {
-                NbtCompound st = new NbtCompound();
-                st.putInt("Slot", i);
+            ItemStack stack = deckbox.getStack(i);
+            if (!stack.isEmpty()) {
+                CompoundTag entry = new CompoundTag();
+                entry.putInt("Slot", i);
 
-                var encoded = ItemStack.CODEC.encodeStart(NbtOps.INSTANCE, s).result();
-                if (encoded.isPresent() && encoded.get() instanceof NbtCompound stackTag) {
-                    st.put("Stack", stackTag);
+                var encoded = ItemStack.CODEC.encodeStart(NbtOps.INSTANCE, stack).result();
+                if (encoded.isPresent() && encoded.get() instanceof CompoundTag stackTag) {
+                    entry.put("Stack", stackTag);
                 }
-                list.add(st);
+                list.add(entry);
             }
         }
 
@@ -322,28 +284,20 @@ public class DeckboxBlock extends BlockWithEntity implements Waterloggable {
         return beTag;
     }
 
-    // 1px inset cube (covers “bulk”, still looks like it fits the model)
-    private static final VoxelShape OUTLINE_INSET_1PX =
-            Block.createCuboidShape(1.0, 1.0, 1.0, 15.0, 15.0, 15.0);
+    private static final VoxelShape OUTLINE_INSET_1PX = Block.box(1.0, 1.0, 1.0, 15.0, 15.0, 15.0);
 
     @Override
-    protected VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+    protected VoxelShape getShape(BlockState state, BlockGetter world, BlockPos pos, CollisionContext context) {
         return OUTLINE_INSET_1PX;
     }
 
-    /**
-     * IMPORTANT:
-     * Keep raycast as full cube so the block is always targetable and doesn't "click through"
-     * to the block below when your outline has gaps/inset edges.
-     */
     @Override
-    public VoxelShape getRaycastShape(BlockState state, BlockView world, BlockPos pos) {
-        return VoxelShapes.fullCube();
+    protected VoxelShape getInteractionShape(BlockState state, BlockGetter world, BlockPos pos) {
+        return Shapes.block();
     }
 
-    // Optional: keep collision full cube so players can't stand "inside" it
     @Override
-    protected VoxelShape getCollisionShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
-        return VoxelShapes.fullCube();
+    protected VoxelShape getCollisionShape(BlockState state, BlockGetter world, BlockPos pos, CollisionContext context) {
+        return Shapes.block();
     }
 }

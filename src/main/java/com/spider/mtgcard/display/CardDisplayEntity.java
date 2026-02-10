@@ -1,65 +1,65 @@
 package com.spider.mtgcard.display;
 
 import com.spider.mtgcard.ModEntities;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.damage.DamageSource;
-import net.minecraft.entity.data.DataTracker;
-import net.minecraft.entity.data.TrackedData;
-import net.minecraft.entity.data.TrackedDataHandlerRegistry;
-import net.minecraft.entity.decoration.AbstractDecorationEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.state.property.EnumProperty;
-import net.minecraft.state.property.Properties;
-import net.minecraft.storage.ReadView;
-import net.minecraft.storage.WriteView;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.decoration.HangingEntity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.EnumProperty;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
-public class CardDisplayEntity extends AbstractDecorationEntity {
+public class CardDisplayEntity extends HangingEntity {
 
-    public static final EnumProperty<Direction> FACING = Properties.HORIZONTAL_FACING;
-    private static final TrackedData<Integer> FLAT_YAW_STEP =
-            DataTracker.registerData(CardDisplayEntity.class, TrackedDataHandlerRegistry.INTEGER);
+    public static final EnumProperty<Direction> FACING = BlockStateProperties.HORIZONTAL_FACING;
+    private static final EntityDataAccessor<Integer> FLAT_YAW_STEP =
+            SynchedEntityData.defineId(CardDisplayEntity.class, EntityDataSerializers.INT);
 
-    private static final TrackedData<ItemStack> STACK =
-            DataTracker.registerData(CardDisplayEntity.class, TrackedDataHandlerRegistry.ITEM_STACK);
+    private static final EntityDataAccessor<ItemStack> STACK =
+            SynchedEntityData.defineId(CardDisplayEntity.class, EntityDataSerializers.ITEM_STACK);
 
-    private static final TrackedData<Integer> ROT_STEP =
-            DataTracker.registerData(CardDisplayEntity.class, TrackedDataHandlerRegistry.INTEGER);
+    private static final EntityDataAccessor<Integer> ROT_STEP =
+            SynchedEntityData.defineId(CardDisplayEntity.class, EntityDataSerializers.INT);
 
-    public CardDisplayEntity(EntityType<? extends CardDisplayEntity> type, World world) {
+    public CardDisplayEntity(EntityType<? extends CardDisplayEntity> type, Level world) {
         super(type, world);
     }
 
     /** Convenience constructor for spawning like an item frame. */
-    public CardDisplayEntity(World world, BlockPos attachmentPos, Direction facing) {
+    public CardDisplayEntity(Level world, BlockPos attachmentPos, Direction facing) {
         super(ModEntities.CARD_DISPLAY, world, attachmentPos); // ✅ sets attachedBlockPos correctly
-        this.setFacing(facing);
+        this.setDirection(facing);
     }
 
 
     @Override
-    protected void initDataTracker(DataTracker.Builder builder) {
-        super.initDataTracker(builder);
-        builder.add(STACK, ItemStack.EMPTY);
-        builder.add(ROT_STEP, 0);
-        builder.add(FLAT_YAW_STEP, 0); // 0..3
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        super.defineSynchedData(builder);
+        builder.define(STACK, ItemStack.EMPTY);
+        builder.define(ROT_STEP, 0);
+        builder.define(FLAT_YAW_STEP, 0); // 0..3
     }
 
     public int getFlatYawStep() {
-        return dataTracker.get(FLAT_YAW_STEP);
+        return entityData.get(FLAT_YAW_STEP);
     }
 
     public void setFlatYawStep(int v) {
-        dataTracker.set(FLAT_YAW_STEP, ((v % 4) + 4) % 4);
+        entityData.set(FLAT_YAW_STEP, ((v % 4) + 4) % 4);
     }
 
     public void cycleFlatYaw() {
@@ -67,7 +67,7 @@ public class CardDisplayEntity extends AbstractDecorationEntity {
     }
 
     /** Called by placement code to orient flat cards without exposing protected setFacing(). */
-    public void setFlatYawTowardPlayer(net.minecraft.entity.player.PlayerEntity player) {
+    public void setFlatYawTowardPlayer(net.minecraft.world.entity.player.Player player) {
         // vector from card -> player (horizontal only)
         double dx = player.getX() - this.getX();
         double dz = player.getZ() - this.getZ();
@@ -75,40 +75,40 @@ public class CardDisplayEntity extends AbstractDecorationEntity {
         // if somehow perfectly centered, fall back to player's facing
         Direction toPlayer;
         if (Math.abs(dx) < 1.0E-4 && Math.abs(dz) < 1.0E-4) {
-            toPlayer = player.getHorizontalFacing();
+            toPlayer = player.getDirection();
         } else {
             // closest cardinal direction toward the player
-            toPlayer = Direction.getFacing(dx, 0.0, dz);
+            toPlayer = Direction.getApproximateNearest(dx, 0.0, dz);
             if (!toPlayer.getAxis().isHorizontal()) {
-                toPlayer = player.getHorizontalFacing();
+                toPlayer = player.getDirection();
             }
         }
 
         // We want the "top" of the card to point toward the player.
         // Depending on your renderer's texture orientation, you may need .getOpposite() here.
-        setFlatYawStep(toPlayer.getHorizontalQuarterTurns());
+        setFlatYawStep(toPlayer.get2DDataValue());
 
         // refresh pitch/yaw using current facing
-        this.setFacing(this.getFacing());
+        this.setDirection(this.getNearestViewDirection());
     }
 
     // ---- data API ----
 
     public ItemStack getStack() {
-        return dataTracker.get(STACK);
+        return entityData.get(STACK);
     }
 
     public void setStack(ItemStack stack) {
-        dataTracker.set(STACK, stack == null ? ItemStack.EMPTY : stack.copy());
+        entityData.set(STACK, stack == null ? ItemStack.EMPTY : stack.copy());
     }
 
     public int getRotStep() {
-        return dataTracker.get(ROT_STEP);
+        return entityData.get(ROT_STEP);
     }
 
     public void setRotStep(int v) {
         // only allow 0 or 1
-        dataTracker.set(ROT_STEP, (v & 1));
+        entityData.set(ROT_STEP, (v & 1));
     }
 
     public void cycleRot() {
@@ -117,21 +117,21 @@ public class CardDisplayEntity extends AbstractDecorationEntity {
     }
 
     @Override
-    protected void setFacing(Direction facing) {
-        super.setFacingInternal(facing);
+    protected void setDirection(Direction facing) {
+        super.setDirectionRaw(facing);
 
         if (facing.getAxis().isHorizontal()) {
-            this.setPitch(0.0F);
-            this.setYaw(facing.getHorizontalQuarterTurns() * 90f);
+            this.setXRot(0.0F);
+            this.setYRot(facing.get2DDataValue() * 90f);
         } else {
             // Laying flat: pitch sets up/down, yaw comes from flat step
-            this.setPitch(-90f * facing.getDirection().offset());
-            this.setYaw(getFlatYawStep() * 90f);
+            this.setXRot(-90f * facing.getAxisDirection().getStep());
+            this.setYRot(getFlatYawStep() * 90f);
         }
 
-        this.lastPitch = this.getPitch();
-        this.lastYaw = this.getYaw();
-        this.updateAttachmentPosition();
+        this.xRotO = this.getXRot();
+        this.yRotO = this.getYRot();
+        this.recalculateBoundingBox();
     }
 
 
@@ -142,11 +142,11 @@ public class CardDisplayEntity extends AbstractDecorationEntity {
      * AbstractDecorationEntity asks us for a bounding box at a block + face. :contentReference[oaicite:4]{index=4}
      */
     @Override
-    protected Box calculateBoundingBox(BlockPos pos, Direction side) {
+    protected AABB calculateBoundingBox(BlockPos pos, Direction side) {
         // Match vanilla item-frame wall offset:
         // center of supporting block, then push BACK into the block along the face normal
         // (this prevents the "one full air block gap" when attachment pos/facing math is involved)
-        Vec3d center = Vec3d.ofCenter(pos).offset(side, -0.46875D);
+        Vec3 center = Vec3.atCenterOf(pos).relative(side, -0.46875D);
 
         // We want a full-card hit area (1x1) but only 1/16 thick in the normal axis.
         // Box.of takes FULL sizes (not half-extents).
@@ -159,7 +159,7 @@ public class CardDisplayEntity extends AbstractDecorationEntity {
         double sizeY = (axis == Direction.Axis.Y) ? thin : full;
         double sizeZ = (axis == Direction.Axis.Z) ? thin : full;
 
-        return Box.of(center, sizeX, sizeY, sizeZ);
+        return AABB.ofSize(center, sizeX, sizeY, sizeZ);
     }
 
 
@@ -168,8 +168,8 @@ public class CardDisplayEntity extends AbstractDecorationEntity {
      * Keep it simple for now: if the attached block is gone/air, pop off.
      */
     @Override
-    public boolean canStayAttached() {
-        return super.canStayAttached();
+    public boolean survives() {
+        return super.survives();
     }
 
     // ---- behavior ----
@@ -180,14 +180,14 @@ public class CardDisplayEntity extends AbstractDecorationEntity {
     public void tick() {
         super.tick();
 
-        if (!getEntityWorld().isClient()) {
+        if (!level().isClientSide()) {
             if (attachGrace > 0) {
                 attachGrace--;
                 return;
             }
 
-            if (!this.canStayAttached()) {
-                this.dropAsItem((ServerWorld) this.getEntityWorld(), null);
+            if (!this.survives()) {
+                this.dropAsItem((ServerLevel) this.level(), null);
                 this.discard();
             }
         }
@@ -195,28 +195,28 @@ public class CardDisplayEntity extends AbstractDecorationEntity {
 
 
     @Override
-    public void onPlace() {
+    public void playPlacementSound() {
         // Called after spawn/placement for attached entities.
         // You can play a sound or validate here later.
     }
 
     @Override
-    public void onBreak(ServerWorld world, @Nullable Entity breaker) {
+    public void dropItem(ServerLevel world, @Nullable Entity breaker) {
         // Called when the hanging entity is broken “properly”.
         dropAsItem(world, null);
     }
 
     /** Drop the stored card stack */
-    public void dropAsItem(ServerWorld world, @Nullable DamageSource source) {
+    public void dropAsItem(ServerLevel world, @Nullable DamageSource source) {
         ItemStack st = getStack();
         if (!st.isEmpty()) {
-            this.dropStack(world, st.copy());
+            this.spawnAtLocation(world, st.copy());
         }
         setStack(ItemStack.EMPTY);
     }
 
     @Override
-    public boolean damage(ServerWorld world, DamageSource source, float amount) {
+    public boolean hurtServer(ServerLevel world, DamageSource source, float amount) {
         // Break like a frame: drop and remove
         this.dropAsItem(world, source);
         this.discard();
@@ -224,45 +224,45 @@ public class CardDisplayEntity extends AbstractDecorationEntity {
     }
 
     @Override
-    public ActionResult interact(net.minecraft.entity.player.PlayerEntity player, Hand hand) {
-        if (this.getEntityWorld().isClient()) return ActionResult.SUCCESS;
+    public InteractionResult interact(net.minecraft.world.entity.player.Player player, InteractionHand hand) {
+        if (this.level().isClientSide()) return InteractionResult.SUCCESS;
 
-        if (player.isSneaking()) {
-            if (player instanceof net.minecraft.server.network.ServerPlayerEntity sp) {
+        if (player.isShiftKeyDown()) {
+            if (player instanceof net.minecraft.server.level.ServerPlayer sp) {
                 ItemStack st = this.getStack().copy();
                 net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(
                         sp,
                         new com.spider.mtgcard.net.payload.CardDisplayPayloads.OpenDisplayViewS2C(this.getId(), st)
                 );
             }
-            return ActionResult.CONSUME;
+            return InteractionResult.CONSUME;
         }
 
         this.cycleRot();
-        return ActionResult.CONSUME;
+        return InteractionResult.CONSUME;
     }
 
 
     // ---- persistence ----
     @Override
-    protected void writeCustomData(WriteView view) {
-        super.writeCustomData(view);
+    protected void addAdditionalSaveData(ValueOutput view) {
+        super.addAdditionalSaveData(view);
         ItemStack st = getStack();
-        if (!st.isEmpty()) view.put("Card", ItemStack.CODEC, st);
+        if (!st.isEmpty()) view.store("Card", ItemStack.CODEC, st);
         view.putInt("Rot", getRotStep());
-        view.put("Facing", Direction.INDEX_CODEC, this.getFacing());
+        view.store("Facing", Direction.LEGACY_ID_CODEC, this.getNearestViewDirection());
         view.putInt("FlatYaw", getFlatYawStep());
     }
 
     @Override
-    protected void readCustomData(ReadView view) {
-        super.readCustomData(view);
+    protected void readAdditionalSaveData(ValueInput view) {
+        super.readAdditionalSaveData(view);
         setStack(view.read("Card", ItemStack.CODEC).orElse(ItemStack.EMPTY));
-        int r = view.getInt("Rot", 0);
+        int r = view.getIntOr("Rot", 0);
         setRotStep(r == 2 ? 1 : r);
-        setFlatYawStep(view.getInt("FlatYaw", 0));
-        Direction f = view.read("Facing", Direction.INDEX_CODEC).orElse(this.getFacing());
-        this.setFacing(f);
+        setFlatYawStep(view.getIntOr("FlatYaw", 0));
+        Direction f = view.read("Facing", Direction.LEGACY_ID_CODEC).orElse(this.getNearestViewDirection());
+        this.setDirection(f);
     }
 
 }

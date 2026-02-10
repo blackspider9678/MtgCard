@@ -120,7 +120,7 @@ public final class PlayerCardDBState extends SavedData {
     /** Use the same DataFixTypes bucket CardDBState used. */
     public static final SavedDataType<PlayerCardDBState> TYPE =
             new SavedDataType<>(
-                    Identifier.withDefaultNamespace(NAME),
+                    NAME,
                     PlayerCardDBState::new,
                     CODEC,
                     DataFixTypes.SAVED_DATA_RANDOM_SEQUENCES

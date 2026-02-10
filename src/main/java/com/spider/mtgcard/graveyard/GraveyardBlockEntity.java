@@ -113,12 +113,14 @@ public class GraveyardBlockEntity extends BlockEntity implements MenuProvider, W
     public NonNullList<net.minecraft.world.item.ItemStack> getItems() { return items; }
 
     public net.minecraft.world.item.ItemStack getItem(int slot) { return items.get(slot); }
+    public net.minecraft.world.item.ItemStack getStack(int slot) { return getItem(slot); }
     public void setItem(int slot, ItemStack stack) {
         items.set(slot, stack);
         setChanged();
         syncSelf();
         updateComparators();
     }
+    public void setStack(int slot, ItemStack stack) { setItem(slot, stack); }
 
     @Override
     public ItemStack removeItemNoUpdate(int slot) {
@@ -129,6 +131,14 @@ public class GraveyardBlockEntity extends BlockEntity implements MenuProvider, W
         syncSelf();
         updateComparators();
         return st;
+    }
+
+    public ItemStack removeStack(int slot) {
+        return removeItemNoUpdate(slot);
+    }
+
+    public void markDirty() {
+        setChanged();
     }
 
     private void syncSelf() {

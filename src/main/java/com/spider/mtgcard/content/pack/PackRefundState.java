@@ -14,8 +14,7 @@ import java.util.*;
 
 public final class PackRefundState extends SavedData {
 
-    private static final Identifier KEY =
-            Identifier.fromNamespaceAndPath("mtgcard", "pack_refunds");
+    private static final String KEY = "mtgcard_pack_refunds";
 
     // UUID -> refunded packs
     private final Map<UUID, List<ItemStack>> pending = new HashMap<>();

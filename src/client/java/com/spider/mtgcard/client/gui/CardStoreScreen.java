@@ -1211,7 +1211,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
         if (tab == Tab.STORE) {
             // fields
-            searchField.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
+        searchField.render(ctx, mouseX, mouseY, delta);
 
             // helper text under search field
             int hx = searchField.getX() + 2;

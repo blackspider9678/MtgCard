@@ -43,8 +43,8 @@ public final class ArtPackets {
 
     /** Call during init on BOTH sides before registering receivers/sending. */
     public static void registerTypes() {
-        PayloadTypeRegistry.serverboundPlay().register(ArtRequest.ID, ArtRequest.CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(ArtChunk.ID, ArtChunk.CODEC);
+        PayloadTypeRegistry.playC2S().register(ArtRequest.ID, ArtRequest.CODEC);
+        PayloadTypeRegistry.playS2C().register(ArtChunk.ID, ArtChunk.CODEC);
     }
 
     private ArtPackets() {}

@@ -87,6 +87,22 @@ public class DeckboxBlockEntity extends RandomizableContainerBlockEntity {
         return INVENTORY_SIZE;
     }
 
+    public ItemStack getStack(int slot) {
+        return getItem(slot);
+    }
+
+    public void setStack(int slot, ItemStack stack) {
+        setItem(slot, stack);
+    }
+
+    public ItemStack removeStack(int slot) {
+        return removeItemNoUpdate(slot);
+    }
+
+    public void markDirty() {
+        setChanged();
+    }
+
     @Override
     protected Component getDefaultName() {
         return NAME;

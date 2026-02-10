@@ -456,9 +456,9 @@ public class DisplayBlockEntity extends BlockEntity {
 
         // IMPORTANT: do not load chunks here
         ChunkPos cp = new ChunkPos(lifePos.getX() >> 4, lifePos.getZ() >> 4);
-        if (!target.getChunkSource().hasChunk(cp.x(), cp.z())) return Optional.empty();
+        if (!target.getChunkSource().hasChunk(cp.x, cp.z)) return Optional.empty();
 
-        var chunk = target.getChunk(cp.x(), cp.z(), ChunkStatus.FULL, false);
+        var chunk = target.getChunk(cp.x, cp.z, ChunkStatus.FULL, false);
         if (chunk == null) return Optional.empty();
 
         BlockEntity be = chunk.getBlockEntity(lifePos);

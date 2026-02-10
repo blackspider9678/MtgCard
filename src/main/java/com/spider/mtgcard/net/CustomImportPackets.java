@@ -34,7 +34,7 @@ public final class CustomImportPackets {
 
     /** Call during common init. Registers the S2C payload type. */
     public static void registerTypes() {
-        PayloadTypeRegistry.clientboundPlay().register(OpenImportGui.ID, OpenImportGui.CODEC);
+        PayloadTypeRegistry.playS2C().register(OpenImportGui.ID, OpenImportGui.CODEC);
     }
 
     /** Server-side helper to open the GUI on a client. */

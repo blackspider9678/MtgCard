@@ -207,9 +207,9 @@ public final class PackGenerator {
 
                         ItemStack bundle = new ItemStack(Items.BUNDLE);
 
-                        List<net.minecraft.world.item.ItemStackTemplate> templates = out.stream()
+                        List<ItemStack> templates = out.stream()
                                 .filter(stack -> stack != null && !stack.isEmpty())
-                                .map(net.minecraft.world.item.ItemStackTemplate::fromNonEmptyStack)
+                                .map(ItemStack::copy)
                                 .toList();
 
                         bundle.set(DataComponents.BUNDLE_CONTENTS, new BundleContents(templates));

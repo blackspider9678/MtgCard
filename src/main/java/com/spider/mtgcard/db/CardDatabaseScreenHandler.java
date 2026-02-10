@@ -194,7 +194,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     }
 
     @Override
-    public void clicked(int slotIndex, int button, ContainerInput action, Player player) {
+    public void clicked(int slotIndex, int button, ClickType action, Player player) {
         {
             boolean isShiftClick = button == 1;
 

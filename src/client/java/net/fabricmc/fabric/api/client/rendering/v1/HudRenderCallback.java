@@ -18,7 +18,7 @@ public interface HudRenderCallback {
 
         public void register(HudRenderCallback callback) {
             Identifier id = Identifier.fromNamespaceAndPath("mtgcard", "hud_compat/" + COUNTER.getAndIncrement());
-            HudElementRegistry.addLast(id, (graphics, tickCounter) -> callback.onHudRender(GuiGraphics.wrap(graphics), tickCounter));
+            HudElementRegistry.addLast(id, callback::onHudRender);
         }
     }
 }
