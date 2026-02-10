@@ -1,0 +1,12 @@
+{
+  "multipart": [
+    { "apply": { "model": "mtgcard:block/deck_control_stone" } },
+
+    { "when": { "lit": "false" }, "apply": { "model": "mtgcard:block/deck_control_unlit" } },
+
+    { "when": { "lit": "true", "color": "default"  }, "apply": { "model": "mtgcard:block/deck_control_lit"  } },
+    { "when": { "lit": "true", "color": "soulfire" }, "apply": { "model": "mtgcard:block/deck_control_soulfire" } },
+    { "when": { "lit": "true", "color": "redstone" }, "apply": { "model": "mtgcard:block/deck_control_redstone" } },
+    { "when": { "lit": "true", "color": "copper"   }, "apply": { "model": "mtgcard:block/deck_control_copper"   } }
+  ]
+}

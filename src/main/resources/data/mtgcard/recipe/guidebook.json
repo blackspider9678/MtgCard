@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "minecraft:book",
+    "mtgcard:card"
+  ],
+  "result": {
+    "id": "mtgcard:guidebook",
+    "count": 1
+  }
+}

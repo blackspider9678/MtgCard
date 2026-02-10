@@ -1,0 +1,3090 @@
+// CustomImportScreen.java
+package com.spider.mtgcard.client.gui;
+
+import com.spider.mtgcard.net.CustomCardPackets;
+import com.spider.mtgcard.util.Cockatrice;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gl.RenderPipelines;
+import net.minecraft.client.gui.Click;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.screen.narration.NarrationMessageBuilder;
+import net.minecraft.client.gui.screen.narration.NarrationPart;
+import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.ClickableWidget;
+import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.client.input.CharInput;
+import net.minecraft.client.input.KeyInput;
+import net.minecraft.client.texture.NativeImage;
+import net.minecraft.client.texture.NativeImageBackedTexture;
+import net.minecraft.text.OrderedText;
+import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
+import org.lwjgl.glfw.GLFW;
+
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.*;
+import java.util.function.Consumer;
+
+/**
+ * Custom card importer
+ * - Drag PNG/JPG/WEBP images (WEBP requires webp-imageio on classpath) and/or Cockatrice XML.
+ * - Scrollable thumbnail grid (left) + edit panel (right) with a draggable scrollbar.
+ * - Click a thumb to edit metadata; press "Create" to send batch to server.
+ * - NEW:
+ *   • Progress bar moved to bottom of right panel, yellow status text.
+ *   • Link-hint overlay shown under banner (not covered by “Images added”).
+ *   • FRONT/BACK badges on thumbnails.
+ */
+public final class CustomImportScreen extends Screen implements FileDropReceiver {
+    // ---- Data model ----
+    public static final class Entry {
+        public String fileName;
+        public byte[] imgFront;
+        public byte[] imgBack;
+        public Meta meta = new Meta();
+
+        // --- Thumbnail texture ---
+        public Identifier thumbId;
+        public NativeImageBackedTexture thumbTex;
+        public int thumbW;   // REQUIRED (used for UV scaling)
+        public int thumbH;
+
+        // --- Hover preview texture (lazy) ---
+        public Identifier previewId;
+        public NativeImageBackedTexture previewTex;
+
+        // runtime linking info
+        public Link link = new Link();
+    }
+
+    // ---- Manual image import pacing (UI queue) ----
+    private final java.util.ArrayDeque<java.util.function.Supplier<java.util.concurrent.CompletableFuture<?>>> importQueue =
+            new java.util.ArrayDeque<>();
+    private boolean importsRunning = false;
+    private int importCooldownTicks = 0;
+
+    private volatile int importQueued = 0;
+    private volatile int importDone = 0;
+    private volatile int importFailed = 0;
+    private volatile String importPhase = "";
+
+    // ---- Upload pacing / cancellation ----
+    private static final class UploadJob {
+        final Runnable run;
+        final int cardsCreated; // 0 for art jobs, >0 for create batch jobs
+        UploadJob(Runnable run, int cardsCreated) {
+            this.run = run;
+            this.cardsCreated = cardsCreated;
+        }
+    }
+    private final java.util.ArrayDeque<UploadJob> uploadQueue = new java.util.ArrayDeque<>();
+    private boolean uploadsRunning = false;
+    private int uploadCooldownTicks = 0; // spacing between sends
+    private volatile boolean cancelRequested = false;
+
+    // ---- Upload progress UI (re-uses the right-panel bar) ----
+    private volatile boolean uploadUiActive = false;
+    private volatile int uploadTotalCards = 0;
+    private volatile int uploadCardsSent = 0;   // counts "CustomBatchCreate" sends (1 per card)
+    private volatile int uploadTotalJobs  = 0;  // total queued network jobs at start (art chunks + creates)
+    private volatile int uploadJobsSent   = 0;  // jobs actually sent
+    private volatile String uploadLine2   = "Please keep screen open";
+
+    // ---- Upload ETA tracking ----
+    private volatile long uploadStartMs = 0L;
+    private volatile long uploadLastSampleMs = 0L;
+    private volatile int  uploadLastSampleSent = 0;
+    private volatile double uploadRateEma = 0.0; // jobs/sec (smoothed)
+
+    // XML async task handle (so we can stop scheduling more work)
+    private java.util.concurrent.CompletableFuture<?> xmlFuture = null;
+    private final java.util.concurrent.atomic.AtomicBoolean xmlCancel = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    // Optional: show upload phase in the existing right-panel progress
+    private volatile int netQueued = 0;
+    private volatile int netSent = 0;
+    private volatile String netPhase = "";
+
+    // ---- Hover preview (Archidekt-style zoom) ----
+    private static final int PREVIEW_TEX_W = 384;   // generated texture size (bigger = nicer)
+    private static final int PREVIEW_TEX_H = 536;
+    private static final int PREVIEW_DRAW_W = 220;  // on-screen drawn size
+    private static final int PREVIEW_DRAW_H = 308;
+    private int hoveredIndex = -1;
+    private int hoveredThumbX = 0, hoveredThumbY = 0;
+
+    // ---- Hover zoom (Archidekt-ish) ----
+    private static final int PREVIEW_MAX_W = 360;
+    private static final int PREVIEW_MAX_H = 500;
+    private static final int PREVIEW_PAD   = 8;
+    private static final int PREVIEW_BORDER = 0xFF202020;
+    private static final int PREVIEW_BG     = 0xEE0A0A0A;
+
+    // ---- Manual image import pacing (TRUE sequential) ----
+    private final ArrayDeque<Path> manualImageQueue = new ArrayDeque<>();
+    private boolean manualImportRunning = false;
+    private boolean manualInFlight = false;        // <--- NEW: only allow 1 active job
+    private int manualImportCooldownTicks = 0;
+
+    private int manualFound = 0;
+    private int manualDone = 0;
+    private int manualFailed = 0;
+    private String manualPhase = "";
+    private volatile boolean manualUiActive = false;
+
+
+    private int gridX1() { return 10; }
+    private int gridY1() { return GRID_TOP; }
+    private int gridX2() { return panelX - 12; }
+    private int gridY2() { return this.height - 40; } // stops hover over bottom bar too
+
+    @Override
+    public void tick() {
+        super.tick();
+        final int JOBS_PER_TICK = 12; // try 8–20; higher = faster, too high = risk packet flood
+
+        // ---- Manual drag-drop images -> add to grid one-by-one (sequential) ----
+        if (manualImportRunning && !cancelRequested) {
+
+            if (manualImportCooldownTicks > 0) {
+                manualImportCooldownTicks--;
+            } else if (!manualInFlight) { // <--- only start next when none running
+                Path p = manualImageQueue.pollFirst();
+                if (p == null) {
+                    manualImportRunning = false;
+                    manualPhase = "Manual import done.";
+                } else {
+                    manualInFlight = true;
+                    manualPhase = "Importing: " + p.getFileName();
+                    importOneDroppedImageAsync(p);
+                }
+            }
+        }
+
+        // ---- upload pumping ----
+        if (!uploadsRunning) return;
+        if (cancelRequested) return;
+
+        if (uploadCooldownTicks > 0) {
+            uploadCooldownTicks--;
+            return;
+        }
+
+        for (int n = 0; n < JOBS_PER_TICK; n++) {
+            if (cancelRequested) break;
+
+            UploadJob job = uploadQueue.pollFirst();
+            netQueued = uploadQueue.size();
+
+            if (job == null) {
+                uploadsRunning = false;
+                if (uploadUiActive) {
+                    uploadLine2 = "Done. You can close this screen.";
+                    uploadJobsSent = uploadTotalJobs;
+                } else if (!xmlImportInProgress) {
+                    netPhase = "All queued uploads sent.";
+                }
+                break;
+            }
+
+            try {
+                job.run.run();
+                uploadJobsSent++;
+                netSent++;
+
+                // ---- ETA sampling / EMA update (jobs/sec) ----
+                long now = System.currentTimeMillis();
+
+// sample at most ~4x per second (keeps it stable)
+                if (now - uploadLastSampleMs >= 250L) {
+                    int sentDelta = uploadJobsSent - uploadLastSampleSent;
+                    long dtMs = now - uploadLastSampleMs;
+
+                    if (dtMs > 0 && sentDelta > 0) {
+                        double instRate = sentDelta / (dtMs / 1000.0); // jobs/sec
+
+                        // Exponential moving average smoothing
+                        // 0.25 = reacts quickly but not jittery; tweak 0.15–0.35
+                        double alpha = 0.25;
+                        uploadRateEma = (uploadRateEma <= 0.00001)
+                                ? instRate
+                                : (alpha * instRate + (1.0 - alpha) * uploadRateEma);
+
+                        uploadLastSampleMs = now;
+                        uploadLastSampleSent = uploadJobsSent;
+                    }
+                }
+
+                if (job.cardsCreated > 0) uploadCardsSent += job.cardsCreated;
+
+                // ETA sampling block can stay as-is (it uses uploadJobsSent)
+            } catch (Throwable t) {
+            }
+        }
+    }
+
+
+    private void enqueueManualImageImport(Path p) {
+        if (p == null) return;
+        String name = p.getFileName().toString();
+        String lower = name.toLowerCase(Locale.ROOT);
+
+        importQueue.add(() -> java.util.concurrent.CompletableFuture.runAsync(() -> {
+            if (cancelRequested) return;
+
+            // read + encode off-thread
+            byte[] raw;
+            try {
+                raw = java.nio.file.Files.readAllBytes(p);
+            } catch (IOException ioe) {
+                throw new RuntimeException(ioe);
+            }
+
+            EncodedImage enc;
+            try {
+                enc = preferWebpElsePng(raw, lower);
+            } catch (IOException ioe) {
+                throw new RuntimeException(ioe);
+            }
+
+            // Decide front/back grouping based on filename suffix
+            String stem = stripExt(lower);
+            boolean isBack = stem.endsWith("_f1") || stem.endsWith("_back");
+            String base = stem;
+            if (stem.endsWith("_f1")) base = stem.substring(0, stem.length() - 3);
+            if (stem.endsWith("_back")) base = stem.substring(0, stem.length() - 5);
+            if (stem.endsWith("_f0")) base = stem.substring(0, stem.length() - 3);
+            if (stem.endsWith("_front")) base = stem.substring(0, stem.length() - 6);
+
+            final String finalBase = base;
+            final boolean finalIsBack = isBack;
+            final byte[] finalBytes = enc.bytes;
+            final String finalExt = enc.ext;
+
+            // Now hop to client thread to mutate UI + entries
+            if (this.client != null) {
+                this.client.execute(() -> {
+                    if (cancelRequested) return;
+
+                    // Find existing entry with same base waiting for other face
+                    Entry existing = null;
+                    for (Entry e : entries) {
+                        if (e != null && nz(e.fileName).startsWith(finalBase)) {
+                            // crude match, but works well with your base naming
+                            existing = e;
+                            break;
+                        }
+                    }
+
+                    if (existing == null) {
+                        Entry e = new Entry();
+                        e.fileName = finalBase + finalExt;
+
+                        if (finalIsBack) {
+                            // If only a back was dropped first, treat it as front for now.
+                            e.imgFront = finalBytes;
+                            e.imgBack = null;
+                            e.meta.doubleFaced = false;
+                        } else {
+                            e.imgFront = finalBytes;
+                            e.imgBack = null;
+                            e.meta.doubleFaced = false;
+                        }
+
+                        e.meta.name = prettyBaseName(finalBase);
+                        applyCockatriceToEntry(e);
+                        buildThumbnail(e);
+                        entries.add(e);
+
+                        if (selected < 0) {
+                            selected = entries.size() - 1;
+                            syncEditorFromSelected();
+                        }
+                    } else {
+                        // attach as back if possible
+                        if (finalIsBack) {
+                            existing.imgBack = finalBytes;
+                            existing.meta.doubleFaced = true;
+                        } else {
+                            // If we already had a front and user drops another front with same base, replace it.
+                            existing.imgFront = finalBytes;
+                        }
+                        applyCockatriceToEntry(existing);
+                        buildThumbnail(existing);
+                    }
+
+                    updateMaxScroll();
+                    lastStatus = "Imported: " + name;
+                });
+            }
+        }));
+    }
+
+    private void enqueueUpload(Runnable r) { enqueueUpload(r, 0); }
+
+    private void enqueueUpload(Runnable r, int cardsCreated) {
+        if (r == null) return;
+        if (cancelRequested) return;
+        uploadQueue.addLast(new UploadJob(r, cardsCreated));
+        netQueued = uploadQueue.size();
+    }
+
+    private void startUploadsIfNeeded() {
+        uploadsRunning = true;
+        // tick() will pump the queue
+    }
+
+    private void cancelAllAsyncWork() {
+        cancelRequested = true;
+        xmlCancel.set(true);
+        uploadQueue.clear();
+        netQueued = 0;
+        netPhase = "Cancelled.";
+        uploadsRunning = false;
+
+        if (xmlFuture != null) {
+            xmlFuture.cancel(true); // won't always interrupt HttpClient.send, but stops continuations
+            xmlFuture = null;
+        }
+    }
+
+    private int hoveredIndexVisibleOnly(double mx, double my) {
+        // Must be inside the grid viewport window
+        if (mx < gridX1() || mx > gridX2() || my < gridY1() || my > gridY2()) return -1;
+
+        final int maxX = panelX - 12;
+        int usableW = maxX - 10;
+        int cols = Math.max(1, (usableW + GAP) / (BOX + GAP));
+        int x0 = 10;
+        int y0 = GRID_TOP - scrollY;
+
+        for (int i = 0; i < entries.size(); i++) {
+            int col = i % cols;
+            int row = i / cols;
+            int x = x0 + col * (BOX + GAP);
+            int y = y0 + row * (BOX_H + GAP);
+
+            // Only allow hover if the THUMB is fully visible in the viewport
+            if (y < gridY1() || (y + BOX_H) > gridY2()) continue;
+
+            if (mx >= x && mx <= x + BOX && my >= y && my <= y + BOX_H) return i;
+        }
+        return -1;
+    }
+
+    public static final class Meta {
+        public String id = "";
+        public String name = "";
+        public String manaCost = "";
+        public String typeLine = "";
+        public String rarity = "common";
+        public String set = "CSTM";
+        public String oracleText = "";
+        public String power = "";
+        public String toughness = "";
+        public String loyalty = "";
+        public boolean doubleFaced = false;
+        public String backName = "";
+        public String backTypeLine = "";
+        public String backOracleText = "";
+        public String backPower = "";
+        public String backToughness = "";
+        public String backLoyalty = "";
+    }
+
+    // --- Linking state & helpers ---
+    private static final class Link {
+        int partnerIndex = -1;   // index in `entries`
+        boolean isFront = true;  // true = this entry is the FRONT face of the pair
+    }
+    private enum LinkMode { NONE, LINK_AS_FRONT, LINK_AS_BACK }
+
+    private LinkMode linkPendingMode = LinkMode.NONE; // awaiting a partner click?
+
+    private final List<Entry> entries = new ArrayList<>();
+    private int selected = -1;
+
+    private ButtonWidget createBtn, rarityBtn, dfcToggleBtn;
+    private TextFieldWidget nameF, manaF, typeF, setF, powF, touF, loyF;
+    private SimpleTextArea textF; // multiline Oracle Text (custom widget below)
+
+    // Metadata cache from Cockatrice XMLs
+    private final Map<String, Cockatrice.Meta> cockatriceByName = new HashMap<>();
+
+    // Right panel geometry
+    private int panelX, panelW;
+
+    // ---- UI palette (add) ----
+    private static final int PROG_BG     = 0xFF2A2A2A;
+    private static final int PROG_BORDER = 0xFF000000;
+    private static final int PROG_FILL   = 0xFF4CAF50; // in-progress green
+    private static final int PROG_DONE   = 0xFF1B5E20; // dark green when complete
+    private static final int UI_YELLOW = 0xFFFFE070;
+
+    // Gallery layout + scroll
+    private static final int BOX = 96;          // thumbnail box (w)
+    private static final int BOX_H = 134;       // thumbnail box (h)
+    private static final int GAP = 8;
+
+    private static final int THUMB_SCALE = 10;
+
+    private static final int GRID_TOP = 44;     // area below banner text
+    private int scrollY = 0;
+    private int maxScrollY = 0;
+
+    // Scrollbar (drawn at left edge of the edit panel)
+    private boolean barDragging = false;
+    private int barDragOffsetY = 0;
+
+    private String lastStatus = "";
+    private final Set<String> importedPicUrls = new HashSet<>();
+
+    // XML import progress
+    private volatile boolean xmlImportInProgress = false;
+    private volatile int xmlImportFound = 0;
+    private volatile int xmlImportDone = 0;
+    private volatile int xmlImportFailed = 0;
+    private volatile String xmlImportPhase = "";
+
+    private ButtonWidget removeBtn, linkFrontBtn, linkBackBtn, clearLinkBtn;
+
+    // Shared GLFW cursors (created once)
+    private static final int CURSOR_ARROW = 0;
+    private static final int CURSOR_IBEAM = 1;
+    private static void ensureCursors() {
+        if (MOUSE_CURSOR_ARROW == 0L)  MOUSE_CURSOR_ARROW = GLFW.glfwCreateStandardCursor(GLFW.GLFW_ARROW_CURSOR);
+        if (MOUSE_CURSOR_IBEAM == 0L)  MOUSE_CURSOR_IBEAM = GLFW.glfwCreateStandardCursor(GLFW.GLFW_IBEAM_CURSOR);
+    }
+    private static void applyCursor(int which) {
+        ensureCursors();
+        var win = MinecraftClient.getInstance().getWindow();
+        if (win == null) return;
+        long handle = win.getHandle();
+        long cur = (which == CURSOR_IBEAM) ? MOUSE_CURSOR_IBEAM : MOUSE_CURSOR_ARROW;
+        GLFW.glfwSetCursor(handle, cur);
+    }
+
+
+    public static void open() {
+        var mc = MinecraftClient.getInstance();
+        mc.execute(() -> mc.setScreen(new CustomImportScreen()));
+    }
+
+    public CustomImportScreen() { super(Text.literal("Import Custom Cards")); }
+
+    @Override public boolean shouldPause() { return false; }
+
+    // ---- Lifecycle ----
+    @Override
+    protected void init() {
+        panelW = Math.max(220, Math.min(260, (int)(this.width * 0.22)));
+        panelX = this.width - panelW - 10;
+
+        int bottomY = this.height - 30;
+
+        createBtn = ButtonWidget.builder(Text.literal("Create (send to server)"), b -> sendToServer())
+                .dimensions(this.width - 210, bottomY, 200, 20).build();
+        addDrawableChild(createBtn);
+
+        // --- Bottom controls (left): Remove + Link flow ---
+        removeBtn = ButtonWidget.builder(Text.literal("Remove"), b -> removeSelected())
+                .dimensions(10, bottomY, 70, 20).build();
+        addDrawableChild(removeBtn);
+
+        int linkW = 95, gap = 6;
+        int linkX = 90;
+
+        linkFrontBtn = ButtonWidget.builder(Text.literal("Link as FRONT"), b -> linkSelectedAs(true))
+                .dimensions(linkX, bottomY, linkW, 20).build();
+        addDrawableChild(linkFrontBtn);
+
+        linkBackBtn = ButtonWidget.builder(Text.literal("Link as BACK"), b -> linkSelectedAs(false))
+                .dimensions(linkX + (linkW + gap), bottomY, linkW, 20).build();
+        addDrawableChild(linkBackBtn);
+
+        clearLinkBtn = ButtonWidget.builder(Text.literal("Clear Link"), b -> clearLinkForSelected())
+                .dimensions(linkX + 2*(linkW + gap), bottomY, 80, 20).build();
+        addDrawableChild(clearLinkBtn);
+
+        buildEditorWidgets();
+        syncEditorFromSelected();
+        updateMaxScroll();
+    }
+
+    private void updateLinkButtonsVisibility() {
+        boolean show = false;
+        if (selected >= 0 && selected < entries.size()) {
+            show = entries.get(selected).meta.doubleFaced;
+        }
+        if (linkFrontBtn != null) linkFrontBtn.visible = show;
+        if (linkBackBtn  != null) linkBackBtn.visible  = show;
+        if (clearLinkBtn != null) clearLinkBtn.visible = show;
+    }
+
+    @Override
+    public void resize(int width, int height) {
+        super.resize(width, height);
+        this.clearChildren();
+        this.init();
+        updateMaxScroll();
+    }
+
+    @Override
+    public void removed() {
+        cancelAllAsyncWork(); // <-- important: stops future scheduling + stops queued sends
+
+        if (client == null) return;
+        var tm = client.getTextureManager();
+        for (var e : entries) {
+            if (e.thumbId != null) tm.destroyTexture(e.thumbId);
+            if (e.thumbTex != null) e.thumbTex.close();
+            e.thumbId = null;
+            e.thumbTex = null;
+
+            if (e.previewId != null) tm.destroyTexture(e.previewId);
+            if (e.previewTex != null) e.previewTex.close();
+            e.previewId = null;
+            e.previewTex = null;
+        }
+    }
+
+
+    // ---- Render ----
+    @Override
+    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+        // Solid dim (avoid 1.21 blur crash)
+        ctx.fill(0, 0, this.width, this.height, 0xB0000000);
+
+        // --- Define "window" for the grid (left column only) ---
+        final int gridX1 = 10;
+        final int gridY1 = GRID_TOP;
+        final int gridX2 = panelX - 12;
+        final int gridY2 = this.height - 40;
+
+        // ==== THUMBNAILS (clipped to window) ====
+        ctx.enableScissor(gridX1, gridY1, gridX2, gridY2);
+        {
+            final int maxX = panelX - 12;
+            int usableW = maxX - 10;
+            int cols = Math.max(1, (usableW + GAP) / (BOX + GAP));
+            int x0 = 10;
+            int y0 = GRID_TOP - scrollY;
+
+            hoveredIndex = -1;
+
+            for (int i = 0; i < entries.size(); i++) {
+                int col = i % cols;
+                int row = i / cols;
+                int x = x0 + col * (BOX + GAP);
+                int y = y0 + row * (BOX_H + GAP);
+
+                if (mouseX >= x && mouseX <= x + BOX && mouseY >= y && mouseY <= y + BOX_H) {
+                    hoveredIndex = i;
+                    hoveredThumbX = x;
+                    hoveredThumbY = y;
+                }
+
+                // Skip rows far outside viewport
+                if (y > gridY2 || y + BOX_H < gridY1 - 40) continue;
+
+                var e = entries.get(i);
+                int border = (i == selected) ? 0xFFFFD700 : 0xFF404040; // gold for selected
+                ctx.fill(x - 2, y - 2, x + BOX + 2, y + BOX_H + 2, border);
+                ctx.fill(x, y, x + BOX, y + BOX_H, 0xFF1A1A1A);
+
+                if (e.thumbId != null) {
+                    int imgW = BOX - 4;
+                    int imgH = BOX_H - 4;
+
+                    int texW = (e.thumbW > 0 ? e.thumbW : imgW);
+                    int texH = (e.thumbH > 0 ? e.thumbH : imgH);
+
+                    ctx.drawTexture(
+                            RenderPipelines.GUI_TEXTURED,
+                            e.thumbId,
+                            x+2, y+2,
+                            0f, 0f,
+                            imgW, imgH,
+                            imgW, imgH
+                    );
+
+                    // FRONT/BACK badge
+                    String faceBadge = faceBadgeFor(e);
+                    if (faceBadge != null) drawCornerBadge(ctx, x + 3, y + 3, faceBadge);
+
+                    String label = e.meta.name.isEmpty() ? e.fileName : e.meta.name;
+                    int pad = 3;      // inner padding
+                    int maxLines = 3; // up to 3 lines on thumbnail
+                    drawWrappedThumbLabel(ctx, label, x, y, BOX, BOX_H, pad, maxLines);
+                } else {
+                    ctx.drawText(this.textRenderer, "IMG", x + BOX / 2 - 10, y + BOX_H / 2 - 4, 0xFFAAAAAA, false);
+                }
+
+                // Linking target cue
+                int partnerIdx = -1;
+                if (selected >= 0 && selected < entries.size()) {
+                    var sel = entries.get(selected);
+                    if (sel.link != null) partnerIdx = sel.link.partnerIndex;
+                }
+                if (i == partnerIdx) {
+                    int t = 3; // thickness
+                    int r = 0xFFFF2D2D;
+                    ctx.fill(x - 2, y - 2, x + BOX + 2, y - 2 + t, r);
+                    ctx.fill(x - 2, y + BOX_H + 2 - t, x + BOX + 2, y + BOX_H + 2, r);
+                    ctx.fill(x - 2, y - 2, x - 2 + t, y + BOX_H + 2, r);
+                    ctx.fill(x + BOX + 2 - t, y - 2, x + BOX + 2, y + BOX_H + 2, r);
+                }
+            }
+        }
+        ctx.disableScissor();
+
+        // --- Top "window frame" edge so cards disappear underneath it ---
+        ctx.fill(gridX1, GRID_TOP - 1, gridX2, GRID_TOP, 0xFF000000);
+        ctx.fill(gridX1, GRID_TOP,     gridX2, GRID_TOP + 6, 0x40000000);
+
+
+        // --- Banner text (on top of the window)
+        ctx.drawText(this.textRenderer,
+                "Drag images (*.png, *.jpg, *.webp) or a Cockatrice XML here",
+                10, 10, 0xFFEFEFEF, true);
+        ctx.drawText(this.textRenderer,
+                "Images added: " + entries.size(),
+                10, 26, 0xFFB0FFB0, true);
+
+        // --- Link mode hint (placed visibly under the banner, not covered)
+        renderLinkHint(ctx);
+
+        // Editor panel bg + title
+        ctx.fill(panelX - 8, 20, panelX + panelW, this.height - 40, 0xAA101010);
+        ctx.drawText(this.textRenderer, "Edit Image", panelX, 22, 0xFFFFE070, false); // keep yellow
+
+        // --- Progress UI at the bottom of the right panel (with yellow text)
+        renderRightPanelProgress(ctx);
+
+        // Grid scrollbar
+        drawGridScrollbar(ctx);
+
+        super.render(ctx, mouseX, mouseY, delta);
+    }
+
+    // FRONT/BACK badge text for a thumbnail
+    private String faceBadgeFor(Entry e) {
+        boolean linked = e.link != null && e.link.partnerIndex >= 0;
+        if (linked) return e.link.isFront ? "FRONT" : "BACK";
+        if (e.meta.doubleFaced && e.imgBack != null && e.imgBack.length > 0) return "FRONT";
+        return null;
+    }
+
+    private void drawCornerBadge(DrawContext ctx, int x, int y, String text) {
+        if (text == null || text.isEmpty()) return;
+        int padX = 4, padY = 2;
+        int tw = this.textRenderer.getWidth(text);
+        int h = this.textRenderer.fontHeight;
+        int w = tw + padX * 2;
+
+        // badge background + subtle border
+        ctx.fill(x - 1, y - 1, x + w + 1, y + h + padY * 2 + 1, 0x66000000);
+        ctx.fill(x, y, x + w, y + h + padY * 2, 0xCC0E0E0E);
+        // text
+        ctx.drawText(this.textRenderer, Text.literal(text).asOrderedText(), x + padX, y + padY, 0xFFFFE070, false);
+    }
+
+    private void renderLinkHint(DrawContext ctx) {
+        if (linkPendingMode == LinkMode.NONE) return;
+
+        String msg = (linkPendingMode == LinkMode.LINK_AS_FRONT)
+                ? "Link mode: Select the BACK image for this FRONT (Esc to cancel)."
+                : "Link mode: Select the FRONT image for this BACK (Esc to cancel).";
+
+        int yTop = GRID_TOP + 8;               // clear of “Images added”
+        int xLeft = 10;
+        int pad = 6;
+        int textW = this.textRenderer.getWidth(msg);
+        int h = this.textRenderer.fontHeight + pad * 2;
+        int w = Math.min(textW + pad * 2, panelX - 20);
+
+        ctx.fill(xLeft - 2, yTop - 2, xLeft + w + 2, yTop + h + 2, 0x80202020);
+        ctx.fill(xLeft, yTop, xLeft + w, yTop + h, 0xC0101010);
+        ctx.drawText(this.textRenderer, msg, xLeft + pad, yTop + pad, 0xFFFFE070, false);
+    }
+
+    private void renderRightPanelProgress(DrawContext ctx) {
+        // Prefer showing upload progress after clicking Create
+        boolean showUpload = uploadUiActive;
+        boolean showXml = (xmlImportFound != 0 || xmlImportDone != 0 || xmlImportFailed != 0 || xmlImportInProgress);
+
+        // Manual drop progress: show if we have work, or if it was recently active
+        boolean showManual = manualUiActive && (manualFound > 0);
+
+        if (!showUpload && !showXml && !showManual) return;
+
+
+        final int padding = 10;
+        final int barH = 8;
+        final int barW = panelW - 2 * padding;
+        final int barX = panelX + padding;
+        final int barY = this.height - 40 - barH - 4;
+
+        String line1;
+        String line2;
+
+        int total;
+        int progressed;
+
+        if (showUpload) {
+            // ---- UPLOAD MODE ----
+            int cardsTotal = Math.max(1, uploadTotalCards);
+            int cardsDone = Math.max(0, Math.min(uploadCardsSent, cardsTotal));
+
+            line1 = "Creating cards: " + cardsDone + "/" + uploadTotalCards;
+            if (uploadsRunning) {
+                String eta = uploadEtaText();
+                line2 = eta.isEmpty() ? "Please keep screen open" : ("Please keep screen open • " + eta);
+            } else {
+                line2 = uploadLine2;
+            }
+
+            total = Math.max(1, uploadTotalJobs);
+            progressed = Math.max(0, Math.min(uploadJobsSent, total));
+        } else if (showXml) {
+            // ---- XML MODE (your existing behavior) ----
+            total = Math.max(1, xmlImportFound);
+            progressed = Math.max(0, Math.min(xmlImportDone + xmlImportFailed, total));
+
+            line1 = "Total imported: " + progressed + "/" + (xmlImportFound == 0 ? "?" : String.valueOf(xmlImportFound))
+                    + " (failed " + xmlImportFailed + ")";
+            line2 = xmlImportInProgress ? xmlImportPhase
+                    : (progressed >= total ? "Downloaded all images." : (xmlImportPhase == null ? "" : xmlImportPhase));
+        } else {
+            // ---- MANUAL MODE ----
+            total = Math.max(1, manualFound);
+            progressed = Math.max(0, Math.min(manualDone + manualFailed, total));
+
+            line1 = "Imported images: " + progressed + "/" + manualFound
+                    + (manualFailed > 0 ? (" (failed " + manualFailed + ")") : "");
+            line2 = manualImportRunning ? manualPhase
+                    : (progressed >= total ? "Imported all dropped images." : (manualPhase == null ? "" : manualPhase));
+
+            // If finished, you can auto-hide after completion, or keep it until next drop:
+            if (!manualImportRunning && progressed >= total) {
+                // keep visible but stable:
+                manualUiActive = true;
+                // OR if you want it to disappear:
+                // manualUiActive = false;
+            }
+        }
+
+        double pct = progressed / (double) total;
+        int fillW = (int) Math.round(barW * pct);
+
+        int lh = this.textRenderer.fontHeight;
+        int textX = panelX + padding;
+        int textY = barY - 2 - (2 * lh);
+
+        // Draw line 1 (wrapped to panel width if needed, first line only)
+        int textMaxW = barW;
+        var wrapped1 = this.textRenderer.wrapLines(Text.literal(line1), textMaxW);
+        if (!wrapped1.isEmpty()) {
+            ctx.drawText(this.textRenderer, wrapped1.get(0), textX, textY, UI_YELLOW, false);
+        } else {
+            ctx.drawText(this.textRenderer, line1, textX, textY, UI_YELLOW, false);
+        }
+
+        // Draw line 2
+        ctx.drawText(this.textRenderer, line2 == null ? "" : line2, textX, textY + lh, UI_YELLOW, false);
+
+        // Bar bg + fill
+        ctx.fill(barX - 1, barY - 1, barX + barW + 1, barY + barH + 1, PROG_BORDER);
+        ctx.fill(barX, barY, barX + barW, barY + barH, PROG_BG);
+
+        int fillColor = (progressed >= total) ? PROG_DONE : PROG_FILL;
+        if (fillW > 0) ctx.fill(barX, barY, barX + fillW, barY + barH, fillColor);
+    }
+
+
+    // ---- Input ----
+    @Override
+    public boolean mouseClicked(Click click, boolean bl) {
+        double mx = click.x();
+        double my = click.y();
+
+        // 1) Scrollbar first
+        if (hitScrollbar(mx, my)) {
+            startDragScrollbar((int) my);
+            return true;
+        }
+
+        // 2) Give UI widgets priority
+        if (super.mouseClicked(click, bl)) return true;
+
+        // 3) Only allow grid selection inside the visible grid "window"
+        final int gridX1 = 10;
+        final int gridY1 = GRID_TOP;
+        final int gridX2 = panelX - 12;
+        final int gridY2 = this.height - 40;
+
+        if (mx < gridX1 || mx > gridX2 || my < gridY1 || my > gridY2) {
+            return false; // click outside grid viewport
+        }
+
+        final int maxX = panelX - 12;
+        int usableW = maxX - 10;
+        int cols = Math.max(1, (usableW + GAP) / (BOX + GAP));
+        int x0 = 10;
+        int y0 = GRID_TOP - scrollY;
+
+        for (int i = 0; i < entries.size(); i++) {
+            int col = i % cols;
+            int row = i / cols;
+            int x = x0 + col * (BOX + GAP);
+            int y = y0 + row * (BOX_H + GAP);
+            if (mx >= x && mx <= x + BOX && my >= y && my <= y + BOX_H) {
+                // If we're in link mode and clicked a partner, perform link instead of reselecting
+                if (linkPendingMode != LinkMode.NONE && selected >= 0 && i != selected) {
+                    boolean asFront = (linkPendingMode == LinkMode.LINK_AS_FRONT);
+                    linkWith(selected, i, asFront);
+                    toast("Linked " + safeName(entries.get(selected)) + " (" + (asFront ? "FRONT" : "BACK")
+                            + ") ↔ " + safeName(entries.get(i)) + " (" + (asFront ? "BACK" : "FRONT") + ")");
+                    linkPendingMode = LinkMode.NONE;
+                    syncEditorFromSelected();
+                    return true;
+                }
+                // Normal selection
+                selected = i;
+                syncEditorFromSelected();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String safeName(Entry e) {
+        if (e == null) return "card";
+        String n = nz(e.meta.name);
+        return n.isEmpty() ? nz(e.fileName) : n;
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
+        // Give the Oracle text area first right of refusal
+        if (textF != null && textF.isMouseOver(mouseX, mouseY) && textF.mouseScrolled(mouseX, mouseY, horizontal, vertical)) {
+            return true;
+        }
+        int old = scrollY;
+        scrollY -= (int)(vertical * 24);
+        clampScroll();
+        return (scrollY != old) || super.mouseScrolled(mouseX, mouseY, horizontal, vertical);
+    }
+
+    @Override
+    public boolean mouseDragged(Click click, double dx, double dy) {
+        if (barDragging) {
+            dragScrollbarTo((int) click.y());
+            return true;
+        }
+        return super.mouseDragged(click, dx, dy);
+    }
+
+    @Override
+    public boolean mouseReleased(Click click) {
+        barDragging = false;
+        return super.mouseReleased(click);
+    }
+
+    private void updateMaxScroll() {
+        final int maxX = panelX - 12;
+        int usableW = maxX - 10;
+        int cols = Math.max(1, (usableW + GAP) / (BOX + GAP));
+        int rows = (int)Math.ceil(entries.size() / (double)cols);
+        int contentH = rows * (BOX_H + GAP);
+        int viewportH = this.height - GRID_TOP - 12;
+        maxScrollY = Math.max(0, contentH - viewportH);
+        clampScroll();
+    }
+    private void clampScroll() { if (scrollY < 0) scrollY = 0; if (scrollY > maxScrollY) scrollY = maxScrollY; }
+
+    /** Vanilla may call this; forward to our handler. */
+    @Override
+    public void onFilesDropped(List<Path> paths) {
+        handleFileDrop(paths);
+    }
+
+    /** Preferred entry point (wired from GLFW drop callback in MtgcardClient). */
+    public void handleFileDrop(List<Path> paths) {
+        if (paths == null || paths.isEmpty()) {
+            lastStatus = "No files dropped.";
+            return;
+        }
+
+        // ---- RESET cancel state so new drops work ----
+        cancelRequested = false;
+        xmlCancel.set(false);
+        manualUiActive = false;
+        uploadUiActive = false;
+
+        uploadTotalCards = uploadCardsSent = 0;
+        uploadTotalJobs = uploadJobsSent = 0;
+        uploadLine2 = "";
+
+        // reset manual pump state too (safe)
+        manualImportRunning = false;
+        manualInFlight = false;
+        manualImportCooldownTicks = 0;
+
+        // (optional) reset progress counters for this batch
+        manualFound = 0;
+        manualDone = 0;
+        manualFailed = 0;
+        manualPhase = "";
+
+        List<Path> imagePaths = new ArrayList<>();
+        List<String> xmlStrings = new ArrayList<>();
+        int metaApplied = 0;
+        int errors = 0;
+
+        // Pass 1: classify + parse XML metadata (fast)
+        for (Path p : paths) {
+            String name = p.getFileName().toString();
+            String lower = name.toLowerCase(Locale.ROOT);
+
+            try {
+                if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp")) {
+                    imagePaths.add(p);
+                } else if (lower.endsWith(".xml")) {
+                    var xml = Files.readString(p);
+                    var parsed = Cockatrice.parse(xml);
+                    cockatriceByName.putAll(parsed);
+                    metaApplied++;
+                    xmlStrings.add(xml);
+                }
+            } catch (Throwable ex) {
+                errors++;
+                toast("Failed: " + name + " (" + ex.getClass().getSimpleName() + ")");
+            }
+        }
+
+        // Start XML imports (these will stream in one-by-one already)
+        for (String xml : xmlStrings) {
+            try {
+                importCockatriceXmlWithImagesAsync(xml);
+            } catch (Throwable t) {
+                errors++;
+                toast("XML import failed (" + t.getClass().getSimpleName() + ")");
+            }
+        }
+
+        // Apply metadata to existing entries if XML included
+        if (metaApplied > 0 && !entries.isEmpty()) {
+            applyCockatriceTo(entries);
+        }
+
+        // Queue manual images to be imported one-by-one
+        if (!imagePaths.isEmpty()) {
+            manualImageQueue.addAll(imagePaths);
+            manualFound += imagePaths.size();
+            manualImportRunning = true;
+            manualPhase = "Queued " + imagePaths.size() + " image(s)...";
+            manualUiActive = true;
+        }
+
+        // Status
+        StringBuilder sb = new StringBuilder();
+        if (!imagePaths.isEmpty()) sb.append("Queued ").append(imagePaths.size()).append(" image(s). ");
+        if (metaApplied > 0) sb.append("Applied metadata from ").append(metaApplied).append(" XML(s). ");
+        if (errors > 0) sb.append(errors).append(" file(s) failed.");
+        lastStatus = sb.toString();
+
+        // NOTE: tryUploadNewEntries(order) removed because we're no longer building `order` eagerly.
+        // If you still want per-image upload, we can enqueue uploads from inside importOneDroppedImageAsync() once each image lands.
+    }
+
+
+    private void importOneDroppedImageAsync(Path p) {
+        if (p == null || cancelRequested) return;
+
+        final String name = p.getFileName().toString();
+        final String lowerName = name.toLowerCase(Locale.ROOT);
+
+        java.util.concurrent.CompletableFuture
+                .supplyAsync(() -> {
+                    try {
+                        byte[] raw = Files.readAllBytes(p);
+                        EncodedImage enc = preferWebpElsePng(raw, lowerName);
+                        return enc;
+                    } catch (Throwable t) {
+                        throw new RuntimeException(t);
+                    }
+                })
+                .whenComplete((enc, err) -> {
+                    if (cancelRequested) {
+                        manualInFlight = false;
+                        return;
+                    }
+
+                    if (err != null || enc == null) {
+                        manualFailed++;
+                        manualPhase = "Manual import failed " + manualFailed;
+                        manualInFlight = false;
+                        manualImportCooldownTicks = 1;
+                        return;
+                    }
+
+                    // Compute base/isBack OFF THREAD (safe)
+                    String stem = stripExt(lowerName);
+
+                    boolean isBack =
+                            stem.endsWith("_f1") || stem.endsWith("_back") ||
+                                    stem.endsWith("_b")  || stem.endsWith("_rear");
+
+                    String base = stem;
+                    if (stem.endsWith("_f1"))    base = stem.substring(0, stem.length() - 3);
+                    if (stem.endsWith("_f0"))    base = stem.substring(0, stem.length() - 3);
+                    if (stem.endsWith("_back"))  base = stem.substring(0, stem.length() - 5);
+                    if (stem.endsWith("_front")) base = stem.substring(0, stem.length() - 6);
+                    if (stem.endsWith("_rear"))  base = stem.substring(0, stem.length() - 5);
+                    if (stem.endsWith("_b"))     base = stem.substring(0, stem.length() - 2);
+
+                    final String finalBase = base;
+                    final boolean finalIsBack = isBack;
+                    final byte[] finalBytes = enc.bytes;
+                    final String finalExt = enc.ext;
+
+                    if (this.client == null) {
+                        manualInFlight = false;
+                        manualImportCooldownTicks = 1;
+                        return;
+                    }
+
+                    // ✅ Do ALL UI mutations + texture work on client thread
+                    this.client.execute(() -> {
+                        try {
+                            if (cancelRequested) return;
+
+                            Entry existing = findEntryByBase(finalBase);
+
+                            if (existing == null) {
+                                Entry e = new Entry();
+                                e.fileName = finalBase + finalExt;
+
+                                // store dropped face
+                                if (finalIsBack) {
+                                    // if back arrives first, keep as front for now (your old behavior)
+                                    e.imgFront = finalBytes;
+                                    e.imgBack = null;
+                                    e.meta.doubleFaced = false;
+                                } else {
+                                    e.imgFront = finalBytes;
+                                    e.imgBack = null;
+                                    e.meta.doubleFaced = false;
+                                }
+
+                                e.meta.name = prettyBaseName(finalBase);
+                                applyCockatriceToEntry(e);
+
+                                buildThumbnail(e);       // ✅ safe now
+                                entries.add(e);
+
+                                lastStatus = "Imported: " + name;
+                            } else {
+                                if (finalIsBack) {
+                                    existing.imgBack = finalBytes;
+                                    existing.meta.doubleFaced = true;
+                                } else {
+                                    existing.imgFront = finalBytes;
+                                }
+
+                                applyCockatriceToEntry(existing);
+                                buildThumbnail(existing); // ✅ safe now
+                                lastStatus = "Updated: " + name;
+                            }
+
+                            manualDone++;
+                            manualPhase = "Manual import " + manualDone + "/" + manualFound
+                                    + (manualFailed > 0 ? (" (failed " + manualFailed + ")") : "");
+
+                            updateMaxScroll();
+                            if (selected < 0 && !entries.isEmpty()) {
+                                selected = entries.size() - 1;
+                                syncEditorFromSelected();
+                            }
+                        } finally {
+                            manualInFlight = false;
+                            manualImportCooldownTicks = 1;
+                        }
+                    });
+                });
+    }
+
+
+    private Entry findEntryByBase(String base) {
+        if (base == null || base.isEmpty()) return null;
+        for (Entry e : entries) {
+            if (e == null) continue;
+            // we stored fileName like "base.ext"
+            if (e.fileName != null && stripExt(e.fileName.toLowerCase(Locale.ROOT)).equals(base)) {
+                return e;
+            }
+        }
+        return null;
+    }
+
+    private void tryUploadNewEntries(List<String> orderKeys) {
+        if (orderKeys == null || orderKeys.isEmpty()) return;
+        // hook for optional per-image upload
+    }
+
+    // ---- Editor ----
+    private void buildEditorWidgets() {
+        int sx = panelX;
+        int sy = 34;
+        int w  = panelW - 20; // padding inside panel
+        int h = 16, pad = 4;
+
+        nameF = addField(sx, sy, w, h, "Name", v -> withSel(e -> e.meta.name = v)); sy += h + pad;
+        manaF = addField(sx, sy, w, h, "Mana Cost", v -> withSel(e -> e.meta.manaCost = v)); sy += h + pad;
+        typeF = addField(sx, sy, w, h, "Type Line", v -> withSel(e -> e.meta.typeLine = v)); sy += h + pad;
+        setF  = addField(sx, sy, w, h, "Set", v -> withSel(e -> e.meta.set = v)); sy += h + pad;
+
+        rarityBtn = ButtonWidget.builder(Text.literal("Rarity: common"), b -> {
+            withSel(e -> { e.meta.rarity = nextRarity(e.meta.rarity); rarityBtn.setMessage(Text.literal("Rarity: " + e.meta.rarity)); });
+        }).dimensions(sx, sy, (w/2)-5, h).build();
+        addDrawableChild(rarityBtn);
+
+        dfcToggleBtn = ButtonWidget.builder(Text.literal("Single Face"), b -> {
+            withSel(e -> {
+                e.meta.doubleFaced = !e.meta.doubleFaced;
+                dfcToggleBtn.setMessage(Text.literal(e.meta.doubleFaced ? "Double-Faced" : "Single Face"));
+                updateLinkButtonsVisibility();
+            });
+        }).dimensions(sx + (w/2)+5, sy, (w/2)-5, h).build();
+
+        addDrawableChild(dfcToggleBtn);
+        sy += h + pad;
+
+        // Oracle Text -> multiline area (custom)
+        int oracleH = 90;
+        textF = new SimpleTextArea(sx, sy, w, oracleH, Text.literal("Oracle Text"));
+        textF.setPlaceholder("Oracle Text");
+        textF.setMaxLength(1_000_000);
+        textF.setChangedListener(v -> withSel(e -> e.meta.oracleText = v));
+        addDrawableChild(textF);
+        sy += oracleH + pad;
+
+        // 3-up line
+        int col = (w - 2*10) / 3;
+        powF  = addField(sx,              sy, col, h, "Power",     v -> withSel(e -> e.meta.power = v));
+        touF  = addField(sx + col + 10,   sy, col, h, "Toughness", v -> withSel(e -> e.meta.toughness = v));
+        loyF  = addField(sx + 2*(col+10), sy, col, h, "Loyalty",   v -> withSel(e -> e.meta.loyalty = v));
+    }
+
+    private TextFieldWidget addField(int x, int y, int w, int h, String placeholder, Consumer<String> onChange) {
+        TextFieldWidget tf = new TextFieldWidget(this.textRenderer, x, y, w, h, Text.literal(placeholder));
+        tf.setPlaceholder(Text.literal(placeholder));
+        tf.setChangedListener(onChange);
+        tf.setMaxLength(1_000_000); // uncap
+        addDrawableChild(tf);
+        return tf;
+    }
+
+    private static String nz(String s) { return s == null ? "" : s; }
+    private void withSel(Consumer<Entry> c) { if (selected >= 0 && selected < entries.size()) c.accept(entries.get(selected)); }
+    private static String nextRarity(String r) {
+        String[] rs = {"common","uncommon","rare","mythic"};
+        int i = 0; for (int k = 0; k < rs.length; k++) if (rs[k].equalsIgnoreCase(r)) { i = k; break; }
+        return rs[(i + 1) % rs.length];
+    }
+
+    // ---- Thumbnails ----
+    private void buildThumbnail(Entry e) {
+        try {
+            BufferedImage src = null;
+            try (var bais = new ByteArrayInputStream(e.imgFront)) {
+                src = ImageIO.read(bais);
+            } catch (Throwable t) {
+                t.printStackTrace();
+            }
+
+            if (src == null) {
+                try (InputStream is = new ByteArrayInputStream(e.imgFront)) {
+                    NativeImage ni = NativeImage.read(is);
+                    try {
+                        int w = ni.getWidth(), h = ni.getHeight();
+                        BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+                        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+                            int abgr = ni.getColorArgb(x, y);
+                            int a = (abgr >>> 24) & 0xFF;
+                            int b = (abgr >>> 16) & 0xFF;
+                            int g = (abgr >>> 8) & 0xFF;
+                            int r = (abgr) & 0xFF;
+                            out.setRGB(x, y, (a<<24) | (r<<16) | (g<<8) | b);
+                        }
+                        src = out;
+                    } finally { ni.close(); }
+                } catch (Throwable t) {
+                    return; // still can't decode
+                }
+            }
+
+            // On-screen size (unchanged)
+            int drawW = BOX - 4;
+            int drawH = BOX_H - 4;
+
+            // Texture resolution (higher)
+            int tw = Math.max(1, drawW * THUMB_SCALE);
+            int th = Math.max(1, drawH * THUMB_SCALE);
+
+            // progressive downscale to avoid aliasing
+            BufferedImage work = src;
+            while (work.getWidth() > tw * 2 || work.getHeight() > th * 2) {
+                int nw = Math.max(tw * 2, work.getWidth() / 2);
+                int nh = Math.max(th * 2, work.getHeight() / 2);
+                BufferedImage tmp = new BufferedImage(nw, nh, BufferedImage.TYPE_INT_ARGB);
+                var g2 = tmp.createGraphics();
+                try {
+                    g2.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+                            java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                    g2.drawImage(work, 0, 0, nw, nh, null);
+                } finally {
+                    g2.dispose();
+                }
+                work = tmp;
+            }
+
+            // Fit whole image into texture, centered (no cropping)
+            BufferedImage thumbBI = new BufferedImage(tw, th, BufferedImage.TYPE_INT_ARGB);
+            var g = thumbBI.createGraphics();
+            try {
+                g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+                        java.awt.RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+                        java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+                g.setRenderingHint(java.awt.RenderingHints.KEY_RENDERING,
+                        java.awt.RenderingHints.VALUE_RENDER_QUALITY);
+
+                double sx = (double) tw / work.getWidth();
+                double sy = (double) th / work.getHeight();
+                double s = Math.min(sx, sy);
+                int w = Math.max(1, (int) Math.round(work.getWidth() * s));
+                int h = Math.max(1, (int) Math.round(work.getHeight() * s));
+                int ox = (tw - w) / 2;
+                int oy = (th - h) / 2;
+
+                g.drawImage(work, ox, oy, ox + w, oy + h, 0, 0, work.getWidth(), work.getHeight(), null);
+            } finally {
+                g.dispose();
+            }
+
+            // mild sharpening helps when downsampling on GPU
+            thumbBI = unsharpMask(thumbBI, 0.5f);
+
+            NativeImage thumb = new NativeImage(NativeImage.Format.RGBA, tw, th, true);
+            int[] argb = thumbBI.getRGB(0, 0, tw, th, null, 0, tw);
+            for (int yy = 0; yy < th; yy++) {
+                int row = yy * tw;
+                for (int xx = 0; xx < tw; xx++) {
+                    int c = argb[row + xx];
+                    int a = (c >>> 24) & 0xFF;
+                    int r = (c >>> 16) & 0xFF;
+                    int g2 = (c >>> 8) & 0xFF;
+                    int b = c & 0xFF;
+                    int abgr = (a << 24) | (b << 16) | (g2 << 8) | r;
+                    thumb.setColor(xx, yy, abgr);
+                }
+            }
+
+            // destroy old texture if rebuilding
+            if (client != null) {
+                var tm = client.getTextureManager();
+                if (e.thumbId != null) tm.destroyTexture(e.thumbId);
+                if (e.thumbTex != null) e.thumbTex.close();
+            }
+
+            var tex = new NativeImageBackedTexture(() -> "mtgcard/thumb", thumb);
+            var id = Identifier.of("mtgcard", "thumb/" + UUID.randomUUID());
+            if (client != null) client.getTextureManager().registerTexture(id, tex);
+
+            e.thumbId = id;
+            e.thumbTex = tex;
+            e.thumbW = tw;
+            e.thumbH = th;
+        } catch (Throwable ignore) {}
+    }
+
+    // ---- Hover preview texture (lazy) ----
+    private void ensurePreviewTexture(Entry e, boolean wantBackFace) {
+        try {
+            if (e == null) return;
+
+            // If already built, done.
+            if (e.previewId != null && e.previewTex != null) return;
+
+            byte[] srcBytes = wantBackFace && e.imgBack != null && e.imgBack.length > 0 ? e.imgBack : e.imgFront;
+            if (srcBytes == null || srcBytes.length == 0) return;
+
+            BufferedImage src;
+            try (var bais = new ByteArrayInputStream(srcBytes)) {
+                src = ImageIO.read(bais);
+            }
+            if (src == null) return;
+
+            int tw = PREVIEW_TEX_W;
+            int th = PREVIEW_TEX_H;
+
+            // Progressive downscale if huge (keeps text crisp)
+            BufferedImage work = src;
+            while (work.getWidth() > tw * 2 || work.getHeight() > th * 2) {
+                int nw = Math.max(tw * 2, work.getWidth() / 2);
+                int nh = Math.max(th * 2, work.getHeight() / 2);
+                BufferedImage tmp = new BufferedImage(nw, nh, BufferedImage.TYPE_INT_ARGB);
+                var g2 = tmp.createGraphics();
+                try {
+                    g2.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                    g2.drawImage(work, 0, 0, nw, nh, null);
+                } finally { g2.dispose(); }
+                work = tmp;
+            }
+
+            BufferedImage out = new BufferedImage(tw, th, BufferedImage.TYPE_INT_ARGB);
+            var g = out.createGraphics();
+            try {
+                g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+                g.setRenderingHint(java.awt.RenderingHints.KEY_RENDERING, java.awt.RenderingHints.VALUE_RENDER_QUALITY);
+
+                double sx = (double) tw / work.getWidth();
+                double sy = (double) th / work.getHeight();
+                double s = Math.min(sx, sy);
+                int w = Math.max(1, (int) Math.round(work.getWidth() * s));
+                int h = Math.max(1, (int) Math.round(work.getHeight() * s));
+                int ox = (tw - w) / 2, oy = (th - h) / 2;
+
+                g.drawImage(work, ox, oy, ox + w, oy + h, 0, 0, work.getWidth(), work.getHeight(), null);
+            } finally { g.dispose(); }
+
+            // Slight sharpen for UI readability (optional but helps)
+            out = unsharpMask(out, 0.35f);
+
+            NativeImage ni = new NativeImage(NativeImage.Format.RGBA, tw, th, true);
+            int[] argb = out.getRGB(0, 0, tw, th, null, 0, tw);
+            for (int yy = 0; yy < th; yy++) {
+                int row = yy * tw;
+                for (int xx = 0; xx < tw; xx++) {
+                    int c = argb[row + xx];
+                    int a = (c >>> 24) & 0xFF;
+                    int r = (c >>> 16) & 0xFF;
+                    int g2 = (c >>> 8)  & 0xFF;
+                    int b =  c         & 0xFF;
+                    int abgr = (a << 24) | (b << 16) | (g2 << 8) | r;
+                    ni.setColor(xx, yy, abgr);
+                }
+            }
+
+            var tex = new NativeImageBackedTexture(() -> "mtgcard/preview", ni);
+            var id  = Identifier.of("mtgcard", "preview/" + UUID.randomUUID());
+
+            if (client != null) client.getTextureManager().registerTexture(id, tex);
+            e.previewId = id;
+            e.previewTex = tex;
+        } catch (Throwable ignored) {}
+    }
+
+    private void drawHoverPreview(DrawContext ctx, int mouseX, int mouseY) {
+        if (hoveredIndex < 0 || hoveredIndex >= entries.size()) return;
+        Entry e = entries.get(hoveredIndex);
+
+        // Optional: hold SHIFT to preview back face if present
+        boolean wantBack = e.meta.doubleFaced && e.imgBack != null && e.imgBack.length > 0 && isShiftDown();
+
+        // Build preview texture lazily
+        ensurePreviewTexture(e, wantBack);
+        if (e.previewId == null) return;
+
+        // Position near the hovered thumbnail (prefer right side, otherwise left)
+        int pad = 8;
+        int w = PREVIEW_DRAW_W;
+        int h = PREVIEW_DRAW_H;
+
+        int x = hoveredThumbX + BOX + pad;
+        int y = hoveredThumbY;
+
+        // If it would overlap the right edit panel, flip to the left
+        if (x + w + 10 > panelX - 8) {
+            x = hoveredThumbX - w - pad;
+        }
+
+        // Clamp to screen
+        x = Math.max(10, Math.min(x, this.width - w - 10));
+        y = Math.max(28, Math.min(y, this.height - h - 50));
+
+        // Backplate + border
+        ctx.fill(x - 3, y - 3, x + w + 3, y + h + 3, 0xCC000000);
+        ctx.fill(x - 2, y - 2, x + w + 2, y + h + 2, 0xFF303030);
+        ctx.fill(x - 1, y - 1, x + w + 1, y + h + 1, 0xFF000000);
+
+        // Draw preview
+        ctx.drawTexture(RenderPipelines.GUI_TEXTURED, e.previewId, x, y, 0f, 0f, w, h, PREVIEW_TEX_W, PREVIEW_TEX_H);
+
+        // Small label (name)
+        String label = (e.meta.name == null || e.meta.name.isEmpty()) ? e.fileName : e.meta.name;
+        int tw = this.textRenderer.getWidth(label);
+        int lx = x + 6;
+        int ly = y + h + 6;
+        if (ly + this.textRenderer.fontHeight + 6 < this.height - 40) {
+            ctx.fill(x - 1, ly - 3, Math.min(x + w + 1, lx + Math.min(tw, w - 12) + 10), ly + this.textRenderer.fontHeight + 3, 0xAA000000);
+            ctx.drawText(this.textRenderer, label, lx, ly, 0xFFEFEFEF, false);
+        }
+    }
+    private static final int ART_CHUNK_SIZE = 128 * 1024;
+
+    private void enqueueArtUpload(String artKey, byte[] bytes) {
+        if (artKey == null || artKey.isEmpty()) return;
+        if (bytes == null || bytes.length == 0) return;
+
+        final String uploadId = UUID.randomUUID().toString();
+
+        // server expects "png"/"webp"/"jpg" (no dot)
+        String extTmp = sniffExt(bytes);
+        if (extTmp.startsWith(".")) extTmp = extTmp.substring(1);
+        final String ext = extTmp; // ✅ now effectively final for lambdas
+
+        final int totalBytes = bytes.length;
+        final int chunkSize = ART_CHUNK_SIZE;
+        final int totalChunks = (int) Math.ceil(totalBytes / (double) chunkSize);
+
+        enqueueUpload(() -> ClientPlayNetworking.send(
+                new CustomCardPackets.CustomArtBegin(uploadId, artKey, ext, totalBytes, chunkSize, totalChunks)
+        ));
+
+        for (int i = 0; i < totalChunks; i++) {
+            int from = i * chunkSize;
+            int to = Math.min(totalBytes, from + chunkSize);
+            final byte[] slice = Arrays.copyOfRange(bytes, from, to);
+            final int idx = i;
+
+            enqueueUpload(() -> ClientPlayNetworking.send(
+                    new CustomCardPackets.CustomArtChunk(uploadId, idx, slice)
+            ));
+        }
+
+        enqueueUpload(() -> ClientPlayNetworking.send(
+                new CustomCardPackets.CustomArtFinish(uploadId)
+        ));
+    }
+
+
+    private static String newArtKey(String prefix) {
+        // Keep it filesystem-friendly
+        return prefix + "_" + UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private static BufferedImage unsharpMask(BufferedImage src, float amount) {
+        amount = Math.max(0f, Math.min(1.5f, amount));
+        int w = src.getWidth(), h = src.getHeight();
+
+        float[] k = {
+                1f/16f, 2f/16f, 1f/16f,
+                2f/16f, 4f/16f, 2f/16f,
+                1f/16f, 2f/16f, 1f/16f
+        };
+        var kernel = new java.awt.image.Kernel(3, 3, k);
+        var op = new java.awt.image.ConvolveOp(kernel, java.awt.image.ConvolveOp.EDGE_NO_OP, null);
+
+        BufferedImage blur = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        op.filter(src, blur);
+
+        int[] a = new int[w*h];
+        int[] b = new int[w*h];
+        src.getRGB(0, 0, w, h, a, 0, w);
+        blur.getRGB(0, 0, w, h, b, 0, w);
+
+        for (int i = 0; i < a.length; i++) {
+            int ca = a[i], cb = b[i];
+            int Aa = (ca >>> 24) & 0xFF;
+            int Ra = (ca >>> 16) & 0xFF, Ga = (ca >>> 8) & 0xFF, Ba = ca & 0xFF;
+            int Rb = (cb >>> 16) & 0xFF, Gb = (cb >>> 8) & 0xFF, Bb = cb & 0xFF;
+
+            int R = clamp255((int)Math.round(Ra + amount * (Ra - Rb)));
+            int G = clamp255((int)Math.round(Ga + amount * (Ga - Gb)));
+            int B = clamp255((int)Math.round(Ba + amount * (Ba - Bb)));
+
+            a[i] = (Aa << 24) | (R << 16) | (G << 8) | B;
+        }
+
+        BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        out.setRGB(0, 0, w, h, a, 0, w);
+        return out;
+    }
+    private static int clamp255(int v) { return v < 0 ? 0 : (v > 255 ? 255 : v); }
+
+    // ---- Cockatrice mapping ----
+    private static String prettyBaseName(String base) {
+        String b = base;
+        if (b.endsWith("_f0")) b = b.substring(0, b.length()-3);
+        if (b.endsWith("_front")) b = b.substring(0, b.length()-6);
+        return Arrays.stream(b.split("[ _\\-]"))
+                .filter(s -> !s.isEmpty())
+                .map(s -> s.substring(0,1).toUpperCase(Locale.ROOT) + s.substring(1))
+                .reduce((a,b2) -> a + " " + b2).orElse(b);
+    }
+
+    private void applyCockatriceTo(List<Entry> list) {
+        for (var e : list) applyCockatriceToEntry(e);
+        syncEditorFromSelected();
+    }
+    private void applyCockatriceToEntry(Entry e) {
+        if (e == null) return;
+        String guess = e.meta.name.isEmpty()
+                ? prettyBaseName(e.fileName.replace(".webp",""))
+                : e.meta.name;
+        var m = cockatriceByName.get(guess.toLowerCase(Locale.ROOT));
+        if (m == null) return;
+
+        if (!m.name.isEmpty())       e.meta.name = m.name;
+        if (!m.manaCost.isEmpty())   e.meta.manaCost = m.manaCost;
+        if (!m.typeLine.isEmpty())   e.meta.typeLine = m.typeLine;
+        if (!m.rarity.isEmpty())     e.meta.rarity = m.rarity;
+        if (!m.set.isEmpty())        e.meta.set = m.set;
+        if (!m.oracleText.isEmpty()) e.meta.oracleText = m.oracleText;
+        if (!m.power.isEmpty())      e.meta.power = m.power;
+        if (!m.toughness.isEmpty())  e.meta.toughness = m.toughness;
+        if (!m.loyalty.isEmpty())    e.meta.loyalty = m.loyalty;
+    }
+
+    // ---- Send ----
+    private void sendToServer() {
+        if (entries.isEmpty()) { toast("Nothing to send."); return; }
+        if (uploadsRunning) { toast("Already uploading..."); return; }
+
+        cancelRequested = false;
+        netSent = 0;
+        netPhase = "Queued uploads...";
+
+        final int CREATE_BATCH_SIZE = 75; // try 50–150
+        List<CustomCardPackets.BatchEntry> batch = new ArrayList<>(CREATE_BATCH_SIZE);
+        int queuedCards = 0;
+
+        for (int i = 0; i < entries.size(); i++) {
+            Entry frontEntry = entries.get(i);
+            if (frontEntry == null) continue;
+
+            // Skip entries that are explicitly the BACK half of a linked pair
+            if (frontEntry.link != null && frontEntry.link.partnerIndex >= 0 && !frontEntry.link.isFront) {
+                continue;
+            }
+
+            boolean isLinked = (frontEntry.link != null && frontEntry.link.partnerIndex >= 0);
+            Entry linkedPartner = null;
+            if (isLinked) {
+                int pi = frontEntry.link.partnerIndex;
+                if (pi >= 0 && pi < entries.size()) linkedPartner = entries.get(pi);
+            }
+
+            boolean df = frontEntry.meta.doubleFaced || isLinked;
+
+            // ---- Resolve front bytes ----
+            byte[] frontBytes = frontEntry.imgFront;
+            if (frontBytes == null || frontBytes.length == 0) {
+                // no usable front image -> skip
+                continue;
+            }
+
+            // ---- Resolve back bytes + back meta ----
+            byte[] backBytes = null;
+
+            String backName       = nz(frontEntry.meta.backName);
+            String backTypeLine   = nz(frontEntry.meta.backTypeLine);
+            String backOracleText = nz(frontEntry.meta.backOracleText);
+            String backPower      = nz(frontEntry.meta.backPower);
+            String backToughness  = nz(frontEntry.meta.backToughness);
+            String backLoyalty    = nz(frontEntry.meta.backLoyalty);
+
+            // Prefer explicit imgBack on the FRONT entry
+            if (df && frontEntry.imgBack != null && frontEntry.imgBack.length > 0) {
+                backBytes = frontEntry.imgBack;
+            }
+
+            // If linked, the partner entry’s front image is the back face art
+            if (df && (backBytes == null || backBytes.length == 0) && linkedPartner != null) {
+                if (linkedPartner.imgFront != null && linkedPartner.imgFront.length > 0) {
+                    backBytes = linkedPartner.imgFront;
+                }
+
+                // Fill missing back meta from partner if needed
+                if (backName.isEmpty())       backName       = nz(linkedPartner.meta.name);
+                if (backTypeLine.isEmpty())   backTypeLine   = nz(linkedPartner.meta.typeLine);
+                if (backOracleText.isEmpty()) backOracleText = nz(linkedPartner.meta.oracleText);
+                if (backPower.isEmpty())      backPower      = nz(linkedPartner.meta.power);
+                if (backToughness.isEmpty())  backToughness  = nz(linkedPartner.meta.toughness);
+                if (backLoyalty.isEmpty())    backLoyalty    = nz(linkedPartner.meta.loyalty);
+            }
+
+            // If df but still no back bytes, treat as single-faced
+            if (df && (backBytes == null || backBytes.length == 0)) {
+                df = false;
+            }
+
+            // ✅ Stable custom id + stable art keys
+            String customId = UUID.randomUUID().toString().replace("-", "");
+            String frontKey = customId + "_f0";
+            String backKey  = (df ? customId + "_f1" : "");
+
+            // 1) Upload art first (chunked)
+            enqueueArtUpload(frontKey, frontBytes);
+            if (!backKey.isEmpty()) enqueueArtUpload(backKey, backBytes);
+
+            // 2) Send batch create referencing those keys
+            //    (Assumes BatchEntry now has `id` as first param)
+            var one = new CustomCardPackets.BatchEntry(
+                    customId,
+
+                    nz(frontEntry.meta.name),
+                    nz(frontEntry.meta.manaCost),
+                    nz(frontEntry.meta.typeLine),
+                    nz(frontEntry.meta.rarity),
+                    nz(frontEntry.meta.set),
+                    nz(frontEntry.meta.oracleText),
+
+                    nz(frontEntry.meta.power),
+                    nz(frontEntry.meta.toughness),
+                    nz(frontEntry.meta.loyalty),
+
+                    df,
+
+                    nz(backName),
+                    nz(backTypeLine),
+                    nz(backOracleText),
+                    nz(backPower),
+                    nz(backToughness),
+                    nz(backLoyalty),
+
+                    frontKey,
+                    backKey
+            );
+
+            batch.add(one);
+            queuedCards++;
+
+            if (batch.size() >= CREATE_BATCH_SIZE) {
+                List<CustomCardPackets.BatchEntry> toSend = List.copyOf(batch);
+                enqueueUpload(() -> ClientPlayNetworking.send(
+                        new CustomCardPackets.CustomBatchCreate(toSend)
+                ), toSend.size()); // cardsCreated
+                batch.clear();
+            }
+        }
+
+        if (!batch.isEmpty()) {
+            List<CustomCardPackets.BatchEntry> toSend = List.copyOf(batch);
+            enqueueUpload(() -> ClientPlayNetworking.send(
+                    new CustomCardPackets.CustomBatchCreate(toSend)
+            ), toSend.size());
+            batch.clear();
+        }
+
+        netQueued = uploadQueue.size();
+
+        // ---- Switch the right-panel progress to UPLOAD mode ----
+        uploadUiActive = true;
+        uploadTotalCards = queuedCards;
+        uploadCardsSent = 0;
+
+        uploadTotalJobs = uploadQueue.size(); // snapshot total jobs at start
+        uploadJobsSent  = 0;
+
+        uploadLine2 = "Please keep screen open";
+
+        // ---- ETA init ----
+        long now = System.currentTimeMillis();
+        uploadStartMs = now;
+        uploadLastSampleMs = now;
+        uploadLastSampleSent = 0;
+        uploadRateEma = 0.0;
+
+        if (queuedCards == 0) {
+            toast("Nothing to send (no valid front images).");
+            return;
+        }
+
+        if (createBtn != null) createBtn.active = false;
+
+        netPhase = "Uploading " + queuedCards + " card(s)...";
+        startUploadsIfNeeded();
+
+        toast("Queued " + queuedCards + " upload(s). Keep this screen open until done.");
+    }
+
+    private void toast(String s) {
+        if (client != null && client.player != null)
+            client.player.sendMessage(Text.literal(s), false);
+    }
+
+    // ---- Image helpers ----
+    private static String stripExt(String lowerName) {
+        int dot = lowerName.lastIndexOf('.');
+        return dot > 0 ? lowerName.substring(0, dot) : lowerName;
+    }
+
+    // === Cockatrice XML -> auto-add images (async, with progress + debug logs) ===
+    private void importCockatriceXmlWithImagesAsync(String xml) {
+        xmlImportInProgress = true;
+        xmlImportFound = 0; xmlImportDone = 0; xmlImportFailed = 0;
+        xmlImportPhase = "Scanning XML...";
+        System.out.println("[MTGCard/XML] Starting import...");
+
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                var dbf = javax.xml.parsers.DocumentBuilderFactory.newInstance();
+                dbf.setNamespaceAware(false);
+                dbf.setExpandEntityReferences(false);
+                var doc = dbf.newDocumentBuilder().parse(
+                        new ByteArrayInputStream(xml.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+                var cards = doc.getElementsByTagName("card");
+                if (cards == null || cards.getLength() == 0) { xmlImportPhase = "No <card> nodes"; return; }
+
+                final java.util.regex.Pattern URL_RE = java.util.regex.Pattern.compile("(https?://[^\\s\"<>]+)", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+                class Job { String name; String url; }
+                List<Job> jobs = new ArrayList<>();
+
+                for (int i = 0; i < cards.getLength(); i++) {
+                    var cardElem = (org.w3c.dom.Element) cards.item(i);
+                    String cardName = "";
+                    var nameNodes = cardElem.getElementsByTagName("name");
+                    if (nameNodes.getLength() > 0) cardName = nameNodes.item(0).getTextContent().trim();
+
+                    String cardXml;
+                    {
+                        var sw = new java.io.StringWriter();
+                        var tf = javax.xml.transform.TransformerFactory.newInstance().newTransformer();
+                        tf.setOutputProperty(javax.xml.transform.OutputKeys.OMIT_XML_DECLARATION, "yes");
+                        tf.transform(new javax.xml.transform.dom.DOMSource(cardElem),
+                                new javax.xml.transform.stream.StreamResult(sw));
+                        cardXml = sw.toString();
+                    }
+
+                    var m = URL_RE.matcher(cardXml);
+                    while (m.find()) {
+                        String u = m.group(1);
+                        String ul = u.toLowerCase(Locale.ROOT);
+                        if (ul.endsWith(".png") || ul.endsWith(".jpg") || ul.endsWith(".jpeg") || ul.endsWith(".webp")
+                                || ul.contains("/card_images/")) {
+                            synchronized (importedPicUrls) {
+                                if (!importedPicUrls.add(u)) { System.out.println("[MTGCard/XML] Skip duplicate URL: " + u); continue; }
+                            }
+                            Job j = new Job(); j.name = cardName; j.url = u; jobs.add(j);
+                            System.out.println("[MTGCard/XML] Found image URL for \"" + cardName + "\": " + u);
+                            break;
+                        }
+                    }
+                }
+
+                xmlImportFound = jobs.size();
+                xmlImportPhase = jobs.isEmpty() ? "No image URLs found" : "Downloading...";
+                if (jobs.isEmpty()) return;
+
+                var http = java.net.http.HttpClient.newBuilder().followRedirects(java.net.http.HttpClient.Redirect.NORMAL)
+                        .connectTimeout(java.time.Duration.ofSeconds(10)).build();
+
+                for (Job job : jobs) {
+                    if (xmlCancel.get() || cancelRequested) {
+                        xmlImportPhase = "Cancelled.";
+                        break;
+                    }
+                    try {
+                        System.out.println("[MTGCard/XML] Downloading: " + job.url);
+                        var req = java.net.http.HttpRequest.newBuilder(java.net.URI.create(job.url))
+                                .timeout(java.time.Duration.ofSeconds(15)).header("User-Agent", "mtgcard-mod/1.0").GET().build();
+                        var resp = http.send(req, java.net.http.HttpResponse.BodyHandlers.ofByteArray());
+                        if (resp.statusCode() / 100 != 2) { xmlImportFailed++; xmlImportPhase = "HTTP " + resp.statusCode(); continue; }
+
+                        byte[] raw = resp.body();
+                        EncodedImage enc = preferWebpElsePng(raw, inferLowerExtFromUrl(job.url));
+
+                        String fileName = (job.name == null || job.name.isEmpty() ? "card" : job.name) + enc.ext;
+
+                        ClientPlayNetworking.send(new com.spider.mtgcard.net.payload.XmlArtUploadPayload(
+                                fileName,
+                                job.url == null ? "" : job.url,
+                                enc.bytes
+                        ));
+
+                        Entry e = new Entry();
+                        e.fileName = fileName;
+                        e.imgFront = enc.bytes;
+
+                        if (job.name != null && !job.name.isEmpty()) {
+                            var meta = cockatriceByName.get(job.name.toLowerCase(Locale.ROOT));
+                            if (meta != null) {
+                                e.meta.name       = meta.name;
+                                e.meta.manaCost   = meta.manaCost;
+                                e.meta.typeLine   = meta.typeLine;
+                                e.meta.rarity     = meta.rarity.isEmpty() ? "common" : meta.rarity;
+                                e.meta.set        = meta.set.isEmpty() ? "CSTM" : meta.set;
+                                e.meta.oracleText = meta.oracleText;
+                                e.meta.power      = meta.power;
+                                e.meta.toughness  = meta.toughness;
+                                e.meta.loyalty    = meta.loyalty;
+                            } else e.meta.name = job.name;
+                        }
+
+                        Entry finalE = e;
+                        if (this.client != null) {
+                            this.client.execute(() -> {
+                                buildThumbnail(finalE);
+                                entries.add(finalE);
+
+                                boolean initSelection = (selected < 0);
+                                if (initSelection) {
+                                    selected = entries.size() - 1;
+                                    syncEditorFromSelected(); // only on first selection
+                                }
+                                updateMaxScroll();
+                            });
+                        }
+
+                        xmlImportDone++;
+                        xmlImportPhase = "Downloaded " + xmlImportDone + "/" + xmlImportFound;
+                        System.out.println("[MTGCard/XML] Added \"" + e.meta.name + "\" to grid.");
+                    } catch (Throwable t) {
+                        xmlImportFailed++;
+                        xmlImportPhase = "Failed " + xmlImportFailed;
+                        System.out.println("[MTGCard/XML] Failed: " + job.url + " (" + t + ")");
+                        t.printStackTrace();
+                    }
+                }
+            } catch (Throwable t) {
+                System.out.println("[MTGCard/XML] Import failed: " + t);
+                xmlImportPhase = "Import error";
+            }
+        }).whenComplete((v, err) -> {
+            if (this.client != null) this.client.execute(() -> {
+                xmlImportInProgress = false;
+                if (err != null) {
+                    System.out.println("[MTGCard/XML] Importer threw: " + err);
+                    toast("XML import error: " + err.getClass().getSimpleName());
+                } else {
+                    toast("XML import finished: " + xmlImportDone + "/" + xmlImportFound
+                            + (xmlImportFailed > 0 ? (" (failed " + xmlImportFailed + ")") : ""));
+                }
+            });
+        });
+    }
+
+    private static String inferLowerExtFromUrl(String url) {
+        int q = url.indexOf('?'); if (q >= 0) url = url.substring(0, q);
+        int dot = url.lastIndexOf('.'); String ext = (dot > 0) ? url.substring(dot).toLowerCase(Locale.ROOT) : "";
+        if (ext.isEmpty()) ext = ".jpg"; return ext;
+    }
+
+    // --- grid scrollbar helpers ---
+    private void drawGridScrollbar(DrawContext ctx) {
+        int trackX = panelX - 6;
+        int trackW = 4;
+        int trackY = GRID_TOP;
+        int trackH = this.height - GRID_TOP - 40;
+
+        ctx.fill(trackX, trackY, trackX + trackW, trackY + trackH, 0x60000000);
+        ctx.fill(trackX - 1, trackY - 1, trackX + trackW + 1, trackY + trackH + 1, 0x40202020);
+
+        if (maxScrollY > 0) {
+            int thumbH = Math.max(24, (int) Math.round(trackH * (trackH / (double)(trackH + maxScrollY))));
+            int thumbY = trackY + (int) Math.round((scrollY / (double) maxScrollY) * (trackH - thumbH));
+            ctx.fill(trackX, thumbY, trackX + trackW, thumbY + thumbH, 0xFFA0A0A0);
+            ctx.fill(trackX + 1, thumbY + 1, trackX + trackW - 1, thumbY + thumbH - 1, 0xFFE0E0E0);
+        } else {
+            ctx.fill(trackX, trackY, trackX + trackW, trackY + trackH, 0x40A0A0A0);
+        }
+    }
+    private boolean hitScrollbar(double mx, double my) {
+        int trackX = panelX - 6, trackW = 4, trackY = GRID_TOP, trackH = this.height - GRID_TOP - 40;
+        return mx >= trackX - 2 && mx <= trackX + trackW + 2 && my >= trackY && my <= trackY + trackH;
+    }
+    private void startDragScrollbar(int mouseY) {
+        barDragging = true;
+        int trackY = GRID_TOP, trackH = this.height - GRID_TOP - 40;
+        int thumbH = Math.max(24, (int) Math.round(trackH * (trackH / (double)(trackH + maxScrollY))));
+        int thumbY = (maxScrollY > 0) ? trackY + (int) Math.round((scrollY / (double) maxScrollY) * (trackH - thumbH)) : trackY;
+        barDragOffsetY = mouseY - thumbY;
+    }
+    private void dragScrollbarTo(int mouseY) {
+        int trackY = GRID_TOP, trackH = this.height - GRID_TOP - 40;
+        if (maxScrollY <= 0) return;
+        int thumbH = Math.max(24, (int) Math.round(trackH * (trackH / (double)(trackH + maxScrollY))));
+        int minY = trackY, maxY = trackY + trackH - thumbH;
+        int newThumbY = Math.max(minY, Math.min(maxY, mouseY - barDragOffsetY));
+        double ratio = (newThumbY - trackY) / (double) (trackH - thumbH);
+        scrollY = (int) Math.round(ratio * maxScrollY);
+        clampScroll();
+    }
+
+    // --- Simple multiline text area (full editor behaviors) ---
+    private final class SimpleTextArea extends ClickableWidget {
+        private String value = "";
+        private String placeholder = "";
+        private int maxLength = 1_000_000;
+        private Consumer<String> onChange = s -> {};
+        private int padding = 4;
+
+        // layout / wrapping
+        private int lineHeight;
+        private int scrollY = 0;
+        private List<Line> lines = Collections.emptyList();
+        private int cachedWrapW = -1;
+        private String cachedTextRef = null;
+
+        // caret/selection (character indices)
+        private int caret = 0;
+        private int selStart = -1, selEnd = -1;
+        private boolean selectingWithMouse = false;
+        private int mouseSelectAnchor = 0;
+        private Integer preferredCaretX = null; // keep X when moving up/down
+
+        // scrollbar drag
+        private boolean draggingBar = false;
+        private int dragOffsetY = 0;
+
+        // click count state
+        private long lastClickTimeMs = 0;
+        private double lastClickX = 0, lastClickY = 0;
+        private int clickCount = 0;
+        private static final int DOUBLE_CLICK_MS = 300;
+        private static final int CLICK_SLOP = 4;
+
+        // wrapping line payload
+        private static final class Line {
+            int start; // inclusive
+            int end;   // exclusive (no newline)
+        }
+
+        SimpleTextArea(int x, int y, int w, int h, Text message) {
+            super(x, y, w, h, message);
+            this.lineHeight = Math.max(9, textRenderer.fontHeight);
+            this.active = true;
+            this.visible = true;
+        }
+
+        // ---------- API ----------
+        void setPlaceholder(String p) { this.placeholder = (p == null ? "" : p); }
+        void setMaxLength(int n) { this.maxLength = Math.max(1, n); }
+        void setChangedListener(Consumer<String> c) { this.onChange = (c == null ? s -> {} : c); }
+        void setText(String s) {
+            this.value = (s == null ? "" : s);
+            this.caret = this.value.length();
+            clearSelection();
+            this.cachedTextRef = null;
+            if (!this.isFocused()) this.scrollY = 0;
+        }
+        String getText() { return this.value; }
+        void scrollBy(int dy) { this.scrollY = Math.max(0, this.scrollY + dy); }
+
+        // ---------- utils ----------
+        private boolean hasSelection() { return selStart >= 0 && selEnd >= 0 && selStart != selEnd; }
+        private void clearSelection() { selStart = selEnd = -1; }
+        private int selMin() { return Math.min(selStart, selEnd); }
+        private int selMax() { return Math.max(selStart, selEnd); }
+        private static boolean isWord(char ch) { return Character.isLetterOrDigit(ch) || ch == '_'; }
+
+        private int prevWord(int from) {
+            from = Math.max(0, Math.min(from, value.length()));
+            int i = from;
+            if (i > 0) i--;
+            while (i > 0 && !isWord(value.charAt(i))) i--;
+            while (i > 0 && isWord(value.charAt(i-1))) i--;
+            return i;
+        }
+        private int nextWord(int from) {
+            from = Math.max(0, Math.min(from, value.length()));
+            int i = from, n = value.length();
+            while (i < n && isWord(value.charAt(i))) i++;
+            while (i < n && !isWord(value.charAt(i))) i++;
+            return i;
+        }
+
+        private int paragraphStart(int from) {
+            int i = Math.max(0, Math.min(from, value.length()));
+            int nl = value.lastIndexOf('\n', Math.max(0, i - 1));
+            return Math.max(0, nl + 1);
+        }
+        private int paragraphEnd(int from) {
+            int i = Math.max(0, Math.min(from, value.length()));
+            int nl = value.indexOf('\n', i);
+            return (nl < 0) ? value.length() : nl;
+        }
+
+        private void setCaret(int idx, boolean extendSelection) {
+            idx = Math.max(0, Math.min(idx, value.length()));
+            if (extendSelection) {
+                if (!hasSelection()) selStart = caret;
+                caret = idx;
+                selEnd = caret;
+            } else {
+                caret = idx;
+                clearSelection();
+            }
+            preferredCaretX = null;
+            ensureCaretVisible();
+        }
+        private void deleteSelectionIfAny() {
+            if (!hasSelection()) return;
+            int a = selMin(), b = selMax();
+            value = value.substring(0, a) + value.substring(b);
+            caret = a;
+            clearSelection();
+            cachedTextRef = null;
+            onChange.accept(value);
+        }
+
+        // ---------- wrapping / hit-testing ----------
+        private void rewrapIfNeeded(int wrapW) {
+            if (wrapW <= 0) wrapW = 1;
+            if (wrapW == cachedWrapW && cachedTextRef == value) return;
+
+            cachedWrapW = wrapW;
+            cachedTextRef = value;
+
+            lines = new ArrayList<>();
+            if (value.isEmpty()) {
+                Line L = new Line(); L.start = 0; L.end = 0; lines.add(L);
+                return;
+            }
+
+            int n = value.length();
+            int idx = 0;
+            while (idx < n) {
+                int nl = value.indexOf('\n', idx);
+                int hardEnd = (nl < 0 ? n : nl);
+
+                int lineStart = idx;
+                while (lineStart < hardEnd) {
+                    int lo = lineStart, hi = hardEnd;
+                    while (lo < hi) {
+                        int mid = (lo + hi + 1) >>> 1;
+                        int w = textRenderer.getWidth(value.substring(lineStart, mid));
+                        if (w <= wrapW) lo = mid; else hi = mid - 1;
+                    }
+                    int fitEnd = (lo == lineStart) ? Math.min(lineStart + 1, hardEnd) : lo;
+
+                    Line L = new Line(); L.start = lineStart; L.end = fitEnd; lines.add(L);
+                    lineStart = fitEnd;
+                }
+                idx = (nl < 0 ? hardEnd : nl + 1);
+            }
+            if (lines.isEmpty()) { Line L = new Line(); L.start = 0; L.end = 0; lines.add(L); }
+        }
+
+        private int[] caretVisualPos(int wrapW) {
+            rewrapIfNeeded(wrapW);
+            int lineIdx = 0;
+            for (int i = 0; i < lines.size(); i++) {
+                Line L = lines.get(i);
+                if (caret >= L.start && caret <= L.end) { lineIdx = i; break; }
+                if (i == lines.size() - 1 && caret > L.end) lineIdx = i;
+            }
+            Line L = lines.get(lineIdx);
+            int x = textRenderer.getWidth(value.substring(L.start, Math.min(caret, L.end)));
+            return new int[]{ lineIdx, x };
+        }
+
+        private int caretFromMouse(double mx, double my) {
+            int textW = getWidth() - padding*2 - 6;
+            rewrapIfNeeded(Math.max(1, textW));
+
+            int drawX = getX() + padding;
+            int drawY0 = getY() + padding;
+
+            int relY = (int) (my - drawY0 + scrollY);
+            if (relY < 0) relY = 0;
+            int lineIdx = Math.max(0, Math.min(lines.size() - 1, relY / lineHeight));
+            Line L = lines.get(lineIdx);
+            String seg = value.substring(L.start, L.end);
+
+            int relX = (int) (mx - drawX);
+            if (relX <= 0) return L.start;
+            int width = textRenderer.getWidth(seg);
+            if (relX >= width) return L.end;
+
+            int lo = 0, hi = seg.length();
+            while (lo < hi) {
+                int mid = (lo + hi) >>> 1;
+                int w = textRenderer.getWidth(seg.substring(0, mid));
+                if (w < relX) lo = mid + 1; else hi = mid;
+            }
+            int leftW = (lo == 0) ? 0 : textRenderer.getWidth(seg.substring(0, lo-1));
+            int hereW = textRenderer.getWidth(seg.substring(0, lo));
+            int choose = (Math.abs(relX - leftW) <= Math.abs(hereW - relX)) ? (lo - 1) : lo;
+            choose = Math.max(0, Math.min(choose, seg.length()));
+            return L.start + choose;
+        }
+
+        private void ensureCaretVisible() {
+            int textW = getWidth() - padding*2 - 6;
+            rewrapIfNeeded(Math.max(1, textW));
+
+            int viewH = getHeight() - padding*2;
+            int[] pos = caretVisualPos(Math.max(1, textW));
+            int caretLine = pos[0];
+
+            int totalH = Math.max(1, lines.size()) * lineHeight;
+            int top = caretLine * lineHeight;
+            int bottom = top + lineHeight;
+
+            if (top < scrollY) scrollY = top;
+            else if (bottom > scrollY + viewH) scrollY = bottom - viewH;
+
+            if (scrollY < 0) scrollY = 0;
+            int maxScroll = Math.max(0, totalH - viewH);
+            if (scrollY > maxScroll) scrollY = maxScroll;
+        }
+
+        @Override
+        protected void renderWidget(DrawContext ctx, int mouseX, int mouseY, float delta) {
+            ensureCursors();
+            if (this.isMouseOver(mouseX, mouseY)) applyCursor(CURSOR_IBEAM);
+            else applyCursor(CURSOR_ARROW);
+
+            int bg = isFocused() ? 0xFF202020 : 0xFF151515;
+            int br = isFocused() ? 0xFFFFD070 : 0xFF404040;
+            ctx.fill(getX()-1, getY()-1, getX()+getWidth()+1, getY()+getHeight()+1, br);
+            ctx.fill(getX(), getY(), getX()+getWidth(), getY()+getHeight(), bg);
+
+            ctx.enableScissor(getX(), getY(), getX() + getWidth(), getY() + getHeight());
+
+            int textW = getWidth() - padding*2 - 6;
+            rewrapIfNeeded(Math.max(1, textW));
+
+            int drawX = getX() + padding;
+            int drawY0 = getY() + padding;
+            int viewH = getHeight() - padding*2;
+
+            int totalH = Math.max(1, lines.size()) * lineHeight;
+            int maxScroll = Math.max(0, totalH - viewH);
+            if (scrollY > maxScroll) scrollY = maxScroll;
+            if (scrollY < 0) scrollY = 0;
+
+            // selection paint
+            if (hasSelection()) {
+                int a = selMin(), b = selMax();
+                for (int i = 0; i < lines.size(); i++) {
+                    Line L = lines.get(i);
+                    int lo = Math.max(a, L.start);
+                    int hi = Math.min(b, L.end);
+                    if (lo >= hi) continue;
+
+                    int y = drawY0 + (i * lineHeight - scrollY);
+                    if (y + lineHeight < drawY0 || y > drawY0 + viewH) continue;
+
+                    int x0 = drawX + textRenderer.getWidth(value.substring(L.start, lo));
+                    int x1 = drawX + textRenderer.getWidth(value.substring(L.start, hi));
+                    ctx.fill(x0, y, Math.max(x0+1, x1), y + lineHeight, 0x803072C4);
+                }
+            }
+
+            // text / placeholder
+            if (value.isEmpty()) {
+                ctx.drawText(textRenderer, Text.literal(placeholder).asOrderedText(), drawX, drawY0, 0xFF7F7F7F, false);
+            } else {
+                int firstLine = Math.max(0, scrollY / lineHeight);
+                int lastLine = Math.min(lines.size() - 1, (scrollY + viewH) / lineHeight);
+                for (int i = firstLine; i <= lastLine; i++) {
+                    Line L = lines.get(i);
+                    int y = drawY0 + (i * lineHeight - scrollY);
+                    ctx.drawText(textRenderer, Text.literal(value.substring(L.start, L.end)).asOrderedText(), drawX, y, 0xFFEFEFEF, false);
+                }
+            }
+
+            // caret blink
+            if (this.isFocused()) {
+                int[] pos = caretVisualPos(Math.max(1, textW));
+                int caretLine = pos[0];
+                int caretX = drawX + pos[1];
+                int caretY = drawY0 + (caretLine * lineHeight - scrollY);
+                boolean on = ((System.currentTimeMillis() / 500) % 2) == 0;
+                if (on) ctx.fill(caretX, caretY, caretX + 1, caretY + lineHeight, 0xFFEFEFEF);
+            }
+
+            // scrollbar
+            if (maxScroll > 0) {
+                int sbX = getX() + getWidth() - 5;
+                int sbY = getY() + padding;
+                int sbH = viewH;
+                ctx.fill(sbX, sbY, sbX + 3, sbY + sbH, 0x40000000);
+                int thumbH = Math.max(16, (int)Math.round(sbH * (viewH / (double)totalH)));
+                int thumbY = sbY + (int)Math.round((scrollY / (double)maxScroll) * (sbH - thumbH));
+                ctx.fill(sbX, thumbY, sbX + 3, sbY + thumbH, 0xFFA0A0A0);
+                ctx.fill(sbX + 1, thumbY + 1, sbX + 2, sbY + thumbH - 1, 0xFFE0E0E0);
+            }
+
+            ctx.disableScissor();
+        }
+
+        @Override
+        protected void appendClickableNarrations(NarrationMessageBuilder builder) {
+            builder.put(NarrationPart.TITLE, getMessage());
+        }
+
+        // wheel
+        public boolean mouseScrolled(double mx, double my, double horizontal, double vertical) {
+            if (!this.isMouseOver(mx, my)) return false;
+            int delta = (int) Math.round(-vertical * lineHeight * 3);
+            scrollBy(delta);
+            return true;
+        }
+
+        @Override
+        public boolean mouseClicked(Click click, boolean bl) {
+            double mx = click.x(), my = click.y();
+            if (!this.isMouseOver(mx, my)) return false;
+
+            setFocused(true);
+            CustomImportScreen.this.setFocused(this);
+            CustomImportScreen.this.blurAllExcept(this);
+
+            // click counting
+            long now = System.currentTimeMillis();
+            if (now - lastClickTimeMs <= DOUBLE_CLICK_MS
+                    && Math.abs(mx - lastClickX) <= CLICK_SLOP
+                    && Math.abs(my - lastClickY) <= CLICK_SLOP) {
+                clickCount++;
+            } else {
+                clickCount = 1;
+            }
+            lastClickTimeMs = now;
+            lastClickX = mx; lastClickY = my;
+
+            int idx = caretFromMouse(mx, my);
+
+            boolean shift = isShiftDown();
+            if (clickCount == 1) {
+                if (shift) {
+                    if (!hasSelection()) selStart = caret;
+                    caret = idx; selEnd = caret;
+                } else {
+                    caret = idx; clearSelection();
+                }
+                ensureCaretVisible();
+                selectingWithMouse = true;
+                mouseSelectAnchor = caret;
+            } else if (clickCount == 2) {
+                if (value.isEmpty()) return true;
+                int a = idx, b = idx;
+                while (a > 0 && isWord(value.charAt(a-1))) a--;
+                while (b < value.length() && isWord(value.charAt(b))) b++;
+                selStart = a; selEnd = b; caret = b;
+                ensureCaretVisible();
+            } else {
+                int a = paragraphStart(idx);
+                int b = paragraphEnd(idx);
+                selStart = a; selEnd = b; caret = b;
+                ensureCaretVisible();
+            }
+
+            // scrollbar drag test
+            int sbX0 = getX() + getWidth() - 5;
+            if (mx >= sbX0 && mx <= sbX0 + 5) {
+                int viewH = getHeight() - padding*2;
+                int textW = getWidth() - padding*2 - 6;
+                rewrapIfNeeded(Math.max(1, textW));
+                int totalH = Math.max(1, lines.size()) * lineHeight;
+                int maxScroll = Math.max(0, totalH - viewH);
+                if (maxScroll > 0) {
+                    int sbY = getY() + padding;
+                    int sbH = viewH;
+                    int thumbH = Math.max(16, (int)Math.round(sbH * (viewH / (double)totalH)));
+                    int thumbY = sbY + (int)Math.round((scrollY / (double)maxScroll) * (sbH - thumbH));
+                    if (my >= thumbY && my <= thumbY + thumbH) {
+                        draggingBar = true;
+                        dragOffsetY = (int) (my - thumbY);
+                    }
+                }
+            }
+            return true;
+        }
+
+        @Override
+        public boolean mouseDragged(Click click, double dx, double dy) {
+            double mx = click.x(), my = click.y();
+            if (draggingBar) {
+                int viewH = getHeight() - padding*2;
+                int textW = getWidth() - padding*2 - 6;
+                rewrapIfNeeded(Math.max(1, textW));
+                int totalH = Math.max(1, lines.size()) * lineHeight;
+                int maxScroll = Math.max(0, totalH - viewH);
+                if (maxScroll <= 0) return true;
+
+                int sbY = getY() + padding;
+                int sbH = viewH;
+                int thumbH = Math.max(16, (int)Math.round(sbH * (viewH / (double)totalH)));
+                int minY = sbY, maxY = sbY + sbH - thumbH;
+
+                int newThumbY = (int)Math.max(minY, Math.min(maxY, my - dragOffsetY));
+                double ratio = (newThumbY - sbY) / (double)(sbH - thumbH);
+                scrollY = (int)Math.round(ratio * maxScroll);
+                return true;
+            }
+
+            if (selectingWithMouse) {
+                int margin = Math.max(8, lineHeight);
+                if (my < getY() + margin) scrollBy(-lineHeight);
+                if (my > getY() + getHeight() - margin) scrollBy(lineHeight);
+
+                int idx = caretFromMouse(mx, my);
+                caret = idx;
+                selStart = mouseSelectAnchor;
+                selEnd = caret;
+                ensureCaretVisible();
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public boolean mouseReleased(Click click) {
+            draggingBar = false;
+            selectingWithMouse = false;
+            return false;
+        }
+
+        public boolean charTyped(CharInput ch) {
+            int cp = 0;
+            try { cp = (int) ch.getClass().getMethod("codePoint").invoke(ch); } catch (Throwable ignored) {}
+            if (cp == 0) { try { cp = (int) ch.getClass().getMethod("character").invoke(ch); } catch (Throwable ignored) {} }
+            if (cp == 0) { try { cp = (int) ch.getClass().getMethod("codepoint").invoke(ch); } catch (Throwable ignored) {} }
+            int mods = 0;
+            try { mods = (int) ch.getClass().getMethod("modifiers").invoke(ch); } catch (Throwable ignored) {}
+            return this.charTyped((char) cp, mods);
+        }
+        public boolean keyPressed(KeyInput key) {
+            int kc = 0, sc = 0, mods = 0;
+            try { kc = (int) key.getClass().getMethod("keyCode").invoke(key); } catch (Throwable ignored) {}
+            if (kc == 0) { try { kc = (int) key.getClass().getMethod("key").invoke(key); } catch (Throwable ignored) {} }
+            try { sc = (int) key.getClass().getMethod("scanCode").invoke(key); } catch (Throwable ignored) {}
+            if (sc == 0) { try { sc = (int) key.getClass().getMethod("scancode").invoke(key); } catch (Throwable ignored) {} }
+            try { mods = (int) key.getClass().getMethod("modifiers").invoke(key); } catch (Throwable ignored) {}
+            return this.keyPressed(kc, sc, mods);
+        }
+
+        public boolean charTyped(char chr, int modifiers) {
+            if (!this.isFocused()) return false;
+            if (chr == 0) return false;
+            if (chr == '\r') chr = '\n';
+            if (Character.isISOControl(chr) && chr != '\n' && chr != '\t') return false;
+
+            deleteSelectionIfAny();
+
+            String s = String.valueOf(chr);
+            if (value == null) value = "";
+            String newVal = value.substring(0, caret) + s + value.substring(caret);
+            if (newVal.length() > maxLength) return false;
+            value = newVal;
+            caret += s.length();
+            cachedTextRef = null;
+            onChange.accept(value);
+            ensureCaretVisible();
+            return true;
+        }
+
+        public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+            if (!this.isFocused()) return false;
+
+            final int KEY_BACKSPACE = 259, KEY_DELETE = 261, KEY_ENTER = 257, KEY_KP_ENTER = 335;
+            final int KEY_LEFT = 263, KEY_RIGHT = 262, KEY_UP = 265, KEY_DOWN = 264;
+            final int KEY_HOME = 268, KEY_END = 269, KEY_PAGE_UP = 266, KEY_PAGE_DOWN = 267;
+            final int KEY_ESCAPE = 256;
+
+            final boolean SHIFT = (modifiers & 0x0001) != 0; // GLFW_MOD_SHIFT
+            final boolean CTRL_OR_CMD = isCtrlOrCmdDown();
+
+            switch (keyCode) {
+                case KEY_ESCAPE:
+                    // Let ESC also cancel link mode for convenience
+                    linkPendingMode = LinkMode.NONE;
+                    return false;
+
+                case KEY_ENTER:
+                case KEY_KP_ENTER:
+                    deleteSelectionIfAny();
+                    insert("\n");
+                    ensureCaretVisible();
+                    return true;
+
+                case KEY_BACKSPACE:
+                    if (hasSelection()) { deleteSelectionIfAny(); ensureCaretVisible(); return true; }
+                    if (CTRL_OR_CMD) {
+                        int from = prevWord(caret);
+                        if (from != caret) {
+                            value = value.substring(0, from) + value.substring(caret);
+                            caret = from;
+                            cachedTextRef = null;
+                            onChange.accept(value);
+                            ensureCaretVisible();
+                            return true;
+                        }
+                        return false;
+                    } else if (caret > 0) {
+                        value = value.substring(0, caret - 1) + value.substring(caret);
+                        caret -= 1;
+                        cachedTextRef = null;
+                        onChange.accept(value);
+                        ensureCaretVisible();
+                        return true;
+                    }
+                    return false;
+
+                case KEY_DELETE:
+                    if (hasSelection()) { deleteSelectionIfAny(); ensureCaretVisible(); return true; }
+                    if (CTRL_OR_CMD) {
+                        int to = nextWord(caret);
+                        if (to != caret) {
+                            value = value.substring(0, caret) + value.substring(to);
+                            cachedTextRef = null;
+                            onChange.accept(value);
+                            ensureCaretVisible();
+                            return true;
+                        }
+                        return false;
+                    } else if (caret < value.length()) {
+                        value = value.substring(0, caret) + value.substring(caret + 1);
+                        cachedTextRef = null;
+                        onChange.accept(value);
+                        ensureCaretVisible();
+                        return true;
+                    }
+                    return false;
+
+                case KEY_LEFT:  moveHoriz(CTRL_OR_CMD ? prevWord(caret) : caret - 1, SHIFT); return true;
+                case KEY_RIGHT: moveHoriz(CTRL_OR_CMD ? nextWord(caret) : caret + 1, SHIFT); return true;
+
+                case KEY_HOME:
+                    if (CTRL_OR_CMD) { setCaret(0, SHIFT); return true; }
+                    setCaret(lineStartForCaret(), SHIFT);
+                    return true;
+
+                case KEY_END:
+                    if (CTRL_OR_CMD) { setCaret(value.length(), SHIFT); return true; }
+                    setCaret(lineEndForCaret(), SHIFT);
+                    return true;
+
+                case KEY_UP:   moveVert(-1, SHIFT); return true;
+                case KEY_DOWN: moveVert(+1, SHIFT); return true;
+
+                case KEY_PAGE_UP:   scrollBy(-(getHeight() - padding*2)); return true;
+                case KEY_PAGE_DOWN: scrollBy( (getHeight() - padding*2)); return true;
+
+                default:
+                    if (CTRL_OR_CMD) {
+                        if (keyCode == 65) { // A
+                            selStart = 0; selEnd = value.length(); caret = selEnd; ensureCaretVisible(); return true;
+                        }
+                        if (keyCode == 67) { // C
+                            if (hasSelection()) {
+                                MinecraftClient.getInstance().keyboard.setClipboard(value.substring(selMin(), selMax()));
+                            }
+                            return true;
+                        }
+                        if (keyCode == 88) { // X
+                            if (hasSelection()) {
+                                MinecraftClient.getInstance().keyboard.setClipboard(value.substring(selMin(), selMax()));
+                                deleteSelectionIfAny();
+                                ensureCaretVisible();
+                            }
+                            return true;
+                        }
+                        if (keyCode == 86) { // V
+                            String clip = MinecraftClient.getInstance().keyboard.getClipboard();
+                            if (clip != null && !clip.isEmpty()) {
+                                deleteSelectionIfAny();
+                                clip = clip.replace("\r\n", "\n").replace('\r', '\n');
+                                insert(clip);
+                                ensureCaretVisible();
+                            }
+                            return true;
+                        }
+                    }
+                    return false;
+            }
+        }
+
+        private void moveHoriz(int newIdx, boolean extend) {
+            newIdx = Math.max(0, Math.min(newIdx, value.length()));
+            setCaret(newIdx, extend);
+        }
+
+        private int lineStartForCaret() {
+            int textW = getWidth() - padding*2 - 6;
+            rewrapIfNeeded(Math.max(1, textW));
+            for (int i = 0; i < lines.size(); i++) {
+                Line L = lines.get(i);
+                if (caret >= L.start && caret <= L.end) return L.start;
+            }
+            return 0;
+        }
+        private int lineEndForCaret() {
+            int textW = getWidth() - padding*2 - 6;
+            rewrapIfNeeded(Math.max(1, textW));
+            for (int i = 0; i < lines.size(); i++) {
+                Line L = lines.get(i);
+                if (caret >= L.start && caret <= L.end) return L.end;
+            }
+            return value.length();
+        }
+
+        private void moveVert(int deltaLines, boolean extend) {
+            int textW = getWidth() - padding*2 - 6;
+            rewrapIfNeeded(Math.max(1, textW));
+
+            int[] pos = caretVisualPos(Math.max(1, textW));
+            int lineIdx = pos[0];
+            int x = (preferredCaretX != null) ? preferredCaretX : pos[1];
+            int target = Math.max(0, Math.min(lines.size() - 1, lineIdx + deltaLines));
+            Line L = lines.get(target);
+
+            String seg = value.substring(L.start, L.end);
+            int lo = 0, hi = seg.length();
+            while (lo < hi) {
+                int mid = (lo + hi) >>> 1;
+                int w = textRenderer.getWidth(seg.substring(0, mid));
+                if (w < x) lo = mid + 1; else hi = mid;
+            }
+            int leftW = (lo == 0) ? 0 : textRenderer.getWidth(seg.substring(0, lo-1));
+            int hereW = textRenderer.getWidth(seg.substring(0, lo));
+            int choose = (Math.abs(x - leftW) <= Math.abs(hereW - x)) ? (lo - 1) : lo;
+            choose = Math.max(0, Math.min(choose, seg.length()));
+
+            preferredCaretX = x;
+            setCaret(L.start + choose, extend);
+        }
+
+        private void insert(String s) {
+            if (s == null || s.isEmpty()) return;
+            if (value == null) value = "";
+            String newVal = value.substring(0, caret) + s + value.substring(caret);
+            if (newVal.length() > maxLength) return;
+            value = newVal;
+            caret += s.length();
+            cachedTextRef = null;
+            onChange.accept(value);
+        }
+    }
+
+    private void syncEditorFromSelected() {
+        if (selected < 0 || selected >= entries.size()) return;
+        var m = entries.get(selected).meta;
+
+        nameF.setText(nz(m.name));
+        manaF.setText(nz(m.manaCost));
+        typeF.setText(nz(m.typeLine));
+        setF.setText(nz(m.set));
+
+        if (!(textF != null && textF.isFocused())) {
+            textF.setText(nz(m.oracleText));
+        }
+
+        powF.setText(nz(m.power));
+        touF.setText(nz(m.toughness));
+        loyF.setText(nz(m.loyalty));
+        rarityBtn.setMessage(Text.literal("Rarity: " + (m.rarity == null || m.rarity.isEmpty() ? "common" : m.rarity)));
+        dfcToggleBtn.setMessage(Text.literal(m.doubleFaced ? "Double-Faced" : "Single Face"));
+
+        updateLinkButtonsVisibility();
+    }
+
+    @Override
+    public boolean charTyped(CharInput ch) {
+        if (textF != null && textF.isFocused()) {
+            final int cp   = ciCodePoint(ch);
+            final int mods = ciModifiers(ch);
+            if (cp != 0 && textF.charTyped((char) cp, mods)) return true;
+        }
+        return super.charTyped(ch);
+    }
+
+    @Override
+    public boolean keyPressed(KeyInput key) {
+        // Allow Esc to cancel link mode globally
+        int kc = kiKeyCode(key);
+        if (kc == 256 /* ESC */ && linkPendingMode != LinkMode.NONE) {
+            linkPendingMode = LinkMode.NONE;
+            return true;
+        }
+
+        if (textF != null && textF.isFocused()) {
+            final int sc   = kiScanCode(key);
+            final int mods = kiModifiers(key);
+            if (textF.keyPressed(kc, sc, mods)) return true;
+        }
+        return super.keyPressed(key);
+    }
+
+    // ---- mapping-agnostic helpers ----
+    private static int ciCodePoint(CharInput ch) {
+        try { return (int) ch.getClass().getMethod("codePoint").invoke(ch); } catch (Throwable ignored) {}
+        try { return (int) ch.getClass().getMethod("character").invoke(ch); } catch (Throwable ignored) {}
+        try { return (int) ch.getClass().getMethod("codepoint").invoke(ch); } catch (Throwable ignored) {}
+        try { var f = ch.getClass().getDeclaredField("codePoint"); f.setAccessible(true); return f.getInt(ch); } catch (Throwable ignored) {}
+        try { var f = ch.getClass().getDeclaredField("character"); f.setAccessible(true); return f.getInt(ch); } catch (Throwable ignored) {}
+        try { var f = ch.getClass().getDeclaredField("codepoint"); f.setAccessible(true); return f.getInt(ch); } catch (Throwable ignored) {}
+        return 0;
+    }
+    private static int ciModifiers(CharInput ch) {
+        try { return (int) ch.getClass().getMethod("modifiers").invoke(ch); } catch (Throwable ignored) {}
+        try { var f = ch.getClass().getDeclaredField("modifiers"); f.setAccessible(true); return f.getInt(ch); } catch (Throwable ignored) {}
+        return 0;
+    }
+    private static int kiKeyCode(KeyInput key) {
+        try { return (int) key.getClass().getMethod("keyCode").invoke(key); } catch (Throwable ignored) {}
+        try { return (int) key.getClass().getMethod("key").invoke(key); } catch (Throwable ignored) {}
+        try { var f = key.getClass().getDeclaredField("keyCode"); f.setAccessible(true); return f.getInt(key); } catch (Throwable ignored) {}
+        try { var f = key.getClass().getDeclaredField("key"); f.setAccessible(true); return f.getInt(key); } catch (Throwable ignored) {}
+        return 0;
+    }
+    private static int kiScanCode(KeyInput key) {
+        try { return (int) key.getClass().getMethod("scanCode").invoke(key); } catch (Throwable ignored) {}
+        try { return (int) key.getClass().getMethod("scancode").invoke(key); } catch (Throwable ignored) {}
+        try { var f = key.getClass().getDeclaredField("scanCode"); f.setAccessible(true); return f.getInt(key); } catch (Throwable ignored) {}
+        try { var f = key.getClass().getDeclaredField("scancode"); f.setAccessible(true); return f.getInt(key); } catch (Throwable ignored) {}
+        return 0;
+    }
+    private static int kiModifiers(KeyInput key) {
+        try { return (int) key.getClass().getMethod("modifiers").invoke(key); } catch (Throwable ignored) {}
+        try { var f = key.getClass().getDeclaredField("modifiers"); f.setAccessible(true); return f.getInt(key); } catch (Throwable ignored) {}
+        return 0;
+    }
+
+    // --- (once) cursor helpers ---
+    private static long MOUSE_CURSOR_ARROW = 0L, MOUSE_CURSOR_IBEAM = 0L;
+
+    private static void setCursor(int which) {
+        var win = MinecraftClient.getInstance().getWindow();
+        long handle = win.getHandle();
+        long cur = (which == CURSOR_IBEAM) ? MOUSE_CURSOR_IBEAM : MOUSE_CURSOR_ARROW;
+        GLFW.glfwSetCursor(handle, cur);
+    }
+    private static boolean isShiftDown() {
+        long h = MinecraftClient.getInstance().getWindow().getHandle();
+        return GLFW.glfwGetKey(h, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(h, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
+    }
+    private static boolean isCtrlOrCmdDown() {
+        long h = MinecraftClient.getInstance().getWindow().getHandle();
+        boolean ctrl = GLFW.glfwGetKey(h, GLFW.GLFW_KEY_LEFT_CONTROL) == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(h, GLFW.GLFW_KEY_RIGHT_CONTROL) == GLFW.GLFW_PRESS;
+        boolean cmd  = GLFW.glfwGetKey(h, GLFW.GLFW_KEY_LEFT_SUPER)   == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(h, GLFW.GLFW_KEY_RIGHT_SUPER)  == GLFW.GLFW_PRESS;
+        return ctrl || cmd;
+    }
+
+    private void drawWrappedThumbLabel(DrawContext ctx, String text, int x, int y, int boxW, int boxH, int pad, int maxLines) {
+        if (text == null) text = "";
+        int innerX = x + 2;
+        int innerW = boxW - 4;
+
+        var wrapped = this.textRenderer.wrapLines(Text.literal(text), innerW - pad * 2);
+        if (wrapped.isEmpty()) return;
+
+        int linesToDraw = Math.min(maxLines, wrapped.size());
+
+        int lineH = this.textRenderer.fontHeight;
+        int overlayH = pad + linesToDraw * lineH + pad;
+
+        int overlayTop = y + boxH - overlayH;
+        int overlayLeft = innerX;
+        int overlayRight = x + boxW - 2;
+        int overlayBottom = y + boxH - 2;
+
+        ctx.fill(overlayLeft, overlayTop, overlayRight, overlayBottom, 0xAA000000);
+        ctx.fill(overlayLeft, overlayTop, overlayRight, overlayTop + 1, 0x33000000);
+
+        int drawX = overlayLeft + pad;
+        int drawY = overlayTop + pad;
+        for (int i = 0; i < linesToDraw; i++) {
+            ctx.drawText(this.textRenderer, wrapped.get(i), drawX, drawY, 0xFFEFEFEF, false);
+            drawY += lineH;
+        }
+
+        if (wrapped.size() > maxLines) {
+            int dotsW = this.textRenderer.getWidth("…");
+            int dotsX = overlayRight - pad - dotsW;
+            int dotsY = overlayTop + pad + (linesToDraw - 1) * lineH;
+            ctx.drawText(this.textRenderer, "…", dotsX, dotsY, 0xFFEFEFEF, false);
+        }
+    }
+
+    private void blurAllExcept(ClickableWidget keep) {
+        for (var w : this.children()) {
+            if (w instanceof ClickableWidget cw && cw != keep) cw.setFocused(false);
+        }
+    }
+
+    // ---------- Linking helpers ----------
+    private void removeSelected() {
+        if (selected < 0 || selected >= entries.size()) { toast("Nothing selected."); return; }
+
+        int rem = selected;
+        Entry victim = entries.get(rem);
+
+        // break partner reciprocity if linked
+        if (victim.link != null && victim.link.partnerIndex >= 0) {
+            int pi = victim.link.partnerIndex;
+            if (pi >= 0 && pi < entries.size()) {
+                Entry partner = entries.get(pi);
+                if (partner.link != null && partner.link.partnerIndex == rem) {
+                    partner.link.partnerIndex = -1;
+                    partner.meta.doubleFaced = false;
+                }
+            }
+        }
+
+        // Destroy textures for victim
+        if (client != null) {
+            var tm = client.getTextureManager();
+            if (victim.thumbId != null) tm.destroyTexture(victim.thumbId);
+            if (victim.thumbTex != null) victim.thumbTex.close();
+        }
+
+        // Remove it
+        entries.remove(rem);
+
+        // Fix partner indices for everyone after removal
+        for (var e : entries) {
+            if (e.link != null && e.link.partnerIndex >= 0) {
+                if (e.link.partnerIndex == rem) {
+                    e.link.partnerIndex = -1;
+                    e.meta.doubleFaced = false;
+                } else if (e.link.partnerIndex > rem) {
+                    e.link.partnerIndex--;
+                }
+            }
+        }
+
+        if (entries.isEmpty()) selected = -1;
+        else selected = Math.min(rem, entries.size() - 1);
+
+        syncEditorFromSelected();
+        updateMaxScroll();
+    }
+
+    private void clearLinkForSelected() {
+        if (selected < 0 || selected >= entries.size()) { toast("Nothing selected."); return; }
+        clearLink(entries.get(selected));
+        toast("Link cleared.");
+        syncEditorFromSelected();
+    }
+
+    private void clearLink(Entry a) {
+        if (a == null || a.link == null || a.link.partnerIndex < 0) return;
+        int pi = a.link.partnerIndex;
+        if (pi >= 0 && pi < entries.size()) {
+            Entry b = entries.get(pi);
+            if (b.link != null && b.link.partnerIndex == indexOfEntry(a)) {
+                b.link.partnerIndex = -1;
+                b.meta.doubleFaced = false;
+            }
+        }
+        a.link.partnerIndex = -1;
+        a.meta.doubleFaced = false;
+    }
+
+    private int indexOfEntry(Entry e) {
+        for (int i = 0; i < entries.size(); i++) if (entries.get(i) == e) return i;
+        return -1;
+    }
+
+    private void linkSelectedAs(boolean asFront) {
+        if (selected < 0 || selected >= entries.size()) { toast("Select a card first."); return; }
+        linkPendingMode = asFront ? LinkMode.LINK_AS_FRONT : LinkMode.LINK_AS_BACK;
+        String s = asFront ? "Link mode: click a BACK image to pair with this FRONT."
+                : "Link mode: click a FRONT image to pair with this BACK.";
+        toast(s);
+    }
+
+    /**
+     * Link entry `aIdx` to `bIdx`.
+     * If selectedAsFront = true, A is FRONT, B is BACK.
+     * Otherwise A is BACK, B is FRONT.
+     * Sets reciprocal link, and marks both double-faced.
+     */
+    private void linkWith(int aIdx, int bIdx, boolean selectedAsFront) {
+        if (aIdx < 0 || bIdx < 0 || aIdx >= entries.size() || bIdx >= entries.size() || aIdx == bIdx) return;
+        Entry A = entries.get(aIdx);
+        Entry B = entries.get(bIdx);
+
+        // Clear previous links on both (if any)
+        clearLink(A);
+        clearLink(B);
+
+        // Set reciprocal
+        A.link.partnerIndex = bIdx;
+        B.link.partnerIndex = aIdx;
+        A.link.isFront = selectedAsFront;
+        B.link.isFront = !selectedAsFront;
+
+        // Mark DF
+        A.meta.doubleFaced = true;
+        B.meta.doubleFaced = true;
+
+        // Fill missing back* convenience fields
+        if (A.link.isFront) {
+            if (nz(A.meta.backName).isEmpty())       A.meta.backName       = nz(B.meta.name);
+            if (nz(A.meta.backTypeLine).isEmpty())   A.meta.backTypeLine   = nz(B.meta.typeLine);
+            if (nz(A.meta.backOracleText).isEmpty()) A.meta.backOracleText = nz(B.meta.oracleText);
+            if (nz(A.meta.backPower).isEmpty())      A.meta.backPower      = nz(B.meta.power);
+            if (nz(A.meta.backToughness).isEmpty())  A.meta.backToughness  = nz(B.meta.toughness);
+            if (nz(A.meta.backLoyalty).isEmpty())    A.meta.backLoyalty    = nz(B.meta.loyalty);
+        } else {
+            if (nz(B.meta.backName).isEmpty())       B.meta.backName       = nz(A.meta.name);
+            if (nz(B.meta.backTypeLine).isEmpty())   B.meta.backTypeLine   = nz(A.meta.typeLine);
+            if (nz(B.meta.backOracleText).isEmpty()) B.meta.backOracleText = nz(A.meta.oracleText);
+            if (nz(B.meta.backPower).isEmpty())      B.meta.backPower      = nz(A.meta.power);
+            if (nz(B.meta.backToughness).isEmpty())  B.meta.backToughness  = nz(A.meta.toughness);
+            if (nz(B.meta.backLoyalty).isEmpty())    B.meta.backLoyalty    = nz(A.meta.loyalty);
+        }
+    }
+
+    private static byte[] ensureWebpBytes(byte[] input, String lowerName) throws IOException {
+        if (lowerName.endsWith(".webp")) return input;
+
+        // Make sure ImageIO sees plugins (writer is already true in your log, but keep it safe)
+        try {
+            Thread.currentThread().setContextClassLoader(CustomImportScreen.class.getClassLoader());
+            ImageIO.scanForPlugins();
+        } catch (Throwable ignored) {}
+
+        BufferedImage img = null;
+        Throwable firstErr = null;
+
+        // 1) Try ImageIO decode (works for many PNG/JPG)
+        try (ByteArrayInputStream bais = new ByteArrayInputStream(input)) {
+            img = ImageIO.read(bais);
+        } catch (Throwable t) {
+            firstErr = t;
+            img = null;
+        }
+
+        // 2) Fallback: use Minecraft NativeImage decode (handles many JPG edge cases ImageIO can't)
+        if (img == null) {
+            try (InputStream is = new ByteArrayInputStream(input)) {
+                NativeImage ni = NativeImage.read(is); // STB decode
+                try {
+                    int w = ni.getWidth();
+                    int h = ni.getHeight();
+
+                    BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+                    for (int y = 0; y < h; y++) {
+                        for (int x = 0; x < w; x++) {
+                            // NativeImage.getColor returns ABGR (Minecraft format)
+                            int abgr = ni.getColorArgb(x, y);
+                            int a = (abgr >>> 24) & 0xFF;
+                            int b = (abgr >>> 16) & 0xFF;
+                            int g = (abgr >>> 8) & 0xFF;
+                            int r = (abgr) & 0xFF;
+                            int argb = (a << 24) | (r << 16) | (g << 8) | b;
+                            out.setRGB(x, y, argb);
+                        }
+                    }
+                    img = out;
+                } finally {
+                    ni.close();
+                }
+            } catch (Throwable t) {
+                IOException ioe = new IOException("Could not decode image bytes for " + lowerName
+                        + (firstErr != null ? ("; ImageIO error=" + firstErr.getClass().getSimpleName() + ": " + firstErr.getMessage()) : ""), t);
+                throw ioe;
+            }
+        }
+
+        // Ensure ARGB
+        if (img.getType() != BufferedImage.TYPE_INT_ARGB) {
+            BufferedImage out = new BufferedImage(img.getWidth(), img.getHeight(), BufferedImage.TYPE_INT_ARGB);
+            var g = out.createGraphics();
+            try { g.drawImage(img, 0, 0, null); } finally { g.dispose(); }
+            img = out;
+        }
+
+        // 3) Encode WebP (your dependency)
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            var writers = ImageIO.getImageWritersByFormatName("webp");
+            if (!writers.hasNext()) throw new IOException("No WebP writer found (unexpected: writer logged true earlier)");
+            var writer = writers.next();
+
+            var ios = ImageIO.createImageOutputStream(baos);
+            writer.setOutput(ios);
+
+            var param = writer.getDefaultWriteParam();
+            if (param.canWriteCompressed()) {
+                param.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
+                param.setCompressionQuality(0.90f);
+            }
+
+            writer.write(null, new javax.imageio.IIOImage(img, null, null), param);
+            ios.close();
+            writer.dispose();
+
+            return baos.toByteArray();
+        } catch (Exception ex) {
+            throw new IOException("Failed to encode WebP", ex);
+        }
+    }
+
+    private static final class EncodedImage {
+        final byte[] bytes;
+        final String ext; // ".webp" or ".png"
+        EncodedImage(byte[] bytes, String ext) { this.bytes = bytes; this.ext = ext; }
+    }
+
+    /**
+     * Prefer WebP if possible, but ALWAYS fall back to PNG if:
+     * - no webp writer exists
+     * - encoding fails
+     * - encoded bytes can't be decoded back (prevents "won't load" later)
+     *
+     * Also handles WEBP input that can't be decoded by converting it to PNG.
+     */
+    private static EncodedImage preferWebpElsePng(byte[] input, String lowerNameOrExt) throws IOException {
+        String lower = (lowerNameOrExt == null ? "" : lowerNameOrExt.toLowerCase(Locale.ROOT));
+
+        // First decode bytes into a BufferedImage using your existing robust path (ImageIO -> NativeImage)
+        BufferedImage img = null;
+        Throwable firstErr = null;
+
+        // 1) Try ImageIO decode
+        try (ByteArrayInputStream bais = new ByteArrayInputStream(input)) {
+            img = ImageIO.read(bais);
+        } catch (Throwable t) {
+            firstErr = t;
+            img = null;
+        }
+
+        // 2) Fallback decode via NativeImage (STB)
+        if (img == null) {
+            try (InputStream is = new ByteArrayInputStream(input)) {
+                NativeImage ni = NativeImage.read(is);
+                try {
+                    int w = ni.getWidth(), h = ni.getHeight();
+                    BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+                    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+                        int abgr = ni.getColorArgb(x, y);
+                        int a = (abgr >>> 24) & 0xFF;
+                        int b = (abgr >>> 16) & 0xFF;
+                        int g = (abgr >>> 8) & 0xFF;
+                        int r = (abgr) & 0xFF;
+                        out.setRGB(x, y, (a << 24) | (r << 16) | (g << 8) | b);
+                    }
+                    img = out;
+                } finally {
+                    ni.close();
+                }
+            } catch (Throwable t) {
+                throw new IOException("Could not decode image bytes for " + lower
+                        + (firstErr != null ? ("; ImageIO error=" + firstErr.getClass().getSimpleName() + ": " + firstErr.getMessage()) : ""), t);
+            }
+        }
+
+        // Ensure ARGB for consistent encoding
+        if (img.getType() != BufferedImage.TYPE_INT_ARGB) {
+            BufferedImage out = new BufferedImage(img.getWidth(), img.getHeight(), BufferedImage.TYPE_INT_ARGB);
+            var g = out.createGraphics();
+            try { g.drawImage(img, 0, 0, null); } finally { g.dispose(); }
+            img = out;
+        }
+
+        // If the input is already PNG, you could keep original bytes,
+        // but re-encoding is safer/consistent and fixes weird PNG chunks sometimes.
+        // We'll still attempt WebP first, then fallback PNG.
+
+        // --- Try WebP ---
+        try {
+            Thread.currentThread().setContextClassLoader(CustomImportScreen.class.getClassLoader());
+            ImageIO.scanForPlugins();
+
+            var writers = ImageIO.getImageWritersByFormatName("webp");
+            if (writers.hasNext()) {
+                var writer = writers.next();
+                try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+                    var ios = ImageIO.createImageOutputStream(baos);
+                    writer.setOutput(ios);
+
+                    var param = writer.getDefaultWriteParam();
+                    if (param.canWriteCompressed()) {
+                        param.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
+                        param.setCompressionQuality(0.90f);
+                    }
+
+                    writer.write(null, new javax.imageio.IIOImage(img, null, null), param);
+                    ios.close();
+                    writer.dispose();
+
+                    byte[] webp = baos.toByteArray();
+
+                    // Critical: verify decodes (prevents “still won’t load”)
+                    boolean ok;
+                    try (ByteArrayInputStream test = new ByteArrayInputStream(webp)) {
+                        ok = (ImageIO.read(test) != null);
+                    } catch (Throwable ignored) {
+                        ok = false;
+                    }
+
+                    if (ok) return new EncodedImage(webp, ".webp");
+                }
+            }
+        } catch (Throwable ignored) {
+            // fall through to PNG
+        }
+
+        // --- Fallback: PNG ---
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            boolean wrote = ImageIO.write(img, "png", baos);
+            if (!wrote) throw new IOException("No PNG writer available (unexpected).");
+            return new EncodedImage(baos.toByteArray(), ".png");
+        }
+    }
+    private static String sniffExt(byte[] bytes) {
+        if (bytes == null || bytes.length < 12) return ".png";
+        // PNG magic
+        if ((bytes[0] & 0xFF) == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) return ".png";
+        // RIFF....WEBP
+        if (bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F'
+                && bytes.length >= 12
+                && bytes[8] == 'W' && bytes[9] == 'E' && bytes[10] == 'B' && bytes[11] == 'P') return ".webp";
+        // JPEG magic
+        if ((bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xD8) return ".jpg";
+        return ".png";
+    }
+
+    private static String formatEtaSeconds(long sec) {
+        if (sec < 0) sec = 0;
+        if (sec < 60) return sec + "s";
+        long m = sec / 60;
+        long s = sec % 60;
+        if (m < 60) return m + "m " + s + "s";
+        long h = m / 60;
+        long mm = m % 60;
+        return h + "h " + mm + "m";
+    }
+
+    private String uploadEtaText() {
+        if (!uploadsRunning) return ""; // don't show ETA when done/cancelled
+        int remaining = Math.max(0, uploadTotalJobs - uploadJobsSent);
+
+        // Need a bit of data before we trust it
+        long now = System.currentTimeMillis();
+        long elapsedMs = now - uploadStartMs;
+        if (uploadRateEma <= 0.0001 || elapsedMs < 1200L || uploadJobsSent < 5) {
+            return "Estimating…";
+        }
+
+        double sec = remaining / uploadRateEma;
+        // clamp extremes so it doesn't look insane if rate hiccups
+        long etaSec = (long) Math.max(0, Math.min(sec, 24 * 3600)); // cap at 24h
+        return "ETA " + formatEtaSeconds(etaSec);
+    }
+}

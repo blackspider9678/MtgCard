@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "mtgcard:block/card_store", "y": 0 },
+    "facing=east":  { "model": "mtgcard:block/card_store", "y": 90 },
+    "facing=south": { "model": "mtgcard:block/card_store", "y": 180 },
+    "facing=west":  { "model": "mtgcard:block/card_store", "y": 270 }
+  }
+}
