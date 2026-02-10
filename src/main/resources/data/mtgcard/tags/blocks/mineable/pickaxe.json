@@ -1,0 +1,10 @@
+{
+  "replace": false,
+  "values": [
+    "mtgcard:display_block",
+    "mtgcard:graveyard",
+    "mtgcard:life_point",
+    "mtgcard:card_store",
+    "mtgcard:card_database"
+  ]
+}
