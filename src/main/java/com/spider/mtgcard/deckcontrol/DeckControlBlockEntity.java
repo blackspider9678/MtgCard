@@ -8,24 +8,30 @@ import com.spider.mtgcard.db.search.CardMeta;
 import com.spider.mtgcard.deckbox.DeckboxBlockEntity;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.core.HolderLookup;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.entity.player.Inventory;
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.ContainerLevelAccess;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.storage.ValueInput;
-import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.nbt.NbtElement;
+import net.minecraft.particle.ParticleTypes;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.entity.ItemEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtList;
+import net.minecraft.network.PacketByteBuf;
+import net.minecraft.registry.RegistryWrapper;
+import net.minecraft.screen.ScreenHandler;
+import net.minecraft.screen.ScreenHandlerContext;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.storage.ReadView;
+import net.minecraft.storage.WriteView;
+import net.minecraft.text.Text;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
 import java.nio.charset.StandardCharsets;
@@ -53,7 +59,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
     // Peek toggle (UI)
     private boolean peekActive = false;
     public boolean isPeekActive() { return peekActive; }
-    public void setPeekActive(boolean v) { peekActive = v; setChanged(); syncSelf(); }
+    public void setPeekActive(boolean v) { peekActive = v; markDirty(); syncSelf(); }
 
     // ----- Resolution / Cascade transaction -----
     private int resolutionId = 0;
@@ -67,29 +73,29 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
     /* ---------------- Screen opening (Extended) ---------------- */
 
     @Override
-    public Component getDisplayName() {
-        return Component.translatable("block.mtgcard.deck_control");
+    public Text getDisplayName() {
+        return Text.translatable("block.mtgcard.deck_control");
     }
 
     @Override
-    public BlockPos getScreenOpeningData(ServerPlayer player) {
-        return this.worldPosition;
+    public BlockPos getScreenOpeningData(ServerPlayerEntity player) {
+        return this.pos;
     }
 
     @Override
-    public AbstractContainerMenu createMenu(int syncId, Inventory inv, Player player) {
+    public ScreenHandler createMenu(int syncId, PlayerInventory inv, PlayerEntity player) {
         return new DeckControlScreenHandler(
                 syncId,
                 inv,
-                this.worldPosition,
-                ContainerLevelAccess.create(Objects.requireNonNull(level), this.worldPosition)
+                this.pos,
+                ScreenHandlerContext.create(Objects.requireNonNull(world), this.pos)
         );
     }
 
     @org.jetbrains.annotations.Nullable
-    private com.spider.mtgcard.graveyard.GraveyardBlockEntity findAdjacentGraveyard(net.minecraft.world.level.Level world, BlockPos pos) {
-        for (var dir : net.minecraft.core.Direction.values()) {
-            BlockPos p = pos.relative(dir);
+    private com.spider.mtgcard.graveyard.GraveyardBlockEntity findAdjacentGraveyard(net.minecraft.world.World world, BlockPos pos) {
+        for (var dir : net.minecraft.util.math.Direction.values()) {
+            BlockPos p = pos.offset(dir);
             var be = world.getBlockEntity(p);
             if (be instanceof com.spider.mtgcard.graveyard.GraveyardBlockEntity gbe) return gbe;
         }
@@ -111,10 +117,10 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
                     ItemStack cur = gbe.getStack(i);
                     if (pass == 0) {
                         // merge pass
-                        if (!cur.isEmpty() && ItemStack.isSameItemSameComponents(cur, stack) && cur.getCount() < cur.getMaxStackSize()) {
-                            int can = Math.min(stack.getCount(), cur.getMaxStackSize() - cur.getCount());
-                            cur.grow(can);
-                            stack.shrink(can);
+                        if (!cur.isEmpty() && ItemStack.areItemsAndComponentsEqual(cur, stack) && cur.getCount() < cur.getMaxCount()) {
+                            int can = Math.min(stack.getCount(), cur.getMaxCount() - cur.getCount());
+                            cur.increment(can);
+                            stack.decrement(can);
                             gbe.setStack(i, cur);
                         }
                     } else {
@@ -134,17 +140,17 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         return leftover;
     }
 
-    private void ejectOutBack(net.minecraft.server.level.ServerLevel world, BlockPos pos, net.minecraft.core.Direction facing, java.util.List<ItemStack> stacks) {
+    private void ejectOutBack(net.minecraft.server.world.ServerWorld world, BlockPos pos, net.minecraft.util.math.Direction facing, java.util.List<ItemStack> stacks) {
         var outDir = facing.getOpposite();
-        double x = pos.getX() + 0.5 + outDir.getStepX() * 0.6;
+        double x = pos.getX() + 0.5 + outDir.getOffsetX() * 0.6;
         double y = pos.getY() + 0.7;
-        double z = pos.getZ() + 0.5 + outDir.getStepZ() * 0.6;
+        double z = pos.getZ() + 0.5 + outDir.getOffsetZ() * 0.6;
 
         for (ItemStack st : stacks) {
             if (st == null || st.isEmpty()) continue;
-            var ent = new net.minecraft.world.entity.item.ItemEntity(world, x, y, z, st.copy());
-            ent.setDeltaMovement(outDir.getStepX() * 0.25, 0.15, outDir.getStepZ() * 0.25);
-            world.addFreshEntity(ent);
+            var ent = new net.minecraft.entity.ItemEntity(world, x, y, z, st.copy());
+            ent.setVelocity(outDir.getOffsetX() * 0.25, 0.15, outDir.getOffsetZ() * 0.25);
+            world.spawnEntity(ent);
         }
     }
 
@@ -159,14 +165,14 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
     /* ---------------- Tick ---------------- */
 
     public void tick() {
-        if (level == null) return;
+        if (world == null) return;
 
-        if (level.isClientSide()) return;
+        if (world.isClient()) return;
         if (cooldownTicks > 0) cooldownTicks--;
 
         // Rebuild if deckbox changed (debounced)
         if (pendingDeckboxRebuild && pendingDeckboxPos != null) {
-            var be = level.getBlockEntity(pendingDeckboxPos);
+            var be = world.getBlockEntity(pendingDeckboxPos);
             if (be instanceof DeckboxBlockEntity db) {
                 if (libraryOrder.isEmpty()) rebuildLibraryOrder(db);
                 else {
@@ -176,11 +182,11 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
             }
             pendingDeckboxRebuild = false;
             pendingDeckboxPos = null;
-            setChanged();
+            markDirty();
             syncSelf();
         }
 
-        boolean powered = level.hasNeighborSignal(worldPosition);
+        boolean powered = world.isReceivingRedstonePower(pos);
         if (powered && !wasPowered && cooldownTicks <= 0) {
             drawTopAndEject();
             cooldownTicks = DRAW_COOLDOWN_TICKS;
@@ -191,8 +197,8 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
     /* ---------------- Status helpers for ScreenHandler props ---------------- */
 
     public boolean hasLinkedDeckbox() {
-        if (level == null || linkedDeckboxPos == null) return false;
-        return level.getBlockEntity(linkedDeckboxPos) instanceof DeckboxBlockEntity;
+        if (world == null || linkedDeckboxPos == null) return false;
+        return world.getBlockEntity(linkedDeckboxPos) instanceof DeckboxBlockEntity;
     }
 
     public int getLibraryCount() {
@@ -252,7 +258,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
             usedSlot[s] = true;
         }
 
-        long seed = (level != null ? level.getGameTime() : 0L) ^ worldPosition.asLong();
+        long seed = (world != null ? world.getTime() : 0L) ^ pos.asLong();
         Random r = new Random(seed);
 
         for (int s = 0; s < LIBRARY_SLOTS; s++) {
@@ -269,12 +275,12 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         libraryOrder.clear();
         libraryOrder.addAll(kept);
 
-        setChanged();
+        markDirty();
     }
 
 
     public void shuffle() {
-        if (level == null || level.isClientSide()) return;
+        if (world == null || world.isClient()) return;
 
         DeckboxBlockEntity db = findOrLinkDeckbox();
         if (db == null) return;
@@ -286,18 +292,18 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
 
         if (libraryOrder.size() > 1) {
             // Optional: stable-ish server-side randomness
-            long seed = (level.getGameTime() * 31L) ^ worldPosition.asLong();
+            long seed = (world.getTime() * 31L) ^ pos.asLong();
             Collections.shuffle(libraryOrder, new Random(seed));
             // If you prefer fully random each click, just use Collections.shuffle(libraryOrder);
         }
 
-        setChanged();
+        markDirty();
         syncSelf();
     }
 
 
     public void drawTopAndEject() {
-        if (level == null || level.isClientSide()) return;
+        if (world == null || world.isClient()) return;
 
         DeckboxBlockEntity deckbox = findOrLinkDeckbox();
         if (deckbox == null) return;
@@ -313,7 +319,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         if (stack.isEmpty() || !computeKey(stack).equals(ref.key())) {
             reconcileLibraryOrder(deckbox);
 
-            setChanged();
+            markDirty();
             syncSelf();
             return;
         }
@@ -322,17 +328,17 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         if (removed.isEmpty()) {
             reconcileLibraryOrder(deckbox);
             if (!isLibraryOrderConsistent(deckbox)) rebuildLibraryOrder(deckbox);
-            setChanged();
+            markDirty();
             syncSelf();
             return;
         }
 
         deckbox.sync();
 
-        Direction facing = getBlockState().getValue(DeckControlBlock.FACING);
-        dropStackFromModelTop(level, worldPosition, facing, removed);
+        Direction facing = getCachedState().get(DeckControlBlock.FACING);
+        dropStackFromModelTop(world, pos, facing, removed);
 
-        setChanged();
+        markDirty();
         syncSelf();
     }
 
@@ -381,7 +387,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
     }
 
     public void millTop(int n) {
-        if (level == null || level.isClientSide()) return;
+        if (world == null || world.isClient()) return;
         DeckboxBlockEntity db = findOrLinkDeckbox();
         if (db == null) return;
 
@@ -389,7 +395,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         n = Math.min(Math.max(1, n), libraryOrder.size());
         if (n <= 0) return;
 
-        Direction facing = getBlockState().getValue(DeckControlBlock.FACING);
+        Direction facing = getCachedState().get(DeckControlBlock.FACING);
 
         // Collect removed stacks first
         List<ItemStack> removedStacks = new ArrayList<>();
@@ -411,34 +417,34 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
 
         // Try adjacent graveyard first, leftover ejects out the back
         if (!removedStacks.isEmpty()) {
-            var gbe = findAdjacentGraveyard(level, this.worldPosition);
+            var gbe = findAdjacentGraveyard(world, this.pos);
             if (gbe != null) {
                 List<ItemStack> leftover = tryPutIntoGraveyard(gbe, removedStacks);
-                if (!leftover.isEmpty()) ejectOutBack((ServerLevel) level, worldPosition, facing, leftover);
+                if (!leftover.isEmpty()) ejectOutBack((ServerWorld) world, pos, facing, leftover);
 
             } else {
-                ejectOutBack((net.minecraft.server.level.ServerLevel) level, worldPosition, facing, removedStacks);
+                ejectOutBack((net.minecraft.server.world.ServerWorld) world, pos, facing, removedStacks);
             }
         }
 
         db.sync();
-        setChanged();
+        markDirty();
         syncSelf();
     }
 
     /** Insert 1 card item from player's inventory into library at indexFromTop (0..size). */
-    public boolean placeFromPlayer(Player player, int playerInvSlot, int indexFromTop) {
-        if (level == null || level.isClientSide()) return false;
+    public boolean placeFromPlayer(PlayerEntity player, int playerInvSlot, int indexFromTop) {
+        if (world == null || world.isClient()) return false;
         DeckboxBlockEntity db = findOrLinkDeckbox();
         if (db == null) return false;
 
         ensureLinkedAndBuilt();
 
-        if (playerInvSlot < 0 || playerInvSlot >= player.getInventory().getContainerSize()) return false;
-        ItemStack st = player.getInventory().getItem(playerInvSlot);
+        if (playerInvSlot < 0 || playerInvSlot >= player.getInventory().size()) return false;
+        ItemStack st = player.getInventory().getStack(playerInvSlot);
         if (st.isEmpty()) return false;
 
-        if (!st.is(com.spider.mtgcard.item.ModItems.CARD)) return false;
+        if (!st.isOf(com.spider.mtgcard.item.ModItems.CARD)) return false;
 
         int empty = -1;
         for (int i = 0; i < LIBRARY_SLOTS; i++) {
@@ -455,18 +461,18 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         indexFromTop = Math.max(0, Math.min(indexFromTop, libraryOrder.size()));
         libraryOrder.add(indexFromTop, new DeckRef(empty, computeKey(moved), 0));
 
-        setChanged();
+        markDirty();
         syncSelf();
         return true;
     }
 
-    public boolean placeFromPlayerBottom(Player player, int playerInvSlot) {
+    public boolean placeFromPlayerBottom(PlayerEntity player, int playerInvSlot) {
         return placeFromPlayer(player, playerInvSlot, Integer.MAX_VALUE);
     }
 
     /** Server-side scry resolution: keepOrder are indices into the looked list in desired order. */
     public void resolveScry(List<Integer> keepOrder, boolean bottomRandom, int lookedN) {
-        if (level == null || level.isClientSide()) return;
+        if (world == null || world.isClient()) return;
         DeckboxBlockEntity db = findOrLinkDeckbox();
         if (db == null) return;
 
@@ -493,13 +499,13 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         libraryOrder.addAll(0, kept);
         libraryOrder.addAll(bottom);
 
-        setChanged();
+        markDirty();
         syncSelf();
     }
 
     /** Surveil: indices in toMill are removed (temp drop), rest stay on top. */
-    public void resolveSurveil(Player player, List<Integer> toMill, boolean bottomRandom, int lookedN) {
-        if (level == null || level.isClientSide()) return;
+    public void resolveSurveil(PlayerEntity player, List<Integer> toMill, boolean bottomRandom, int lookedN) {
+        if (world == null || world.isClient()) return;
         DeckboxBlockEntity db = findOrLinkDeckbox();
         if (db == null) return;
 
@@ -513,7 +519,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         var millSet = new HashSet<Integer>();
         if (toMill != null) millSet.addAll(toMill);
 
-        Direction facing = getBlockState().getValue(DeckControlBlock.FACING);
+        Direction facing = getCachedState().get(DeckControlBlock.FACING);
 
         // Remove milled stacks from deckbox and collect them
         List<ItemStack> milledStacks = new ArrayList<>();
@@ -530,12 +536,12 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
 
         // Put milled into graveyard (or eject out back)
         if (!milledStacks.isEmpty()) {
-            var gbe = findAdjacentGraveyard(level, this.worldPosition);
+            var gbe = findAdjacentGraveyard(world, this.pos);
             if (gbe != null) {
                 var leftover = tryPutIntoGraveyard(gbe, milledStacks);
-                if (!leftover.isEmpty()) ejectOutBack((net.minecraft.server.level.ServerLevel) level, worldPosition, facing, leftover);
+                if (!leftover.isEmpty()) ejectOutBack((net.minecraft.server.world.ServerWorld) world, pos, facing, leftover);
             } else {
-                ejectOutBack((net.minecraft.server.level.ServerLevel) level, worldPosition, facing, milledStacks);
+                ejectOutBack((net.minecraft.server.world.ServerWorld) world, pos, facing, milledStacks);
             }
         }
 
@@ -547,7 +553,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         libraryOrder.addAll(0, keep);
 
         db.sync();
-        setChanged();
+        markDirty();
         syncSelf();
     }
 
@@ -561,7 +567,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
     }
 
     private void putStacksOnBottom(DeckboxBlockEntity deckbox, List<ItemStack> stacks) {
-        if (level == null) return;
+        if (world == null) return;
 
         // keep current order intact, then append these at the bottom in the exact order we place them
         if (!libraryOrder.isEmpty()) reconcileLibraryOrder(deckbox);
@@ -578,15 +584,15 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
             }
         }
 
-        Direction facing = getBlockState().getValue(DeckControlBlock.FACING);
+        Direction facing = getCachedState().get(DeckControlBlock.FACING);
         while (idx < stacks.size()) {
-            ejectStack(level, worldPosition, facing, stacks.get(idx++));
+            ejectStack(world, pos, facing, stacks.get(idx++));
         }
 
         // ✅ appended cards are bottom of library
         libraryOrder.addAll(appended);
 
-        setChanged();
+        markDirty();
     }
 
     /* ---------------- Linking / Building ---------------- */
@@ -598,11 +604,11 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
     }
 
     private @Nullable DeckboxBlockEntity findOrLinkDeckbox() {
-        if (level == null) return null;
+        if (world == null) return null;
 
         // stored link first
         if (linkedDeckboxPos != null) {
-            BlockEntity be = level.getBlockEntity(linkedDeckboxPos);
+            BlockEntity be = world.getBlockEntity(linkedDeckboxPos);
             if (be instanceof DeckboxBlockEntity db) return db;
 
             // linked deckbox gone
@@ -616,13 +622,13 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
 
         // scan neighbors once; lock on first
         for (Direction d : Direction.values()) {
-            BlockPos p = worldPosition.relative(d);
-            BlockEntity be = level.getBlockEntity(p);
+            BlockPos p = pos.offset(d);
+            BlockEntity be = world.getBlockEntity(p);
             if (be instanceof DeckboxBlockEntity db) {
                 linkedDeckboxPos = p;
                 lockedLink = true;
                 rebuildLibraryOrder(db);
-                setChanged();
+                markDirty();
                 syncSelf();
                 return db;
             }
@@ -640,18 +646,18 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
             libraryOrder.add(new DeckRef(i, computeKey(stack), 0));
         }
 
-        setChanged();
+        markDirty();
         syncSelf();
     }
 
     public void onNeighborDeckboxChanged(BlockPos deckboxPos) {
-        if (level == null || level.isClientSide()) return;
+        if (world == null || world.isClient()) return;
 
         if (linkedDeckboxPos != null) {
             if (!linkedDeckboxPos.equals(deckboxPos)) return;
         } else {
             if (lockedLink) return;
-            if (worldPosition.distManhattan(deckboxPos) != 1) return;
+            if (pos.getManhattanDistance(deckboxPos) != 1) return;
 
             linkedDeckboxPos = deckboxPos;
             lockedLink = true;
@@ -659,7 +665,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
 
         pendingDeckboxRebuild = true;
         pendingDeckboxPos = deckboxPos;
-        setChanged();
+        markDirty();
     }
 
     public void clearLinkAndUnlock() {
@@ -668,25 +674,25 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         libraryOrder.clear();
         pendingDeckboxRebuild = false;
         pendingDeckboxPos = null;
-        setChanged();
+        markDirty();
         syncSelf();
     }
 
     /* ---------------- Ejection + keying ---------------- */
 
-    private static void ejectStack(Level world, BlockPos pos, Direction facing, ItemStack stack) {
-        double x = pos.getX() + 0.5 + facing.getStepX() * 0.6;
+    private static void ejectStack(World world, BlockPos pos, Direction facing, ItemStack stack) {
+        double x = pos.getX() + 0.5 + facing.getOffsetX() * 0.6;
         double y = pos.getY() + 0.5;
-        double z = pos.getZ() + 0.5 + facing.getStepZ() * 0.6;
+        double z = pos.getZ() + 0.5 + facing.getOffsetZ() * 0.6;
 
         ItemEntity itemEntity = new ItemEntity(world, x, y, z, stack);
-        itemEntity.setDeltaMovement(
-                facing.getStepX() * 0.25,
+        itemEntity.setVelocity(
+                facing.getOffsetX() * 0.25,
                 0.05,
-                facing.getStepZ() * 0.25
+                facing.getOffsetZ() * 0.25
         );
-        itemEntity.setDefaultPickUpDelay();
-        world.addFreshEntity(itemEntity);
+        itemEntity.setToDefaultPickupDelay();
+        world.spawnEntity(itemEntity);
     }
 
     private static String computeKey(ItemStack stack) {
@@ -707,16 +713,16 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
     /* ---------------- Save / Load ---------------- */
 
     @Override
-    protected void loadAdditional(ValueInput view) {
-        super.loadAdditional(view);
+    protected void readData(ReadView view) {
+        super.readData(view);
 
-        long link = view.getLongOr("LinkedDeckbox", 0L);
-        linkedDeckboxPos = (link != 0L) ? BlockPos.of(link) : null;
+        long link = view.getLong("LinkedDeckbox", 0L);
+        linkedDeckboxPos = (link != 0L) ? BlockPos.fromLong(link) : null;
 
-        lockedLink = view.getBooleanOr("LockedLink", false);
-        peekActive = view.getBooleanOr("PeekActive", false);
-        wasPowered = view.getBooleanOr("WasPowered", false);
-        cooldownTicks = view.getIntOr("Cooldown", 0);
+        lockedLink = view.getBoolean("LockedLink", false);
+        peekActive = view.getBoolean("PeekActive", false);
+        wasPowered = view.getBoolean("WasPowered", false);
+        cooldownTicks = view.getInt("Cooldown", 0);
 
         libraryOrder.clear();
         var loaded = view.read("LibraryOrder", DeckRef.CODEC.listOf()).orElse(List.of());
@@ -724,8 +730,8 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
     }
 
     @Override
-    protected void saveAdditional(ValueOutput view) {
-        super.saveAdditional(view);
+    protected void writeData(WriteView view) {
+        super.writeData(view);
 
         view.putLong("LinkedDeckbox", linkedDeckboxPos != null ? linkedDeckboxPos.asLong() : 0L);
         view.putBoolean("LockedLink", lockedLink);
@@ -734,17 +740,17 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         view.putBoolean("WasPowered", wasPowered);
         view.putInt("Cooldown", cooldownTicks);
 
-        view.store("LibraryOrder", DeckRef.CODEC.listOf(), libraryOrder);
+        view.put("LibraryOrder", DeckRef.CODEC.listOf(), libraryOrder);
     }
 
     @Override
-    public CompoundTag getUpdateTag(HolderLookup.Provider lookup) {
-        return saveWithoutMetadata(lookup);
+    public NbtCompound toInitialChunkDataNbt(RegistryWrapper.WrapperLookup lookup) {
+        return createNbt(lookup);
     }
 
     private void syncSelf() {
-        if (level == null || level.isClientSide()) return;
-        level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
+        if (world == null || world.isClient()) return;
+        world.updateListeners(pos, getCachedState(), getCachedState(), 3);
     }
 
     // pending cascade by player UUID
@@ -766,17 +772,17 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
 
     // DeckControlBlockEntity.java
 
-    public void cancelPendingCascade(ServerPlayer player) {
+    public void cancelPendingCascade(ServerPlayerEntity player) {
         // treat cancel as "exile" (i.e., do NOT cast, just bottom everything)
         resolveCascade(player, false);
     }
 
-    public boolean hasPendingCascade(ServerPlayer player) {
-        return pendingCascade.containsKey(player.getUUID());
+    public boolean hasPendingCascade(ServerPlayerEntity player) {
+        return pendingCascade.containsKey(player.getUuid());
     }
 
-    public void startCascade(ServerPlayer player, int sourceManaValue) {
-        if (level == null || level.isClientSide()) return;
+    public void startCascade(ServerPlayerEntity player, int sourceManaValue) {
+        if (world == null || world.isClient()) return;
 
         DeckboxBlockEntity deckbox = findOrLinkDeckbox();
         if (deckbox == null) return;
@@ -785,7 +791,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         if (libraryOrder.isEmpty()) return;
 
         // If they already have a pending cascade, ignore (prevents spam)
-        if (pendingCascade.containsKey(player.getUUID())) return;
+        if (pendingCascade.containsKey(player.getUuid())) return;
 
         int mv = Math.max(0, sourceManaValue);
         int localResolutionId = ++resolutionId;
@@ -803,7 +809,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
 
                 bottomRandom(deckbox, revealed, localResolutionId);
                 deckbox.sync();
-                setChanged();
+                markDirty();
                 syncSelf();
                 return;
             }
@@ -815,7 +821,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
 
                 bottomRandom(deckbox, revealed, localResolutionId);
                 deckbox.sync();
-                setChanged();
+                markDirty();
                 syncSelf();
                 return;
             }
@@ -831,31 +837,31 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         deckbox.sync();
         reconcileLibraryOrder(deckbox); // ✅ preserve remaining order
 
-        pendingCascade.put(player.getUUID(), new PendingCascade(mv, revealed, hitIndex, localResolutionId));
-        indexAdd(player.getUUID(), this.worldPosition);
+        pendingCascade.put(player.getUuid(), new PendingCascade(mv, revealed, hitIndex, localResolutionId));
+        indexAdd(player.getUuid(), this.pos);
 
         // Send UI overlay using COPIES (never empties)
         var copies = revealed.stream().filter(s -> s != null && !s.isEmpty()).map(ItemStack::copy).toList();
 
-        player.connection.send(ServerPlayNetworking.createS2CPacket(
-                new DeckControlPackets.CascadeS2C(this.worldPosition, mv, hitIndex, copies)
+        player.networkHandler.sendPacket(ServerPlayNetworking.createS2CPacket(
+                new DeckControlPackets.CascadeS2C(this.pos, mv, hitIndex, copies)
         ));
 
-        setChanged();
+        markDirty();
         syncSelf();
     }
-    public void resolveCascade(ServerPlayer player, boolean cast) {
-        if (level == null || level.isClientSide()) return;
+    public void resolveCascade(ServerPlayerEntity player, boolean cast) {
+        if (world == null || world.isClient()) return;
 
-        PendingCascade pc = pendingCascade.remove(player.getUUID());
-        indexRemove(player.getUUID(), this.worldPosition);
+        PendingCascade pc = pendingCascade.remove(player.getUuid());
+        indexRemove(player.getUuid(), this.pos);
         if (pc == null) return;
 
         DeckboxBlockEntity deckbox = findOrLinkDeckbox();
         if (deckbox == null) {
             // no deckbox => just drop everything in front (including hit)
             dropStacksInFront(pc.revealedActual);
-            setChanged();
+            markDirty();
             syncSelf();
             return;
         }
@@ -864,8 +870,8 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
 
         if (cast && pc.hitIndex >= 0 && pc.hitIndex < pile.size()) {
             ItemStack hit = pile.remove(pc.hitIndex);
-            Direction facing = getBlockState().getValue(DeckControlBlock.FACING);
-            ejectStack(level, worldPosition, facing, hit);
+            Direction facing = getCachedState().get(DeckControlBlock.FACING);
+            ejectStack(world, pos, facing, hit);
         }
         // exile = do nothing special; hit remains in pile
 
@@ -873,21 +879,21 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         bottomRandom(deckbox, pile, pc.resolutionId);
 
         deckbox.sync();
-        setChanged();
+        markDirty();
         syncSelf();
     }
     private void bottomRandom(DeckboxBlockEntity deckbox, List<ItemStack> stacks, int resId) {
         if (stacks == null || stacks.isEmpty()) return;
-        long seed = (level.getGameTime() * 31L) ^ worldPosition.asLong() ^ ((long) resId * 1315423911L);
+        long seed = (world.getTime() * 31L) ^ pos.asLong() ^ ((long) resId * 1315423911L);
         Collections.shuffle(stacks, new Random(seed));
         putStacksOnBottom(deckbox, stacks);
     }
 
     private void dropStacksInFront(List<ItemStack> stacks) {
-        if (level == null || stacks == null) return;
-        Direction facing = getBlockState().getValue(DeckControlBlock.FACING);
+        if (world == null || stacks == null) return;
+        Direction facing = getCachedState().get(DeckControlBlock.FACING);
         for (ItemStack st : stacks) {
-            if (st != null && !st.isEmpty()) ejectStack(level, worldPosition, facing, st);
+            if (st != null && !st.isEmpty()) ejectStack(world, pos, facing, st);
         }
     }
 
@@ -913,7 +919,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
 
     /** Ordered Scry: topOrder + bottomOrder are indices into the looked list (0..lookedN-1). */
     public void resolveOrderedScry(int lookedN, int topCount, int[] order, boolean bottomRandom) {
-        if (level == null || level.isClientSide()) return;
+        if (world == null || world.isClient()) return;
         DeckboxBlockEntity db = findOrLinkDeckbox();
         if (db == null) return;
 
@@ -947,7 +953,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         // Put bottom on the *bottom of the library* (append)
         libraryOrder.addAll(bottom);
 
-        setChanged();
+        markDirty();
         syncSelf();
     }
 
@@ -956,12 +962,12 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
      * - keepTopOrder: indices into looked list that stay on top (in that exact order)
      * - millOrder: indices into looked list to mill (eject) (order doesn't *need* to matter, but we keep it)
      */
-    public void resolveSurveilOrdered(ServerPlayer player,
+    public void resolveSurveilOrdered(ServerPlayerEntity player,
                                       List<Integer> keepTopOrder,
                                       List<Integer> millOrder,
                                       boolean bottomRandom,
                                       int lookedN) {
-        if (level == null || level.isClientSide()) return;
+        if (world == null || world.isClient()) return;
         DeckboxBlockEntity db = findOrLinkDeckbox();
         if (db == null) return;
 
@@ -976,7 +982,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         var millSet = new HashSet<Integer>();
         if (millOrder != null) millSet.addAll(millOrder);
 
-        Direction facing = getBlockState().getValue(DeckControlBlock.FACING);
+        Direction facing = getCachedState().get(DeckControlBlock.FACING);
 
         // Remove milled stacks from deckbox in the exact UI "graveyard row" order
         List<ItemStack> milledStacks = new ArrayList<>();
@@ -1006,12 +1012,12 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
 
         // Put milled into graveyard (or eject out back)
         if (!milledStacks.isEmpty()) {
-            var gbe = findAdjacentGraveyard(level, this.worldPosition);
+            var gbe = findAdjacentGraveyard(world, this.pos);
             if (gbe != null) {
                 var leftover = tryPutIntoGraveyard(gbe, milledStacks);
-                if (!leftover.isEmpty()) ejectOutBack((net.minecraft.server.level.ServerLevel) level, worldPosition, facing, leftover);
+                if (!leftover.isEmpty()) ejectOutBack((net.minecraft.server.world.ServerWorld) world, pos, facing, leftover);
             } else {
-                ejectOutBack((net.minecraft.server.level.ServerLevel) level, worldPosition, facing, milledStacks);
+                ejectOutBack((net.minecraft.server.world.ServerWorld) world, pos, facing, milledStacks);
             }
         }
 
@@ -1033,17 +1039,17 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         libraryOrder.addAll(0, keep);
 
         db.sync();
-        setChanged();
+        markDirty();
         syncSelf();
     }
 
-    public void shuffleGraveyardIntoLibrary(ServerPlayer player) {
-        if (level == null || level.isClientSide()) return;
+    public void shuffleGraveyardIntoLibrary(ServerPlayerEntity player) {
+        if (world == null || world.isClient()) return;
 
         DeckboxBlockEntity deckbox = findOrLinkDeckbox();
         if (deckbox == null) return;
 
-        var gbe = findAdjacentGraveyard(level, this.worldPosition);
+        var gbe = findAdjacentGraveyard(world, this.pos);
         if (gbe == null) return;
 
         // pull GY slots 0..99
@@ -1052,8 +1058,8 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         // insert into deckbox main slots, leftover eject out back
         List<ItemStack> leftover = insertIntoDeckboxMain(deckbox, pulled);
         if (!leftover.isEmpty()) {
-            Direction facing = getBlockState().getValue(DeckControlBlock.FACING);
-            ejectOutBack((net.minecraft.server.level.ServerLevel) level, worldPosition, facing, leftover);
+            Direction facing = getCachedState().get(DeckControlBlock.FACING);
+            ejectOutBack((net.minecraft.server.world.ServerWorld) world, pos, facing, leftover);
         }
 
         deckbox.sync();
@@ -1062,17 +1068,17 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         reconcileLibraryOrder(deckbox);
         if (!libraryOrder.isEmpty()) Collections.shuffle(libraryOrder);
 
-        setChanged();
+        markDirty();
         syncSelf();
     }
 
-    public void resetDeck(ServerPlayer player) {
-        if (level == null || level.isClientSide()) return;
+    public void resetDeck(ServerPlayerEntity player) {
+        if (world == null || world.isClient()) return;
 
         DeckboxBlockEntity deckbox = findOrLinkDeckbox();
         if (deckbox == null) return;
 
-        var gbe = findAdjacentGraveyard(level, this.worldPosition);
+        var gbe = findAdjacentGraveyard(world, this.pos);
         if (gbe == null) return;
 
         // pull GY + EXILE slots 0..199
@@ -1081,8 +1087,8 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         // insert into deckbox, leftover eject out back
         List<ItemStack> leftover = insertIntoDeckboxMain(deckbox, pulled);
         if (!leftover.isEmpty()) {
-            Direction facing = getBlockState().getValue(DeckControlBlock.FACING);
-            ejectOutBack((net.minecraft.server.level.ServerLevel) level, worldPosition, facing, leftover);
+            Direction facing = getCachedState().get(DeckControlBlock.FACING);
+            ejectOutBack((net.minecraft.server.world.ServerWorld) world, pos, facing, leftover);
         }
 
         deckbox.sync();
@@ -1090,7 +1096,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         reconcileLibraryOrder(deckbox);
         if (!libraryOrder.isEmpty()) Collections.shuffle(libraryOrder);
 
-        setChanged();
+        markDirty();
         syncSelf();
     }
 
@@ -1110,11 +1116,11 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
 
                     if (pass == 0) {
                         if (!cur.isEmpty()
-                                && ItemStack.isSameItemSameComponents(cur, stack)
-                                && cur.getCount() < cur.getMaxStackSize()) {
-                            int can = Math.min(stack.getCount(), cur.getMaxStackSize() - cur.getCount());
-                            cur.grow(can);
-                            stack.shrink(can);
+                                && ItemStack.areItemsAndComponentsEqual(cur, stack)
+                                && cur.getCount() < cur.getMaxCount()) {
+                            int can = Math.min(stack.getCount(), cur.getMaxCount() - cur.getCount());
+                            cur.increment(can);
+                            stack.decrement(can);
                             db.setStack(i, cur);
                         }
                     } else {
@@ -1145,15 +1151,15 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         return out;
     }
 
-    private static void dropStackFromModelTop(Level world, BlockPos pos, Direction facing, ItemStack stack) {
-        if (world == null || world.isClientSide() || stack == null || stack.isEmpty()) return;
+    private static void dropStackFromModelTop(World world, BlockPos pos, Direction facing, ItemStack stack) {
+        if (world == null || world.isClient() || stack == null || stack.isEmpty()) return;
 
         final double popOut   = 0.12;
         final double jitter   = 0.02;
 
-        double x = pos.getX() + 0.5 + facing.getStepX();
-        double y = pos.getY() + 0.5 + facing.getStepY();
-        double z = pos.getZ() + 0.5 + facing.getStepZ();
+        double x = pos.getX() + 0.5 + facing.getOffsetX();
+        double y = pos.getY() + 0.5 + facing.getOffsetY();
+        double z = pos.getZ() + 0.5 + facing.getOffsetZ();
 
         ItemEntity ent = new ItemEntity(world, x, y, z, stack.copy());
 
@@ -1181,13 +1187,13 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         double j1 = (world.random.nextDouble() - 0.5) * jitter;
         double j2 = (world.random.nextDouble() - 0.5) * jitter;
 
-        double vx = facing.getStepX() * popOut + a.getStepX() * j1 + b.getStepX() * j2;
-        double vy = facing.getStepY() * popOut + a.getStepY() * j1 + b.getStepY() * j2;
-        double vz = facing.getStepZ() * popOut + a.getStepZ() * j1 + b.getStepZ() * j2;
+        double vx = facing.getOffsetX() * popOut + a.getOffsetX() * j1 + b.getOffsetX() * j2;
+        double vy = facing.getOffsetY() * popOut + a.getOffsetY() * j1 + b.getOffsetY() * j2;
+        double vz = facing.getOffsetZ() * popOut + a.getOffsetZ() * j1 + b.getOffsetZ() * j2;
 
-        ent.setDeltaMovement(vx, vy, vz);
-        ent.setDefaultPickUpDelay();
-        world.addFreshEntity(ent);
+        ent.setVelocity(vx, vy, vz);
+        ent.setToDefaultPickupDelay();
+        world.spawnEntity(ent);
     }
 
 
