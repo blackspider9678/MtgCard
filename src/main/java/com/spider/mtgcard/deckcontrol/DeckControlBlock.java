@@ -2,162 +2,157 @@ package com.spider.mtgcard.deckcontrol;
 
 import com.mojang.serialization.MapCodec;
 import com.spider.mtgcard.registry.ModBlockEntities;
-import net.minecraft.world.level.block.BaseEntityBlock;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.SimpleWaterloggedBlock;
-import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.entity.BlockEntityTicker;
-import net.minecraft.world.level.block.entity.BlockEntityType;
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.level.block.state.BlockBehaviour.Properties;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.material.FluidState;
-import net.minecraft.world.level.material.Fluids;
-import net.minecraft.world.item.Item;
-import net.minecraft.world.item.context.BlockPlaceContext;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.item.ShovelItem;
-import net.minecraft.server.level.ServerLevel;
-import net.minecraft.sounds.SoundSource;
-import net.minecraft.sounds.SoundEvents;
-import net.minecraft.world.level.block.state.StateDefinition;
-import net.minecraft.world.level.block.state.properties.BooleanProperty;
-import net.minecraft.world.level.block.state.properties.EnumProperty;
-import net.minecraft.world.level.block.state.properties.BlockStateProperties;
-import net.minecraft.world.InteractionResult;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.world.phys.shapes.CollisionContext;
-import net.minecraft.world.phys.shapes.VoxelShape;
-import net.minecraft.world.phys.shapes.Shapes;
-import net.minecraft.world.level.BlockGetter;
-import net.minecraft.world.level.Level;
+import net.minecraft.block.*;
+import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.block.entity.BlockEntityTicker;
+import net.minecraft.block.entity.BlockEntityType;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.fluid.FluidState;
+import net.minecraft.fluid.Fluids;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemPlacementContext;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.item.ShovelItem;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
+import net.minecraft.state.StateManager;
+import net.minecraft.state.property.BooleanProperty;
+import net.minecraft.state.property.EnumProperty;
+import net.minecraft.state.property.Properties;
+import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.shape.VoxelShape;
+import net.minecraft.util.shape.VoxelShapes;
+import net.minecraft.world.BlockView;
+import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumMap;
 
-public class DeckControlBlock extends BaseEntityBlock implements SimpleWaterloggedBlock {
+public class DeckControlBlock extends BlockWithEntity implements Waterloggable {
     // 6-way facing (UP/DOWN included)
-    public static final EnumProperty<Direction> FACING = BlockStateProperties.FACING;
-    public static final BooleanProperty WATERLOGGED = BlockStateProperties.WATERLOGGED;
+    public static final EnumProperty<Direction> FACING = Properties.FACING;
+    public static final BooleanProperty WATERLOGGED = Properties.WATERLOGGED;
 
-    public static final BooleanProperty LIT = BooleanProperty.create("lit");
+    public static final BooleanProperty LIT = BooleanProperty.of("lit");
     public static final EnumProperty<DeckControlWindowColor> COLOR =
-            EnumProperty.create("color", DeckControlWindowColor.class);
+            EnumProperty.of("color", DeckControlWindowColor.class);
 
-    public static final MapCodec<DeckControlBlock> CODEC = simpleCodec(DeckControlBlock::new);
+    public static final MapCodec<DeckControlBlock> CODEC = createCodec(DeckControlBlock::new);
 
-    public DeckControlBlock(Properties settings) {
+    public DeckControlBlock(Settings settings) {
         super(settings);
-        this.registerDefaultState(
-                this.getStateDefinition().any()
-                        .setValue(FACING, Direction.UP) // default doesn't matter much
-                        .setValue(LIT, true)
-                        .setValue(COLOR, DeckControlWindowColor.DEFAULT)
-                        .setValue(WATERLOGGED, false)
+        this.setDefaultState(
+                this.getStateManager().getDefaultState()
+                        .with(FACING, Direction.UP) // default doesn't matter much
+                        .with(LIT, true)
+                        .with(COLOR, DeckControlWindowColor.DEFAULT)
+                        .with(WATERLOGGED, false)
         );
     }
 
     @Override
-    protected MapCodec<? extends BaseEntityBlock> codec() {
+    protected MapCodec<? extends BlockWithEntity> getCodec() {
         return CODEC;
     }
 
     @Override
-    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+    protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
         builder.add(FACING, LIT, COLOR, WATERLOGGED);
     }
 
     @Override
-    public BlockState getStateForPlacement(BlockPlaceContext ctx) {
-        boolean water = ctx.getLevel().getFluidState(ctx.getClickedPos()).is(Fluids.WATER);
+    public BlockState getPlacementState(ItemPlacementContext ctx) {
+        boolean water = ctx.getWorld().getFluidState(ctx.getBlockPos()).isOf(Fluids.WATER);
 
         // Shulker-style: face = the face you clicked (UP on floor, DOWN on ceiling, etc.)
-        Direction face = ctx.getClickedFace();
+        Direction face = ctx.getSide();
 
-        return this.defaultBlockState()
-                .setValue(FACING, face)
-                .setValue(LIT, true)
-                .setValue(COLOR, DeckControlWindowColor.DEFAULT)
-                .setValue(WATERLOGGED, water);
+        return this.getDefaultState()
+                .with(FACING, face)
+                .with(LIT, true)
+                .with(COLOR, DeckControlWindowColor.DEFAULT)
+                .with(WATERLOGGED, water);
     }
 
     @Override
     public FluidState getFluidState(BlockState state) {
-        return state.getValue(WATERLOGGED) ? Fluids.WATER.getSource(false) : super.getFluidState(state);
+        return state.get(WATERLOGGED) ? Fluids.WATER.getStill(false) : super.getFluidState(state);
     }
 
     private static VoxelShape rotateX90(VoxelShape shape) {
         return rotate(shape, (x1,y1,z1,x2,y2,z2) ->
-                Shapes.box(x1, z1, 1 - y2, x2, z2, 1 - y1));
+                VoxelShapes.cuboid(x1, z1, 1 - y2, x2, z2, 1 - y1));
     }
 
     private static VoxelShape rotateX180(VoxelShape shape) {
         return rotate(shape, (x1,y1,z1,x2,y2,z2) ->
-                Shapes.box(x1, 1 - y2, 1 - z2, x2, 1 - y1, 1 - z1));
+                VoxelShapes.cuboid(x1, 1 - y2, 1 - z2, x2, 1 - y1, 1 - z1));
     }
 
     private static VoxelShape rotateY90(VoxelShape shape) {
         return rotate(shape, (x1,y1,z1,x2,y2,z2) ->
-                Shapes.box(1 - z2, y1, x1, 1 - z1, y2, x2));
+                VoxelShapes.cuboid(1 - z2, y1, x1, 1 - z1, y2, x2));
     }
 
     private static VoxelShape rotateY180(VoxelShape shape) {
         return rotate(shape, (x1,y1,z1,x2,y2,z2) ->
-                Shapes.box(1 - x2, y1, 1 - z2, 1 - x1, y2, 1 - z1));
+                VoxelShapes.cuboid(1 - x2, y1, 1 - z2, 1 - x1, y2, 1 - z1));
     }
 
     private static VoxelShape rotateY270(VoxelShape shape) {
         return rotate(shape, (x1,y1,z1,x2,y2,z2) ->
-                Shapes.box(z1, y1, 1 - x2, z2, y2, 1 - x1));
+                VoxelShapes.cuboid(z1, y1, 1 - x2, z2, y2, 1 - x1));
     }
 
     @FunctionalInterface
     private interface BoxRot {
-        VoxelShape apply(double x1, double y1, double z1, double x2, double y2, double z2);
+        VoxelShape apply(double x1,double y1,double z1,double x2,double y2,double z2);
     }
 
     private static VoxelShape rotate(VoxelShape shape, BoxRot rot) {
-        VoxelShape[] out = new VoxelShape[]{Shapes.empty()};
-        shape.forAllBoxes((x1, y1, z1, x2, y2, z2) -> out[0] = Shapes.or(out[0], rot.apply(x1,y1,z1,x2,y2,z2)));
-        return out[0].optimize();
+        VoxelShape[] out = new VoxelShape[]{VoxelShapes.empty()};
+        shape.forEachBox((x1,y1,z1,x2,y2,z2) -> out[0] = VoxelShapes.union(out[0], rot.apply(x1,y1,z1,x2,y2,z2)));
+        return out[0].simplify();
     }
 
     // Add near your OUTLINE_SHAPE
     private static final EnumMap<Direction, VoxelShape> SHAPES = new EnumMap<>(Direction.class);
 
     @Override
-    public VoxelShape getShape(BlockState state, BlockGetter world, BlockPos pos, CollisionContext context) {
-        return SHAPES.getOrDefault(state.getValue(FACING), OUTLINE_SHAPE);
+    public VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+        return SHAPES.getOrDefault(state.get(FACING), OUTLINE_SHAPE);
     }
 
     @Override
-    public VoxelShape getCollisionShape(BlockState state, BlockGetter world, BlockPos pos, CollisionContext context) {
-        return SHAPES.getOrDefault(state.getValue(FACING), OUTLINE_SHAPE);
+    public VoxelShape getCollisionShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+        return SHAPES.getOrDefault(state.get(FACING), OUTLINE_SHAPE);
     }
 
 
     @Override
-    public VoxelShape getOcclusionShape(BlockState state) {
-        return Shapes.empty();
+    public VoxelShape getCullingShape(BlockState state) {
+        return VoxelShapes.empty();
     }
 
 
     // Outline/collision matching the model (symmetric, so no facing rotation needed)
-    private static final VoxelShape OUTLINE_SHAPE = Shapes.or(
-            Block.box(3.5, 0.0, 3.5, 12.5, 2.0, 12.5),     // base_plinth
-            Block.box(4.25, 2.0, 4.25, 11.75, 3.0, 11.75), // base_cap
-            Block.box(5.0, 3.0, 5.0, 11.0, 6.0, 11.0),     // lower_pedestal
-            Block.box(5.6, 6.0, 5.6, 10.4, 9.2, 10.4),     // waist_taper
-            Block.box(6.0, 9.2, 6.0, 10.0, 10.6, 10.0),    // upper_shaft
-            Block.box(5.4, 10.6, 5.4, 10.6, 11.4, 10.6),   // lantern_floor
-            Block.box(5.6, 11.4, 5.6, 10.4, 14.2, 10.4),   // lantern_body
-            Block.box(4.4, 14.2, 4.4, 11.6, 15.0, 11.6),   // roof_main
-            Block.box(3.8, 15.0, 3.8, 12.2, 15.6, 12.2),   // roof_overhang
-            Block.box(6.7, 15.6, 6.7, 9.3, 16.0, 9.3)      // finial_base
+    private static final VoxelShape OUTLINE_SHAPE = VoxelShapes.union(
+            Block.createCuboidShape(3.5, 0.0, 3.5, 12.5, 2.0, 12.5),     // base_plinth
+            Block.createCuboidShape(4.25, 2.0, 4.25, 11.75, 3.0, 11.75), // base_cap
+            Block.createCuboidShape(5.0, 3.0, 5.0, 11.0, 6.0, 11.0),     // lower_pedestal
+            Block.createCuboidShape(5.6, 6.0, 5.6, 10.4, 9.2, 10.4),     // waist_taper
+            Block.createCuboidShape(6.0, 9.2, 6.0, 10.0, 10.6, 10.0),    // upper_shaft
+            Block.createCuboidShape(5.4, 10.6, 5.4, 10.6, 11.4, 10.6),   // lantern_floor
+            Block.createCuboidShape(5.6, 11.4, 5.6, 10.4, 14.2, 10.4),   // lantern_body
+            Block.createCuboidShape(4.4, 14.2, 4.4, 11.6, 15.0, 11.6),   // roof_main
+            Block.createCuboidShape(3.8, 15.0, 3.8, 12.2, 15.6, 12.2),   // roof_overhang
+            Block.createCuboidShape(6.7, 15.6, 6.7, 9.3, 16.0, 9.3)      // finial_base
     );
 
     static {
@@ -173,30 +168,30 @@ public class DeckControlBlock extends BaseEntityBlock implements SimpleWaterlogg
     }
 
     @Override
-    protected BlockState updateShape(
+    protected BlockState getStateForNeighborUpdate(
             BlockState state,
-            net.minecraft.world.level.LevelReader world,
-            net.minecraft.world.level.ScheduledTickAccess tickView,
+            net.minecraft.world.WorldView world,
+            net.minecraft.world.tick.ScheduledTickView tickView,
             BlockPos pos,
             Direction direction,
             BlockPos neighborPos,
             BlockState neighborState,
-            net.minecraft.util.RandomSource random
+            net.minecraft.util.math.random.Random random
     ) {
-        if (state.getValue(WATERLOGGED)) {
-            tickView.scheduleTick(pos, Fluids.WATER, Fluids.WATER.getTickDelay(world));
+        if (state.get(WATERLOGGED)) {
+            tickView.scheduleFluidTick(pos, Fluids.WATER, Fluids.WATER.getTickRate(world));
         }
-        return super.updateShape(state, world, tickView, pos, direction, neighborPos, neighborState, random);
+        return super.getStateForNeighborUpdate(state, world, tickView, pos, direction, neighborPos, neighborState, random);
     }
 
 
     @Override
-    public @Nullable BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
+    public @Nullable BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
         return new DeckControlBlockEntity(pos, state);
     }
 
     @Override
-    public <T extends BlockEntity> @Nullable BlockEntityTicker<T> getTicker(Level world, BlockState state, BlockEntityType<T> type) {
+    public <T extends BlockEntity> @Nullable BlockEntityTicker<T> getTicker(World world, BlockState state, BlockEntityType<T> type) {
         return type == ModBlockEntities.DECK_CONTROL
                 ? (w, p, s, be) -> ((DeckControlBlockEntity) be).tick()
                 : null;
@@ -207,69 +202,69 @@ public class DeckControlBlock extends BaseEntityBlock implements SimpleWaterlogg
     // Otherwise: keep your existing behavior (empty hand opens GUI; shift+empty hand shuffles).
 
     @Override
-    public InteractionResult useWithoutItem(BlockState state, Level world, BlockPos pos, Player player, BlockHitResult hit) {
+    public ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, BlockHitResult hit) {
         // If player is empty-hand, keep your existing GUI behavior
-        if (player.getMainHandItem().isEmpty()) {
-            if (world.isClientSide()) return InteractionResult.SUCCESS;
+        if (player.getMainHandStack().isEmpty()) {
+            if (world.isClient()) return ActionResult.SUCCESS;
 
             BlockEntity be = world.getBlockEntity(pos);
-            if (!(be instanceof DeckControlBlockEntity dc)) return InteractionResult.PASS;
+            if (!(be instanceof DeckControlBlockEntity dc)) return ActionResult.PASS;
 
-            if (player.isShiftKeyDown()) {
+            if (player.isSneaking()) {
                 dc.shuffle();
-                return InteractionResult.CONSUME;
+                return ActionResult.CONSUME;
             }
 
-            player.openMenu(dc);
-            return InteractionResult.CONSUME;
+            player.openHandledScreen(dc);
+            return ActionResult.CONSUME;
         }
 
         // If not empty hand, let onUseWithItem decide (it will PASS for non-handled items)
-        return InteractionResult.PASS;
+        return ActionResult.PASS;
     }
 
     @Override
-    public InteractionResult useItemOn(ItemStack stack, BlockState state, Level world, BlockPos pos,
-                                       Player player, InteractionHand hand, BlockHitResult hit) {
-        if (stack.isEmpty()) return useWithoutItem(state, world, pos, player, hit);
+    public ActionResult onUseWithItem(ItemStack stack, BlockState state, World world, BlockPos pos,
+                                      PlayerEntity player, Hand hand, BlockHitResult hit) {
+        if (stack.isEmpty()) return onUse(state, world, pos, player, hit);
 
         Item item = stack.getItem();
 
         // Any shovel = unlit (keep color stored)
         if (item instanceof ShovelItem) {
-            if (world.isClientSide()) return InteractionResult.SUCCESS;
+            if (world.isClient()) return ActionResult.SUCCESS;
 
-            if (state.getValue(LIT)) {
-                world.setBlock(pos, state.setValue(LIT, false), Block.UPDATE_ALL);
-                world.playSound(null, pos, SoundEvents.FIRE_EXTINGUISH, SoundSource.BLOCKS, 0.6f, 1.0f);
+            if (state.get(LIT)) {
+                world.setBlockState(pos, state.with(LIT, false), Block.NOTIFY_ALL);
+                world.playSound(null, pos, SoundEvents.BLOCK_FIRE_EXTINGUISH, SoundCategory.BLOCKS, 0.6f, 1.0f);
             }
-            return InteractionResult.CONSUME;
+            return ActionResult.CONSUME;
         }
 
         // Light sources
         if (item == Items.FLINT_AND_STEEL) {
-            if (world.isClientSide()) return InteractionResult.SUCCESS;
+            if (world.isClient()) return ActionResult.SUCCESS;
 
-            if (!state.getValue(LIT)) {
-                world.setBlock(pos, state.setValue(LIT, true), Block.UPDATE_ALL);
-                world.playSound(null, pos, SoundEvents.FLINTANDSTEEL_USE, SoundSource.BLOCKS, 0.9f, 1.0f);
+            if (!state.get(LIT)) {
+                world.setBlockState(pos, state.with(LIT, true), Block.NOTIFY_ALL);
+                world.playSound(null, pos, SoundEvents.ITEM_FLINTANDSTEEL_USE, SoundCategory.BLOCKS, 0.9f, 1.0f);
 
                 // damage tool
-                stack.hurtAndBreak(1, player, hand);
+                stack.damage(1, player, hand);
             }
-            return InteractionResult.CONSUME;
+            return ActionResult.CONSUME;
         }
 
         if (item == Items.FIRE_CHARGE) {
-            if (world.isClientSide()) return InteractionResult.SUCCESS;
+            if (world.isClient()) return ActionResult.SUCCESS;
 
-            if (!state.getValue(LIT)) {
-                world.setBlock(pos, state.setValue(LIT, true), Block.UPDATE_ALL);
-                world.playSound(null, pos, SoundEvents.FIRECHARGE_USE, SoundSource.BLOCKS, 0.9f, 1.0f);
+            if (!state.get(LIT)) {
+                world.setBlockState(pos, state.with(LIT, true), Block.NOTIFY_ALL);
+                world.playSound(null, pos, SoundEvents.ITEM_FIRECHARGE_USE, SoundCategory.BLOCKS, 0.9f, 1.0f);
 
-                if (!player.isCreative()) stack.shrink(1);
+                if (!player.isCreative()) stack.decrement(1);
             }
-            return InteractionResult.CONSUME;
+            return ActionResult.CONSUME;
         }
 
         // Color changers (do NOT force lit; just store color and keep lit/unlit state)
@@ -292,19 +287,19 @@ public class DeckControlBlock extends BaseEntityBlock implements SimpleWaterlogg
         }
 
         // Not a handled item: let normal item behavior happen (and don't open GUI)
-        return InteractionResult.PASS;
+        return ActionResult.PASS;
     }
 
-    private static InteractionResult setColor(Level world, BlockPos pos, BlockState state, DeckControlWindowColor color) {
-        if (world.isClientSide()) return InteractionResult.SUCCESS;
+    private static ActionResult setColor(World world, BlockPos pos, BlockState state, DeckControlWindowColor color) {
+        if (world.isClient()) return ActionResult.SUCCESS;
 
-        if (state.getValue(COLOR) != color) {
-            world.setBlock(pos, state.setValue(COLOR, color), Block.UPDATE_ALL);
+        if (state.get(COLOR) != color) {
+            world.setBlockState(pos, state.with(COLOR, color), Block.NOTIFY_ALL);
 
             // subtle "mode click"
-            world.playSound(null, pos, SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.BLOCKS, 0.35f, 1.5f);
+            world.playSound(null, pos, SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, SoundCategory.BLOCKS, 0.35f, 1.5f);
         }
-        return InteractionResult.CONSUME;
+        return ActionResult.CONSUME;
     }
 }
 
