@@ -2,6 +2,7 @@ package com.spider.mtgcard.client.deckcontrol;
 
 import com.spider.mtgcard.deckcontrol.DeckControlBlockEntity;
 import com.spider.mtgcard.registry.ModBlocks;
+import net.minecraft.block.BlockState;
 import net.minecraft.client.render.LightmapTextureManager;
 import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.RenderLayer;
@@ -45,6 +46,8 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
         public boolean hasDeckbox;
         public boolean hasGraveyard;
         public double time;
+
+        public Direction facing = Direction.UP; // NEW
     }
 
     public DeckControlEntityRenderer(BlockEntityRendererFactory.Context ctx) {}
@@ -73,6 +76,13 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
         state.hasDeckbox = hasAdjacent(world, pos, ModBlocks.DECKBOX);
         state.hasGraveyard = hasAdjacent(world, pos, ModBlocks.GRAVEYARD);
 
+        BlockState bs = world.getBlockState(pos);
+        if (bs.contains(com.spider.mtgcard.deckcontrol.DeckControlBlock.FACING)) {
+            state.facing = bs.get(com.spider.mtgcard.deckcontrol.DeckControlBlock.FACING);
+        } else {
+            state.facing = Direction.UP;
+        }
+
         // smooth animation time
         double seed = (pos.asLong() & 0xFFL) * 0.01;
         state.time = world.getTime() + tickProgress + seed;
@@ -84,23 +94,22 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
 
         int fullBright = LightmapTextureManager.MAX_LIGHT_COORDINATE;
 
-        // cutout looks crisp; translucent is softer. Pick one.
-        RenderLayer layer = RenderLayers.entityCutoutNoCull(SGA_TEX);
-
         matrices.push();
-        matrices.translate(0.5, 0.0, 0.5);
+        try {
+            if (state.hasDeckbox) {
+                renderRing(queue, cameraState, matrices, fullBright, state.time,
+                        state.facing,
+                        0.30, 0.80, 28, -0.08);
+            }
 
-        if (state.hasDeckbox) {
-            renderRing(queue, cameraState, matrices, layer, fullBright, state.time,
-                    0.30, 0.80, 28, -0.08);
+            if (state.hasGraveyard) {
+                renderRing(queue, cameraState, matrices, fullBright, state.time,
+                        state.facing,
+                        0.60, 0.30, 40, +0.06);
+            }
+        } finally {
+            matrices.pop();
         }
-
-        if (state.hasGraveyard) {
-            renderRing(queue, cameraState, matrices, layer, fullBright, state.time,
-                    0.60, 0.30, 40, +0.06);
-        }
-
-        matrices.pop();
     }
 
     private static boolean hasAdjacent(World world, BlockPos pos, net.minecraft.block.Block block) {
@@ -114,40 +123,43 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
             OrderedRenderCommandQueue queue,
             CameraRenderState cameraState,
             MatrixStack matrices,
-            RenderLayer unusedLayer, // keep param so your calls don't change
             int light,
             double time,
+            Direction facing,
             double radius,
             double y,
             int count,
             double omega
     ) {
-        // Even angular spacing
         final double step = MathHelper.TAU / (double) count;
         final double base = time * omega;
 
-        // Chord distance between adjacent points on the circle
         final double chord = 2.0 * radius * Math.sin(step * 0.5);
-
-        // Quad is -1..+1 => width in world is about (2 * size).
-        // Keep 2*size < chord for guaranteed no overlap.
-        float size = (float) (chord * 0.42);       // tune 0.38–0.46
+        float size = (float) (chord * 0.42);
         size = MathHelper.clamp(size, 0.02f, 0.20f);
 
         for (int i = 0; i < count; i++) {
             final double a = base + i * step;
 
-            final double px = Math.cos(a) * radius;
-            final double pz = Math.sin(a) * radius;
+            float px = (float) (Math.cos(a) * radius);
+            float pz = (float) (Math.sin(a) * radius);
 
-            // Use only the real 26 glyph textures (no blanks)
+            // Build the full point in local block space (same as your original intent)
+            // Local center of ring is (0.5, y, 0.5)
+            float lx = 0.5f + px;
+            float ly = (float) y;
+            float lz = 0.5f + pz;
+
+            // Rotate THAT point around block center, so it stays glued to the block
+            F3 p = rotatePointAroundCenter(lx, ly, lz, facing);
+
             Identifier glyphTex = SGA[i % 26];
-            RenderLayer layer = RenderLayers.entityCutoutNoCull(glyphTex); // or entityTranslucent if you want softer
+            RenderLayer layer = RenderLayers.entityCutoutNoCull(glyphTex);
 
             matrices.push();
-            matrices.translate(px, y, pz);
+            matrices.translate(p.x, p.y, p.z);
 
-            // Billboard to camera (this is fine; do NOT add extra rotation if you want "perfectly uniform")
+            // Billboard in world space (correct for all facings)
             matrices.multiply(cameraState.orientation);
 
             matrices.scale(size, size, size);
@@ -157,7 +169,6 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
                 int overlay = OverlayTexture.DEFAULT_UV;
                 int alpha = 220;
 
-                // full texture UVs (each glyph is its own texture)
                 put(vc, mat, -1f, -1f, 0f, 0f, 1f, light, overlay, alpha);
                 put(vc, mat, -1f,  1f, 0f, 0f, 0f, light, overlay, alpha);
                 put(vc, mat,  1f,  1f, 0f, 1f, 0f, light, overlay, alpha);
@@ -166,6 +177,38 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
 
             matrices.pop();
         }
+    }
+
+    private record F3(float x, float y, float z) {}
+
+    private static F3 rotatePointAroundCenter(float x, float y, float z, Direction facing) {
+        // translate point into center-relative coordinates
+        float dx = x - 0.5f;
+        float dy = y - 0.5f;
+        float dz = z - 0.5f;
+
+        // rotate the delta so local +Y maps to the facing direction
+        F3 r = rotateDelta(dx, dy, dz, facing);
+
+        // translate back
+        return new F3(0.5f + r.x, 0.5f + r.y, 0.5f + r.z);
+    }
+
+    private static F3 rotateDelta(float x, float y, float z, Direction facing) {
+        return switch (facing) {
+            case UP -> new F3(x, y, z);
+            case DOWN -> new F3(x, -y, -z);
+
+            // +Y -> -Z
+            case NORTH -> new F3(x, z, -y);
+            // +Y -> +Z
+            case SOUTH -> new F3(x, -z, y);
+
+            // +Y -> -X
+            case WEST -> new F3(-y, x, z);
+            // +Y -> +X
+            case EAST -> new F3(y, -x, z);
+        };
     }
 
     private static void put(VertexConsumer vc, Matrix4f mat,

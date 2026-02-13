@@ -336,7 +336,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         deckbox.sync();
 
         Direction facing = getCachedState().get(DeckControlBlock.FACING);
-        ejectStack(world, pos, facing, removed);
+        dropStackFromModelTop(world, pos, facing, removed);
 
         markDirty();
         syncSelf();
@@ -1150,5 +1150,65 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         gbe.markDirty();
         return out;
     }
+
+    private static void dropStackFromModelTop(World world, BlockPos pos, Direction facing, ItemStack stack) {
+        if (world == null || world.isClient() || stack == null || stack.isEmpty()) return;
+
+        final double popOut   = 0.12;
+        final double jitter   = 0.02;
+
+        double x = pos.getX() + 0.5 + facing.getOffsetX();
+        double y = pos.getY() + 0.5 + facing.getOffsetY();
+        double z = pos.getZ() + 0.5 + facing.getOffsetZ();
+
+        ItemEntity ent = new ItemEntity(world, x, y, z, stack.copy());
+
+        // Pick two perpendicular directions (always valid)
+        Direction a, b;
+        switch (facing.getAxis()) {
+            case Y -> { // facing UP/DOWN -> jitter in X/Z plane
+                a = Direction.EAST;
+                b = Direction.SOUTH;
+            }
+            case X -> { // facing EAST/WEST -> jitter in Y/Z plane
+                a = Direction.UP;
+                b = Direction.SOUTH;
+            }
+            case Z -> { // facing NORTH/SOUTH -> jitter in X/Y plane
+                a = Direction.EAST;
+                b = Direction.UP;
+            }
+            default -> { // shouldn't happen
+                a = Direction.EAST;
+                b = Direction.SOUTH;
+            }
+        }
+
+        double j1 = (world.random.nextDouble() - 0.5) * jitter;
+        double j2 = (world.random.nextDouble() - 0.5) * jitter;
+
+        double vx = facing.getOffsetX() * popOut + a.getOffsetX() * j1 + b.getOffsetX() * j2;
+        double vy = facing.getOffsetY() * popOut + a.getOffsetY() * j1 + b.getOffsetY() * j2;
+        double vz = facing.getOffsetZ() * popOut + a.getOffsetZ() * j1 + b.getOffsetZ() * j2;
+
+        ent.setVelocity(vx, vy, vz);
+        ent.setToDefaultPickupDelay();
+        world.spawnEntity(ent);
+    }
+
+
+    /**
+     * Returns a direction perpendicular to 'facing' that we can use for jitter.
+     * We want a stable choice:
+     * - If facing is vertical (UP/DOWN), use NORTH as first axis.
+     * - If facing is horizontal, use UP as first axis (so jitter can include vertical a bit if desired).
+     */
+    private static Direction pickPerpendicular(Direction facing) {
+        return switch (facing) {
+            case UP, DOWN -> Direction.NORTH;
+            default -> Direction.UP;
+        };
+    }
+
 
 }
