@@ -107,11 +107,13 @@ public class CardDisplayEntity extends AbstractDecorationEntity {
     }
 
     public void setRotStep(int v) {
-        dataTracker.set(ROT_STEP, Math.max(0, Math.min(2, v)));
+        // only allow 0 or 1
+        dataTracker.set(ROT_STEP, (v & 1));
     }
 
     public void cycleRot() {
-        setRotStep((getRotStep() + 1) % 3);
+        // toggle 0 <-> 1
+        setRotStep(getRotStep() ^ 1);
     }
 
     @Override
@@ -256,7 +258,8 @@ public class CardDisplayEntity extends AbstractDecorationEntity {
     protected void readCustomData(ReadView view) {
         super.readCustomData(view);
         setStack(view.read("Card", ItemStack.CODEC).orElse(ItemStack.EMPTY));
-        setRotStep(view.getInt("Rot", 0));
+        int r = view.getInt("Rot", 0);
+        setRotStep(r == 2 ? 1 : r);
         setFlatYawStep(view.getInt("FlatYaw", 0));
         Direction f = view.read("Facing", Direction.INDEX_CODEC).orElse(this.getFacing());
         this.setFacing(f);

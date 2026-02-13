@@ -188,7 +188,7 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         matrices.translate(0f, 0f, 0.01f);
 
         // rotate around the face normal (local Z axis after orient)
-        float degrees = (s.rotStep == 1) ? 45f : (s.rotStep == 2 ? 90f : 0f);
+        float degrees = (s.rotStep == 1) ? 90f : 0f;
         matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(-degrees));
 
         // aspect ratio sizing (XY plane)
