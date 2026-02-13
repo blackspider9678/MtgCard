@@ -2,10 +2,7 @@ package com.spider.mtgcard.deckbox;
 
 import com.mojang.serialization.MapCodec;
 import com.spider.mtgcard.registry.ModBlocks;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.BlockWithEntity;
-import net.minecraft.block.Waterloggable;
+import net.minecraft.block.*;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.NbtComponent;
@@ -13,11 +10,8 @@ import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.fluid.FluidState;
 import net.minecraft.fluid.Fluids;
-import net.minecraft.item.DyeItem;
 import net.minecraft.item.ItemPlacementContext;
 import net.minecraft.item.ItemStack;
-import net.minecraft.loot.context.LootContextParameters;
-import net.minecraft.loot.context.LootWorldContext;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtOps;
@@ -31,30 +25,34 @@ import net.minecraft.util.*;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.shape.VoxelShape;
+import net.minecraft.util.shape.VoxelShapes;
 import net.minecraft.world.BlockView;
 import net.minecraft.world.World;
 import org.jetbrains.annotations.Nullable;
-
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class DeckboxBlock extends BlockWithEntity implements Waterloggable {
 
     public static final MapCodec<DeckboxBlock> CODEC = createCodec(DeckboxBlock::new);
     public static final BooleanProperty OPEN = BooleanProperty.of("open");
-    public static final EnumProperty<Direction> FACING = Properties.HORIZONTAL_FACING;
+    public static final EnumProperty<Direction> FACING = Properties.FACING;
+
+    // "spin" is the horizontal orientation used when FACING is UP/DOWN
+    public static final EnumProperty<Direction> SPIN = EnumProperty.of(
+            "spin",
+            Direction.class,
+            Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST
+    );
+
     public static final BooleanProperty WATERLOGGED = Properties.WATERLOGGED;
 
-
-    // Positions currently being broken by a player (to prevent spill without deleting BE too early)
-    private static final Set<Long> PLAYER_BREAKING = ConcurrentHashMap.newKeySet();
 
     public DeckboxBlock(Settings settings) {
         super(settings);
         this.setDefaultState(
                 this.getStateManager().getDefaultState()
                         .with(FACING, Direction.NORTH)
+                        .with(SPIN, Direction.NORTH)
                         .with(OPEN, false)
                         .with(WATERLOGGED, false)
         );
@@ -74,11 +72,20 @@ public class DeckboxBlock extends BlockWithEntity implements Waterloggable {
     @Override
     public BlockState getPlacementState(ItemPlacementContext ctx) {
         boolean water = ctx.getWorld().getFluidState(ctx.getBlockPos()).isOf(Fluids.WATER);
+
+        // Look direction: if player looks DOWN, this becomes UP (box faces up)
+        Direction facing = ctx.getPlayerLookDirection().getOpposite();
+
+        // Horizontal “spin” always follows the player yaw (opposite = faces player)
+        Direction spin = ctx.getHorizontalPlayerFacing().getOpposite();
+
         return this.getDefaultState()
-                .with(FACING, ctx.getHorizontalPlayerFacing().getOpposite())
+                .with(FACING, facing)
+                .with(SPIN, spin)
                 .with(OPEN, false)
                 .with(WATERLOGGED, water);
     }
+
 
     @Override
     public FluidState getFluidState(BlockState state) {
@@ -104,20 +111,39 @@ public class DeckboxBlock extends BlockWithEntity implements Waterloggable {
 
     @Override
     public BlockState rotate(BlockState state, BlockRotation rotation) {
-        return state.with(FACING, rotation.rotate(state.get(FACING)));
+        Direction f = state.get(FACING);
+        Direction s = state.get(SPIN);
+
+        // Always rotate spin around Y
+        s = rotation.rotate(s);
+
+        // Only rotate facing if it is horizontal (UP/DOWN shouldn't change from a Y-rotation)
+        if (f.getAxis().isHorizontal()) {
+            f = rotation.rotate(f);
+        }
+
+        return state.with(FACING, f).with(SPIN, s);
     }
 
     @Override
     public BlockState mirror(BlockState state, BlockMirror mirror) {
-        return state.rotate(mirror.getRotation(state.get(FACING)));
-    }
+        Direction f = state.get(FACING);
+        Direction s = state.get(SPIN);
 
+        BlockRotation rot = mirror.getRotation(s);
+        s = rot.rotate(s);
+
+        if (f.getAxis().isHorizontal()) {
+            f = mirror.getRotation(f).rotate(f);
+        }
+
+        return state.with(FACING, f).with(SPIN, s);
+    }
 
     @Override
     protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
-        builder.add(FACING, OPEN, WATERLOGGED);
+        builder.add(FACING, SPIN, OPEN, WATERLOGGED);
     }
-
 
     @Override
     protected MapCodec<? extends BlockWithEntity> getCodec() {
@@ -148,26 +174,11 @@ public class DeckboxBlock extends BlockWithEntity implements Waterloggable {
     /* ---------------- Use (dye or open) ---------------- */
 
     @Override
-    protected ActionResult onUse(BlockState state, World world, BlockPos pos,
-                                 PlayerEntity player, BlockHitResult hit) {
+    public ActionResult onUse(BlockState state, World world, BlockPos pos,
+                              PlayerEntity player, BlockHitResult hit) {
 
         if (world.isClient()) return ActionResult.SUCCESS;
 
-        for (Hand hand : Hand.values()) {
-            ItemStack held = player.getStackInHand(hand);
-
-            // Dye -> tint
-            if (!held.isEmpty() && held.getItem() instanceof DyeItem dye) {
-                BlockEntity be = world.getBlockEntity(pos);
-                if (be instanceof DeckboxBlockEntity deckbox) {
-                    deckbox.setRgbTint(dye.getColor().getMapColor().color);
-                    if (!player.isCreative()) held.decrement(1);
-                    return ActionResult.CONSUME;
-                }
-            }
-        }
-
-        // Open UI
         BlockEntity be = world.getBlockEntity(pos);
         if (be instanceof DeckboxBlockEntity deckbox) {
             player.openHandledScreen(deckbox);
@@ -188,29 +199,23 @@ public class DeckboxBlock extends BlockWithEntity implements Waterloggable {
     // ✅ Your mappings: onBreak returns BlockState (not void)
     @Override
     public BlockState onBreak(World world, BlockPos pos, BlockState state, PlayerEntity player) {
-        if (!world.isClient()) {
-            long key = pos.asLong();
-            PLAYER_BREAKING.add(key);
+        BlockEntity be = world.getBlockEntity(pos);
 
-            // ✅ Creative does NOT call loot drops, so we manually spawn the bundled item here.
-            if (player.isCreative() && world instanceof ServerWorld sw) {
-                BlockEntity be = sw.getBlockEntity(pos);
-                if (be instanceof DeckboxBlockEntity deckbox) {
-                    ItemStack drop = new ItemStack(ModBlocks.DECKBOX);
+        if (!world.isClient() && be instanceof DeckboxBlockEntity deckbox && world instanceof ServerWorld sw) {
+            ItemStack drop = new ItemStack(ModBlocks.DECKBOX_ITEM);
 
-                    NbtCompound beTag = buildBlockEntityTag(deckbox);
-                    NbtCompound carrier = new NbtCompound();
-                    carrier.put("BlockEntityTag", beTag);
-                    drop.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(carrier));
+            NbtCompound beTag = buildBlockEntityTag(deckbox);
+            NbtCompound carrier = new NbtCompound();
+            carrier.put("BlockEntityTag", beTag);
+            drop.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(carrier));
 
-                    // spawn the single deckbox item
-                    ItemScatterer.spawn(sw, pos.getX(), pos.getY(), pos.getZ(), drop);
+            ItemScatterer.spawn(sw, pos.getX(), pos.getY(), pos.getZ(), drop);
 
-                    // ✅ prevent spill/duplication
-                    deckbox.clearForDropNoSync();
-                    sw.removeBlockEntity(pos);
-                }
-            }
+            deckbox.clearForDropNoSync();
+            sw.removeBlockEntity(pos);
+
+            // IMPORTANT: return state directly (do NOT call super) so vanilla doesn't also drop an empty item
+            return state;
         }
 
         return super.onBreak(world, pos, state, player);
@@ -219,34 +224,9 @@ public class DeckboxBlock extends BlockWithEntity implements Waterloggable {
     @Override
     public void afterBreak(World world, PlayerEntity player, BlockPos pos,
                            BlockState state, @Nullable BlockEntity blockEntity, ItemStack tool) {
-        if (!world.isClient()) {
-            PLAYER_BREAKING.remove(pos.asLong());
-        }
+        // DO NOT remove PLAYER_BREAKING here.
+        // In this version/mappings, afterBreak can run before onStateReplaced.
         super.afterBreak(world, player, pos, state, blockEntity, tool);
-    }
-
-    /* ---------------- Drops (SHULKER-LIKE but ALSO DROPS IN CREATIVE) ---------------- */
-
-    @Override
-    protected List<ItemStack> getDroppedStacks(BlockState state, LootWorldContext.Builder builder) {
-        BlockEntity be = builder.getOptional(LootContextParameters.BLOCK_ENTITY);
-
-        if (be instanceof DeckboxBlockEntity deckbox) {
-            ItemStack drop = new ItemStack(ModBlocks.DECKBOX_ITEM);
-
-            NbtCompound beTag = buildBlockEntityTag(deckbox);
-            NbtCompound carrier = new NbtCompound();
-            carrier.put("BlockEntityTag", beTag);
-            drop.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(carrier));
-
-            // ✅ Prevent any later spill/duplication: loot already captured, now wipe inventory
-            deckbox.clearForDropNoSync();
-
-            return List.of(drop);
-        }
-
-        // fallback: drop empty deckbox
-        return List.of(new ItemStack(ModBlocks.DECKBOX_ITEM));
     }
 
     /**
@@ -256,26 +236,13 @@ public class DeckboxBlock extends BlockWithEntity implements Waterloggable {
      */
     @Override
     protected void onStateReplaced(BlockState state, ServerWorld world, BlockPos pos, boolean moved) {
-        long key = pos.asLong();
-
-        // If this was a player break, we must prevent vanilla spill
-        if (PLAYER_BREAKING.remove(key)) {
-            // ✅ Ensure BE is gone before vanilla cleanup runs (so nothing can scatter)
-            world.removeBlockEntity(pos);
-            super.onStateReplaced(state, world, pos, moved);
-            return;
-        }
-
-        // Non-player removal (pistons/explosions/etc):
-        // your getDroppedStacks() will handle the bundled item,
-        // so just clear inventory so vanilla can't spill.
-        BlockEntity be = world.getBlockEntity(pos);
-        if (be instanceof DeckboxBlockEntity deckbox) {
-            deckbox.clearForDropNoSync();
-        }
-
+        // If we already cleared inventory in onBreak, this won't spill anything.
+        // And it will still handle comparator updates properly.
+        ItemScatterer.onStateReplaced(state, world, pos);
         super.onStateReplaced(state, world, pos, moved);
     }
+
+
 
     /* ---------------- Restore from item on place ---------------- */
 
@@ -353,5 +320,30 @@ public class DeckboxBlock extends BlockWithEntity implements Waterloggable {
         beTag.put("Items", list);
         beTag.putInt("Tint", deckbox.getRgbTint());
         return beTag;
+    }
+
+    // 1px inset cube (covers “bulk”, still looks like it fits the model)
+    private static final VoxelShape OUTLINE_INSET_1PX =
+            Block.createCuboidShape(1.0, 1.0, 1.0, 15.0, 15.0, 15.0);
+
+    @Override
+    protected VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+        return OUTLINE_INSET_1PX;
+    }
+
+    /**
+     * IMPORTANT:
+     * Keep raycast as full cube so the block is always targetable and doesn't "click through"
+     * to the block below when your outline has gaps/inset edges.
+     */
+    @Override
+    public VoxelShape getRaycastShape(BlockState state, BlockView world, BlockPos pos) {
+        return VoxelShapes.fullCube();
+    }
+
+    // Optional: keep collision full cube so players can't stand "inside" it
+    @Override
+    protected VoxelShape getCollisionShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+        return VoxelShapes.fullCube();
     }
 }
