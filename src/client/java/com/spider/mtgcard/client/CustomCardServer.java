@@ -28,7 +28,5 @@ public final class CustomCardServer {
         System.out.println("[MTGCard] Batch create: " + added + " cards");
     }
 
-
-
     private CustomCardServer() {}
 }

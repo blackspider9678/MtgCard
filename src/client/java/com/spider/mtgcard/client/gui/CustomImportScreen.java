@@ -55,7 +55,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         // --- Thumbnail texture ---
         public Identifier thumbId;
         public NativeImageBackedTexture thumbTex;
-        public int thumbW;   // REQUIRED (used for UV scaling)
+        public int thumbW;
         public int thumbH;
 
         // --- Hover preview texture (lazy) ---
@@ -64,6 +64,10 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
 
         // runtime linking info
         public Link link = new Link();
+        public boolean previewWantsBack = false;
+
+        // ✅ add this
+        public volatile boolean previewBuilding = false;
     }
 
     // ---- Manual image import pacing (UI queue) ----
@@ -146,6 +150,14 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     private int gridY1() { return GRID_TOP; }
     private int gridX2() { return panelX - 12; }
     private int gridY2() { return this.height - 40; } // stops hover over bottom bar too
+
+    private static final java.util.concurrent.ExecutorService IMG_EXEC =
+            java.util.concurrent.Executors.newFixedThreadPool(2, r -> {
+                Thread t = new Thread(r, "mtgcard-img");
+                t.setDaemon(true);
+                return t;
+            });
+
 
     @Override
     public void tick() {
@@ -231,7 +243,6 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
             }
         }
     }
-
 
     private void enqueueManualImageImport(Path p) {
         if (p == null) return;
@@ -1203,199 +1214,265 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         return rs[(i + 1) % rs.length];
     }
 
-    // ---- Thumbnails ----
-    private void buildThumbnail(Entry e) {
-        try {
-            BufferedImage src = null;
-            try (var bais = new ByteArrayInputStream(e.imgFront)) {
-                src = ImageIO.read(bais);
-            } catch (Throwable t) {
-                t.printStackTrace();
-            }
+    private void buildThumbnailAsync(Entry e) {
+        if (e == null || e.imgFront == null || e.imgFront.length == 0) return;
 
-            if (src == null) {
-                try (InputStream is = new ByteArrayInputStream(e.imgFront)) {
-                    NativeImage ni = NativeImage.read(is);
+        byte[] bytes = e.imgFront; // capture
+        java.util.concurrent.CompletableFuture
+                .supplyAsync(() -> {
                     try {
-                        int w = ni.getWidth(), h = ni.getHeight();
-                        BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-                        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
-                            int abgr = ni.getColorArgb(x, y);
-                            int a = (abgr >>> 24) & 0xFF;
-                            int b = (abgr >>> 16) & 0xFF;
-                            int g = (abgr >>> 8) & 0xFF;
-                            int r = (abgr) & 0xFF;
-                            out.setRGB(x, y, (a<<24) | (r<<16) | (g<<8) | b);
-                        }
-                        src = out;
-                    } finally { ni.close(); }
-                } catch (Throwable t) {
-                    return; // still can't decode
-                }
-            }
+                        NativeImage ni = buildThumbNativeImage(bytes);
+                        return ni;
+                    } catch (Throwable t) {
+                        return null;
+                    }
+                }, IMG_EXEC)
+                .thenAccept(ni -> {
+                    if (ni == null) return;
+                    int tw = ni.getWidth();
+                    int th = ni.getHeight();
+                    if (client != null) {
+                        client.execute(() -> installThumbTexture(e, ni, tw, th));
+                    } else {
+                        ni.close();
+                    }
+                });
+    }
 
-            // On-screen size (unchanged)
-            int drawW = BOX - 4;
-            int drawH = BOX_H - 4;
+    // ---- Thumbnails ----
+    private static NativeImage buildPreviewNativeImage(byte[] srcBytes) throws IOException {
+        // Decode to BufferedImage (same robust path you used)
+        BufferedImage src = null;
+        try (var bais = new ByteArrayInputStream(srcBytes)) {
+            src = ImageIO.read(bais);
+        } catch (Throwable ignored) {}
 
-            // Texture resolution (higher)
-            int tw = Math.max(1, drawW * THUMB_SCALE);
-            int th = Math.max(1, drawH * THUMB_SCALE);
-
-            // progressive downscale to avoid aliasing
-            BufferedImage work = src;
-            while (work.getWidth() > tw * 2 || work.getHeight() > th * 2) {
-                int nw = Math.max(tw * 2, work.getWidth() / 2);
-                int nh = Math.max(th * 2, work.getHeight() / 2);
-                BufferedImage tmp = new BufferedImage(nw, nh, BufferedImage.TYPE_INT_ARGB);
-                var g2 = tmp.createGraphics();
+        if (src == null) {
+            try (InputStream is = new ByteArrayInputStream(srcBytes)) {
+                NativeImage ni = NativeImage.read(is);
                 try {
-                    g2.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
-                            java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-                    g2.drawImage(work, 0, 0, nw, nh, null);
+                    int w = ni.getWidth(), h = ni.getHeight();
+                    BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+                    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+                        int abgr = ni.getColorArgb(x, y);
+                        int a = (abgr >>> 24) & 0xFF;
+                        int b = (abgr >>> 16) & 0xFF;
+                        int g = (abgr >>> 8) & 0xFF;
+                        int r = (abgr) & 0xFF;
+                        out.setRGB(x, y, (a<<24) | (r<<16) | (g<<8) | b);
+                    }
+                    src = out;
+                } finally { ni.close(); }
+            }
+        }
+
+        if (src == null) throw new IOException("Could not decode preview image");
+
+        if (src.getType() != BufferedImage.TYPE_INT_ARGB) {
+            BufferedImage out = new BufferedImage(src.getWidth(), src.getHeight(), BufferedImage.TYPE_INT_ARGB);
+            var g = out.createGraphics();
+            try { g.drawImage(src, 0, 0, null); } finally { g.dispose(); }
+            src = out;
+        }
+
+        int tw = PREVIEW_TEX_W;
+        int th = PREVIEW_TEX_H;
+
+        BufferedImage out = new BufferedImage(tw, th, BufferedImage.TYPE_INT_ARGB);
+        var g = out.createGraphics();
+        try {
+            g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+                    java.awt.RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            g.setRenderingHint(java.awt.RenderingHints.KEY_RENDERING,
+                    java.awt.RenderingHints.VALUE_RENDER_QUALITY);
+
+            double sx = (double) tw / src.getWidth();
+            double sy = (double) th / src.getHeight();
+            double s = Math.min(sx, sy);
+
+            int w = Math.max(1, (int)Math.round(src.getWidth() * s));
+            int h = Math.max(1, (int)Math.round(src.getHeight() * s));
+            int ox = (tw - w) / 2;
+            int oy = (th - h) / 2;
+
+            g.drawImage(src, ox, oy, ox + w, oy + h, 0, 0, src.getWidth(), src.getHeight(), null);
+        } finally { g.dispose(); }
+
+        // Convert to NativeImage RGBA
+        NativeImage niOut = new NativeImage(NativeImage.Format.RGBA, tw, th, true);
+        int[] argb = out.getRGB(0, 0, tw, th, null, 0, tw);
+        for (int y = 0; y < th; y++) {
+            int row = y * tw;
+            for (int x = 0; x < tw; x++) {
+                int c = argb[row + x];
+                int a = (c >>> 24) & 0xFF;
+                int r = (c >>> 16) & 0xFF;
+                int gg = (c >>> 8) & 0xFF;
+                int b = c & 0xFF;
+                int abgr = (a << 24) | (b << 16) | (gg << 8) | r;
+                niOut.setColor(x, y, abgr);
+            }
+        }
+        return niOut;
+    }
+
+    private void installThumbTexture(Entry e, NativeImage thumb, int tw, int th) {
+        if (client == null) { thumb.close(); return; }
+
+        var tm = client.getTextureManager();
+        if (e.thumbId != null) tm.destroyTexture(e.thumbId);
+        if (e.thumbTex != null) e.thumbTex.close();
+
+        var tex = new NativeImageBackedTexture(() -> "mtgcard/thumb", thumb);
+        var id  = Identifier.of("mtgcard", "thumb/" + UUID.randomUUID());
+        tm.registerTexture(id, tex);
+
+        e.thumbId = id;
+        e.thumbTex = tex;
+        e.thumbW = tw;
+        e.thumbH = th;
+    }
+
+    // Convenience wrapper used all over the screen
+    private void buildThumbnail(Entry e) {
+        // If you want it synchronous, you'd do it on client thread.
+        // But you already built a good async pipeline, so just call it:
+        buildThumbnailAsync(e);
+    }
+
+    // ---- Thumbnails ----
+    private static NativeImage buildThumbNativeImage(byte[] srcBytes) throws IOException {
+        // Decode to BufferedImage (robust path: ImageIO -> NativeImage fallback)
+        BufferedImage src = null;
+        try (var bais = new ByteArrayInputStream(srcBytes)) {
+            src = ImageIO.read(bais);
+        } catch (Throwable ignored) {}
+
+        if (src == null) {
+            try (InputStream is = new ByteArrayInputStream(srcBytes)) {
+                NativeImage ni = NativeImage.read(is);
+                try {
+                    int w = ni.getWidth(), h = ni.getHeight();
+                    BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+                    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+                        int abgr = ni.getColorArgb(x, y);
+                        int a = (abgr >>> 24) & 0xFF;
+                        int b = (abgr >>> 16) & 0xFF;
+                        int g = (abgr >>> 8) & 0xFF;
+                        int r = (abgr) & 0xFF;
+                        out.setRGB(x, y, (a<<24) | (r<<16) | (g<<8) | b);
+                    }
+                    src = out;
                 } finally {
-                    g2.dispose();
-                }
-                work = tmp;
-            }
-
-            // Fit whole image into texture, centered (no cropping)
-            BufferedImage thumbBI = new BufferedImage(tw, th, BufferedImage.TYPE_INT_ARGB);
-            var g = thumbBI.createGraphics();
-            try {
-                g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
-                        java.awt.RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-                g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
-                        java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-                g.setRenderingHint(java.awt.RenderingHints.KEY_RENDERING,
-                        java.awt.RenderingHints.VALUE_RENDER_QUALITY);
-
-                double sx = (double) tw / work.getWidth();
-                double sy = (double) th / work.getHeight();
-                double s = Math.min(sx, sy);
-                int w = Math.max(1, (int) Math.round(work.getWidth() * s));
-                int h = Math.max(1, (int) Math.round(work.getHeight() * s));
-                int ox = (tw - w) / 2;
-                int oy = (th - h) / 2;
-
-                g.drawImage(work, ox, oy, ox + w, oy + h, 0, 0, work.getWidth(), work.getHeight(), null);
-            } finally {
-                g.dispose();
-            }
-
-            // mild sharpening helps when downsampling on GPU
-            thumbBI = unsharpMask(thumbBI, 0.5f);
-
-            NativeImage thumb = new NativeImage(NativeImage.Format.RGBA, tw, th, true);
-            int[] argb = thumbBI.getRGB(0, 0, tw, th, null, 0, tw);
-            for (int yy = 0; yy < th; yy++) {
-                int row = yy * tw;
-                for (int xx = 0; xx < tw; xx++) {
-                    int c = argb[row + xx];
-                    int a = (c >>> 24) & 0xFF;
-                    int r = (c >>> 16) & 0xFF;
-                    int g2 = (c >>> 8) & 0xFF;
-                    int b = c & 0xFF;
-                    int abgr = (a << 24) | (b << 16) | (g2 << 8) | r;
-                    thumb.setColor(xx, yy, abgr);
+                    ni.close();
                 }
             }
+        }
 
-            // destroy old texture if rebuilding
-            if (client != null) {
-                var tm = client.getTextureManager();
-                if (e.thumbId != null) tm.destroyTexture(e.thumbId);
-                if (e.thumbTex != null) e.thumbTex.close();
+        if (src == null) throw new IOException("Could not decode thumbnail image");
+
+        // Ensure ARGB
+        if (src.getType() != BufferedImage.TYPE_INT_ARGB) {
+            BufferedImage out = new BufferedImage(src.getWidth(), src.getHeight(), BufferedImage.TYPE_INT_ARGB);
+            var g = out.createGraphics();
+            try { g.drawImage(src, 0, 0, null); } finally { g.dispose(); }
+            src = out;
+        }
+
+        // Thumb texture size (2x the UI draw size for crispness)
+        final int tw = BOX * 2;
+        final int th = BOX_H * 2;
+
+        BufferedImage out = new BufferedImage(tw, th, BufferedImage.TYPE_INT_ARGB);
+        var g = out.createGraphics();
+        try {
+            g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+                    java.awt.RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            g.setRenderingHint(java.awt.RenderingHints.KEY_RENDERING,
+                    java.awt.RenderingHints.VALUE_RENDER_QUALITY);
+
+            // Scale to fit and center (preserve aspect ratio)
+            double sx = (double) tw / src.getWidth();
+            double sy = (double) th / src.getHeight();
+            double s = Math.min(sx, sy);
+
+            int w = Math.max(1, (int)Math.round(src.getWidth() * s));
+            int h = Math.max(1, (int)Math.round(src.getHeight() * s));
+            int ox = (tw - w) / 2;
+            int oy = (th - h) / 2;
+
+            g.drawImage(src, ox, oy, ox + w, oy + h, 0, 0, src.getWidth(), src.getHeight(), null);
+        } finally {
+            g.dispose();
+        }
+
+        // Convert ARGB -> NativeImage ABGR (Minecraft format)
+        NativeImage niOut = new NativeImage(NativeImage.Format.RGBA, tw, th, true);
+        int[] argb = out.getRGB(0, 0, tw, th, null, 0, tw);
+        for (int y = 0; y < th; y++) {
+            int row = y * tw;
+            for (int x = 0; x < tw; x++) {
+                int c = argb[row + x];
+                int a = (c >>> 24) & 0xFF;
+                int r = (c >>> 16) & 0xFF;
+                int gg = (c >>> 8) & 0xFF;
+                int b = c & 0xFF;
+                int abgr = (a << 24) | (b << 16) | (gg << 8) | r;
+                niOut.setColor(x, y, abgr);
             }
-
-            var tex = new NativeImageBackedTexture(() -> "mtgcard/thumb", thumb);
-            var id = Identifier.of("mtgcard", "thumb/" + UUID.randomUUID());
-            if (client != null) client.getTextureManager().registerTexture(id, tex);
-
-            e.thumbId = id;
-            e.thumbTex = tex;
-            e.thumbW = tw;
-            e.thumbH = th;
-        } catch (Throwable ignore) {}
+        }
+        return niOut;
     }
 
     // ---- Hover preview texture (lazy) ----
     private void ensurePreviewTexture(Entry e, boolean wantBackFace) {
-        try {
-            if (e == null) return;
+        if (e == null) return;
+        if (e.previewId != null && e.previewTex != null && e.previewWantsBack == wantBackFace) return;
+        if (e.previewBuilding) return;
 
-            // If already built, done.
-            if (e.previewId != null && e.previewTex != null) return;
+        e.previewBuilding = true;
+        e.previewWantsBack = wantBackFace;
 
-            byte[] srcBytes = wantBackFace && e.imgBack != null && e.imgBack.length > 0 ? e.imgBack : e.imgFront;
-            if (srcBytes == null || srcBytes.length == 0) return;
+        byte[] srcBytes = wantBackFace && e.imgBack != null && e.imgBack.length > 0 ? e.imgBack : e.imgFront;
+        if (srcBytes == null || srcBytes.length == 0) { e.previewBuilding = false; return; }
 
-            BufferedImage src;
-            try (var bais = new ByteArrayInputStream(srcBytes)) {
-                src = ImageIO.read(bais);
-            }
-            if (src == null) return;
+        java.util.concurrent.CompletableFuture
+                .supplyAsync(() -> {
+                    try {
+                        // You can reuse your preview pipeline, but DO IT HERE off-thread
+                        // (same decode/scale/convert pattern as thumbnail, but PREVIEW_TEX_W/H)
+                        return buildPreviewNativeImage(srcBytes); // implement similar to thumb builder
+                    } catch (Throwable t) {
+                        return null;
+                    }
+                }, IMG_EXEC)
+                .thenAccept(ni -> {
+                    if (ni == null) { e.previewBuilding = false; return; }
+                    int tw = ni.getWidth(), th = ni.getHeight();
+                    if (client != null) {
+                        client.execute(() -> {
+                            try {
+                                var tm = client.getTextureManager();
+                                if (e.previewId != null) tm.destroyTexture(e.previewId);
+                                if (e.previewTex != null) e.previewTex.close();
 
-            int tw = PREVIEW_TEX_W;
-            int th = PREVIEW_TEX_H;
+                                var tex = new NativeImageBackedTexture(() -> "mtgcard/preview", ni);
+                                var id  = Identifier.of("mtgcard", "preview/" + UUID.randomUUID());
+                                tm.registerTexture(id, tex);
 
-            // Progressive downscale if huge (keeps text crisp)
-            BufferedImage work = src;
-            while (work.getWidth() > tw * 2 || work.getHeight() > th * 2) {
-                int nw = Math.max(tw * 2, work.getWidth() / 2);
-                int nh = Math.max(th * 2, work.getHeight() / 2);
-                BufferedImage tmp = new BufferedImage(nw, nh, BufferedImage.TYPE_INT_ARGB);
-                var g2 = tmp.createGraphics();
-                try {
-                    g2.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-                    g2.drawImage(work, 0, 0, nw, nh, null);
-                } finally { g2.dispose(); }
-                work = tmp;
-            }
-
-            BufferedImage out = new BufferedImage(tw, th, BufferedImage.TYPE_INT_ARGB);
-            var g = out.createGraphics();
-            try {
-                g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-                g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-                g.setRenderingHint(java.awt.RenderingHints.KEY_RENDERING, java.awt.RenderingHints.VALUE_RENDER_QUALITY);
-
-                double sx = (double) tw / work.getWidth();
-                double sy = (double) th / work.getHeight();
-                double s = Math.min(sx, sy);
-                int w = Math.max(1, (int) Math.round(work.getWidth() * s));
-                int h = Math.max(1, (int) Math.round(work.getHeight() * s));
-                int ox = (tw - w) / 2, oy = (th - h) / 2;
-
-                g.drawImage(work, ox, oy, ox + w, oy + h, 0, 0, work.getWidth(), work.getHeight(), null);
-            } finally { g.dispose(); }
-
-            // Slight sharpen for UI readability (optional but helps)
-            out = unsharpMask(out, 0.35f);
-
-            NativeImage ni = new NativeImage(NativeImage.Format.RGBA, tw, th, true);
-            int[] argb = out.getRGB(0, 0, tw, th, null, 0, tw);
-            for (int yy = 0; yy < th; yy++) {
-                int row = yy * tw;
-                for (int xx = 0; xx < tw; xx++) {
-                    int c = argb[row + xx];
-                    int a = (c >>> 24) & 0xFF;
-                    int r = (c >>> 16) & 0xFF;
-                    int g2 = (c >>> 8)  & 0xFF;
-                    int b =  c         & 0xFF;
-                    int abgr = (a << 24) | (b << 16) | (g2 << 8) | r;
-                    ni.setColor(xx, yy, abgr);
-                }
-            }
-
-            var tex = new NativeImageBackedTexture(() -> "mtgcard/preview", ni);
-            var id  = Identifier.of("mtgcard", "preview/" + UUID.randomUUID());
-
-            if (client != null) client.getTextureManager().registerTexture(id, tex);
-            e.previewId = id;
-            e.previewTex = tex;
-        } catch (Throwable ignored) {}
+                                e.previewId = id;
+                                e.previewTex = tex;
+                            } finally {
+                                e.previewBuilding = false;
+                            }
+                        });
+                    } else {
+                        ni.close();
+                        e.previewBuilding = false;
+                    }
+                });
     }
+
 
     private void drawHoverPreview(DrawContext ctx, int mouseX, int mouseY) {
         if (hoveredIndex < 0 || hoveredIndex >= entries.size()) return;
