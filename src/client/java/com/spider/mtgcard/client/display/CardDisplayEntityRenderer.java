@@ -3,38 +3,36 @@ package com.spider.mtgcard.client.display;
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.display.CardDisplayEntity;
-import net.minecraft.client.gui.Font;
-
-import net.minecraft.client.renderer.state.level.CameraRenderState;
-import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.client.renderer.rendertype.RenderTypes;
-import com.mojang.blaze3d.vertex.VertexConsumer;
-import net.minecraft.client.renderer.SubmitNodeCollector;
-import net.minecraft.client.renderer.entity.EntityRenderer;
-import net.minecraft.client.renderer.entity.EntityRendererProvider;
-import net.minecraft.client.renderer.entity.state.EntityRenderState;
-import com.mojang.blaze3d.vertex.PoseStack;
-import net.minecraft.core.component.DataComponents;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.Identifier;
-import net.minecraft.core.Direction;
-import com.mojang.math.Axis;
+import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.render.LightmapTextureManager;
+import net.minecraft.client.render.OverlayTexture;
+import net.minecraft.client.render.RenderLayers;
+import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.client.render.command.OrderedRenderCommandQueue;
+import net.minecraft.client.render.entity.EntityRenderer;
+import net.minecraft.client.render.entity.EntityRendererFactory;
+import net.minecraft.client.render.entity.state.EntityRenderState;
+import net.minecraft.client.render.state.CameraRenderState;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.RotationAxis;
 import org.joml.Matrix4f;
 
 public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity, CardDisplayEntityRenderer.State> {
 
     // Use constants instead of resource probing / image decode (avoids early RenderSystem/device issues)
-    private static final Identifier TEX_WHITE = Identifier.fromNamespaceAndPath("minecraft", "textures/misc/white.png");
-    private static final Identifier TEX_BACK  = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/card.png");
+    private static final Identifier TEX_WHITE = Identifier.of("minecraft", "textures/misc/white.png");
+    private static final Identifier TEX_BACK  = Identifier.of("mtgcard", "textures/gui/card.png");
 
     // Pick a stable aspect ratio for card back. (These are the values you already used as defaults.)
     private static final int BACK_W = 488;
     private static final int BACK_H = 680;
 
-    private final Font textRenderer;
-
-    private static final int FULL_BRIGHT = 0x00F000F0;
+    private final TextRenderer textRenderer;
 
     public static class State extends EntityRenderState {
         public ItemStack stack = ItemStack.EMPTY;
@@ -47,9 +45,9 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         public int flatYawStep = 0;
     }
 
-    public CardDisplayEntityRenderer(EntityRendererProvider.Context ctx) {
+    public CardDisplayEntityRenderer(EntityRendererFactory.Context ctx) {
         super(ctx);
-        this.textRenderer = ctx.getFont();
+        this.textRenderer = ctx.getTextRenderer();
         Mtgcard.LOGGER.info("[CardDisplay] CardDisplayEntityRenderer constructed");
     }
 
@@ -59,11 +57,11 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
     }
 
     @Override
-    public void extractRenderState(CardDisplayEntity entity, State s, float tickDelta) {
-        super.extractRenderState(entity, s, tickDelta); // REQUIRED in 1.21.11+
+    public void updateRenderState(CardDisplayEntity entity, State s, float tickDelta) {
+        super.updateRenderState(entity, s, tickDelta); // REQUIRED in 1.21.11+
 
         s.stack = entity.getStack();
-        s.facing = entity.getNearestViewDirection();
+        s.facing = entity.getFacing();
         s.rotStep = entity.getRotStep();
         s.flatYawStep = entity.getFlatYawStep();
 
@@ -101,18 +99,18 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
 
     private void renderCounterStripOnCard(
             State s,
-            PoseStack matrices,
-            Font tr,
-            SubmitNodeCollector queue
+            MatrixStack matrices,
+            TextRenderer tr,
+            OrderedRenderCommandQueue queue
     ) {
         if (s.stack == null || s.stack.isEmpty()) return;
 
-        CompoundTag counters = readCounters(s.stack);
-        if (counters.keySet().isEmpty()) return;
+        NbtCompound counters = readCounters(s.stack);
+        if (counters.getKeys().isEmpty()) return;
 
         // Collect nonzero keys
         java.util.List<String> keys = new java.util.ArrayList<>();
-        for (String k : counters.keySet()) {
+        for (String k : counters.getKeys()) {
             int v = counters.getInt(k).orElse(0);
             if (v > 0) keys.add(k);
         }
@@ -130,7 +128,7 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         float startX = -0.5f + padX;
         float startY =  0.5f - padY;
 
-        matrices.pushPose();
+        matrices.push();
         matrices.translate(0f, 0f, 0.012f);
 
         for (int i = 0; i < keys.size(); i++) {
@@ -144,12 +142,12 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
 
             String iconKey = readCounterIcon(s.stack, key);
             if (iconKey != null && !iconKey.equals("none")) {
-                Identifier iconTex = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/" + iconKey + ".png");
-                var layer = RenderTypes.entityCutout(iconTex);
+                Identifier iconTex = Identifier.of("mtgcard", "textures/gui/counters/" + iconKey + ".png");
+                var layer = RenderLayers.entityCutoutNoCull(iconTex);
 
-                queue.submitCustomGeometry(matrices, layer, (entry, vc) -> {
-                    Matrix4f mat = entry.pose();
-                    int fullLight = FULL_BRIGHT;
+                queue.submitCustom(matrices, layer, (entry, vc) -> {
+                    Matrix4f mat = entry.getPositionMatrix();
+                    int fullLight = LightmapTextureManager.MAX_LIGHT_COORDINATE;
 
                     float x0 = x;
                     float y0 = y - icon; // bottom
@@ -158,10 +156,10 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
 
                     // Vertex order: bottom-left, top-left, top-right, bottom-right
                     // UVs:          (0,1)      (0,0)     (1,0)     (1,1)
-                    put(vc, mat, x0, y0, 0f, 0f, 1f, fullLight, OverlayTexture.NO_OVERLAY);
-                    put(vc, mat, x0, y1, 0f, 0f, 0f, fullLight, OverlayTexture.NO_OVERLAY);
-                    put(vc, mat, x1, y1, 0f, 1f, 0f, fullLight, OverlayTexture.NO_OVERLAY);
-                    put(vc, mat, x1, y0, 0f, 1f, 1f, fullLight, OverlayTexture.NO_OVERLAY);
+                    put(vc, mat, x0, y0, 0f, 0f, 1f, fullLight, OverlayTexture.DEFAULT_UV);
+                    put(vc, mat, x0, y1, 0f, 0f, 0f, fullLight, OverlayTexture.DEFAULT_UV);
+                    put(vc, mat, x1, y1, 0f, 1f, 0f, fullLight, OverlayTexture.DEFAULT_UV);
+                    put(vc, mat, x1, y0, 0f, 1f, 1f, fullLight, OverlayTexture.DEFAULT_UV);
 
                 });
             }
@@ -169,21 +167,21 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
             // (Optional later) number rendering can go here, but avoid MinecraftClient.getInstance() calls.
         }
 
-        matrices.popPose();
+        matrices.pop();
     }
 
     @Override
-    public void submit(State s, PoseStack matrices, SubmitNodeCollector queue, CameraRenderState cameraState) {
+    public void render(State s, MatrixStack matrices, OrderedRenderCommandQueue queue, CameraRenderState cameraState) {
         if (s.stack == null || s.stack.isEmpty()) return;
 
-        var layer = RenderTypes.entityCutout(s.texId);
+        var layer = RenderLayers.entityCutoutNoCull(s.texId);
 
-        matrices.pushPose();
+        matrices.push();
 
         // Build a quad in XY plane facing +Z, then rotate it to match the entity face
         orientQuadToFace(matrices, s.facing);
         if (s.facing == Direction.UP || s.facing == Direction.DOWN) {
-            matrices.mulPose(Axis.ZP.rotationDegrees(-s.flatYawStep * 90f));
+            matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(-s.flatYawStep * 90f));
         }
 
         // tiny push away from the block face to avoid z-fighting
@@ -191,7 +189,7 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
 
         // rotate around the face normal (local Z axis after orient)
         float degrees = (s.rotStep == 1) ? 90f : 0f;
-        matrices.mulPose(Axis.ZP.rotationDegrees(-degrees));
+        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(-degrees));
 
         // aspect ratio sizing (XY plane)
         float ar = (float) s.texW / (float) s.texH;
@@ -208,63 +206,63 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         final float u0 = 0f, u1 = 1f;
         final float v0 = 1f, v1 = 0f;
 
-        queue.submitCustomGeometry(matrices, layer, (entry, vc) -> {
-            Matrix4f mat = entry.pose();
-            int fullLight = FULL_BRIGHT;
+        queue.submitCustom(matrices, layer, (entry, vc) -> {
+            Matrix4f mat = entry.getPositionMatrix();
+            int fullLight = LightmapTextureManager.MAX_LIGHT_COORDINATE;
 
-            put(vc, mat, -halfW, -halfH, 0f, u0, v0, fullLight, OverlayTexture.NO_OVERLAY);
-            put(vc, mat, -halfW,  halfH, 0f, u0, v1, fullLight, OverlayTexture.NO_OVERLAY);
-            put(vc, mat,  halfW,  halfH, 0f, u1, v1, fullLight, OverlayTexture.NO_OVERLAY);
-            put(vc, mat,  halfW, -halfH, 0f, u1, v0, fullLight, OverlayTexture.NO_OVERLAY);
+            put(vc, mat, -halfW, -halfH, 0f, u0, v0, fullLight, OverlayTexture.DEFAULT_UV);
+            put(vc, mat, -halfW,  halfH, 0f, u0, v1, fullLight, OverlayTexture.DEFAULT_UV);
+            put(vc, mat,  halfW,  halfH, 0f, u1, v1, fullLight, OverlayTexture.DEFAULT_UV);
+            put(vc, mat,  halfW, -halfH, 0f, u1, v0, fullLight, OverlayTexture.DEFAULT_UV);
         });
 
         // After drawing the big card quad
         renderCounterStripOnCard(s, matrices, this.textRenderer, queue);
 
-        matrices.popPose();
+        matrices.pop();
     }
 
     private static void put(VertexConsumer vc, Matrix4f mat,
                             float x, float y, float z,
                             float u, float v,
                             int light, int overlay) {
-        vc.addVertex(mat, x, y, z)
-                .setColor(255, 255, 255, 255)
-                .setUv(u, v)
-                .setOverlay(overlay)
-                .setLight(light)
-                .setNormal(0f, 0f, 1f);
+        vc.vertex(mat, x, y, z)
+                .color(255, 255, 255, 255)
+                .texture(u, v)
+                .overlay(overlay)
+                .light(light)
+                .normal(0f, 0f, 1f);
     }
 
     private static Identifier fallbackItemTexture(ItemStack stack) {
-        Identifier id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem());
-        return Identifier.fromNamespaceAndPath(id.getNamespace(), "textures/item/" + id.getPath() + ".png");
+        Identifier id = net.minecraft.registry.Registries.ITEM.getId(stack.getItem());
+        return Identifier.of(id.getNamespace(), "textures/item/" + id.getPath() + ".png");
     }
 
-    private static void orientQuadToFace(PoseStack matrices, Direction facing) {
+    private static void orientQuadToFace(MatrixStack matrices, Direction facing) {
         // Quad starts facing +Z (SOUTH) in local space
         switch (facing) {
             case SOUTH -> { /* no rotation */ }
-            case NORTH -> matrices.mulPose(Axis.YP.rotationDegrees(180f));
-            case WEST  -> matrices.mulPose(Axis.YP.rotationDegrees(90f));
-            case EAST  -> matrices.mulPose(Axis.YP.rotationDegrees(-90f));
-            case UP    -> matrices.mulPose(Axis.XP.rotationDegrees(-90f)); // +Z -> +Y
-            case DOWN  -> matrices.mulPose(Axis.XP.rotationDegrees(90f));  // +Z -> -Y
+            case NORTH -> matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180f));
+            case WEST  -> matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(90f));
+            case EAST  -> matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-90f));
+            case UP    -> matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-90f)); // +Z -> +Y
+            case DOWN  -> matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(90f));  // +Z -> -Y
         }
     }
 
-    private static CompoundTag readMeta(ItemStack st) {
-        var comp = st.get(DataComponents.CUSTOM_DATA);
-        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
-        return root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
+    private static NbtCompound readMeta(ItemStack st) {
+        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
+        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
+        return root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
     }
 
-    private static CompoundTag readCounters(ItemStack st) {
-        return readMeta(st).getCompound("counters").orElseGet(CompoundTag::new);
+    private static NbtCompound readCounters(ItemStack st) {
+        return readMeta(st).getCompound("counters").orElseGet(NbtCompound::new);
     }
 
     private static String readCounterIcon(ItemStack st, String key) {
-        CompoundTag icons = readMeta(st).getCompound("counter_icons").orElse(null);
+        NbtCompound icons = readMeta(st).getCompound("counter_icons").orElse(null);
         if (icons == null) return "none";
         return icons.getString(key).orElse("none");
     }
@@ -276,16 +274,16 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
     }
 
     private static boolean readHiddenFlagFromStack(ItemStack st) {
-        var comp = st.get(DataComponents.CUSTOM_DATA);
-        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
-        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
+        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
+        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
+        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
         return meta.getBoolean("mtg_hidden").orElse(false);
     }
 
     private static int readFaceIndex(ItemStack stack) {
-        var comp = stack.get(DataComponents.CUSTOM_DATA);
-        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
-        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
+        var comp = stack.get(DataComponentTypes.CUSTOM_DATA);
+        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
+        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
         return meta.getInt("mtg_face").orElse(0);
     }
 }
