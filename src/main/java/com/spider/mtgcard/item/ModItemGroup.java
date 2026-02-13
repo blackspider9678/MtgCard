@@ -20,7 +20,7 @@ public final class ModItemGroup {
                 Identifier.of(Mtgcard.MOD_ID, "main"),
                 FabricItemGroup.builder()
                         // SAFE ICON: don’t depend on your static fields here
-                        .icon(() -> new ItemStack(Items.PAPER))
+                        .icon(() -> new ItemStack(ModItems.CARD))
                         .displayName(Text.translatable("itemGroup.mtgcard"))
                         .entries((ctx, entries) -> {
                             // Resolve from the registry to avoid nulls
