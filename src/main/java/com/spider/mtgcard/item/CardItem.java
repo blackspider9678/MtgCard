@@ -17,6 +17,7 @@ import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
@@ -78,9 +79,8 @@ public class CardItem extends Item {
         String set  = meta.getString("set").orElse("");
         String num  = meta.getString("collector_number").orElse("");
 
-        boolean foil = root.getBoolean("mtg_foil").orElse(false); // ✅ correct location
+        boolean foil = root.getBoolean("mtg_foil").orElse(false);
 
-        if (!name.isEmpty()) textConsumer.accept(Text.literal(name));
         if (!set.isEmpty() || !num.isEmpty()) {
             String line = (set.isEmpty() ? "" : set.toUpperCase())
                     + (num.isEmpty() ? "" : " • #" + num)

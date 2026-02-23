@@ -1,11 +1,12 @@
 package com.spider.mtgcard.client;
 
 import com.spider.mtgcard.client.guidebook.GuideBookClientNet;
+import com.spider.mtgcard.client.hud.CardPeekHud;
+import com.spider.mtgcard.client.input.ModKeybinds;
 import com.spider.mtgcard.client.java.CardArtManager;
+import com.spider.mtgcard.client.tooltips.CardTooltipHints;
 import com.spider.mtgcard.registry.ModBlockEntities;
 import com.spider.mtgcard.ModEntities;
-import com.spider.mtgcard.registry.ModParticles;
-import com.spider.mtgcard.registry.ModRegistry;
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.client.gui.*;
@@ -21,18 +22,14 @@ import com.spider.mtgcard.screen.ModScreenHandlers;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.particle.v1.ParticleFactoryRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.BlockEntityRendererRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.BlockRenderLayerMap;
-import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.ingame.HandledScreens;
 import net.minecraft.client.render.BlockRenderLayer;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
 import net.minecraft.client.render.entity.EntityRendererFactories;
-import net.minecraft.entity.EntityType;
-import net.minecraft.registry.Registries;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWDropCallback;
 
@@ -69,6 +66,9 @@ public final class MtgcardClient implements ClientModInitializer {
         HandledScreens.register(ModScreenHandlers.CARD_STORE, CardStoreScreen::new);
 
         GuideBookClientNet.init();
+        ModKeybinds.init();
+        CardPeekHud.init();
+        CardTooltipHints.init();
 
         // Window-dependent and renderer registration after client is started
         ClientLifecycleEvents.CLIENT_STARTED.register(client -> {

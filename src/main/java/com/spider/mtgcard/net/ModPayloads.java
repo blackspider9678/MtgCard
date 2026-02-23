@@ -75,6 +75,8 @@ public final class ModPayloads {
         PayloadTypeRegistry.playS2C().register(UnbundleProgressPayload.ID, UnbundleProgressPayload.CODEC);
         PayloadTypeRegistry.playC2S().register(GraveyardActionPayload.ID, GraveyardActionPayload.CODEC);
 
+        PayloadTypeRegistry.playC2S().register(FlipHeldCardFacePayload.ID, FlipHeldCardFacePayload.CODEC);
+
         // ---- Deck export/list (server -> client) ----
         PayloadTypeRegistry.playS2C().register(DeckPayloads.DeckExportRequestS2C.ID, DeckPayloads.DeckExportRequestS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(DeckPayloads.DeckListRequestS2C.ID, DeckPayloads.DeckListRequestS2C.CODEC);
@@ -223,6 +225,33 @@ public final class ModPayloads {
             });
         });
 
+        ServerPlayNetworking.registerGlobalReceiver(FlipHeldCardFacePayload.ID, (payload, context) -> {
+            context.server().execute(() -> {
+                var player = context.player();
+                if (player == null) return;
+
+                var stack = player.getStackInHand(payload.hand());
+                if (stack == null || stack.isEmpty()) return;
+
+                // Make sure it's your card item
+                if (!(stack.getItem() instanceof com.spider.mtgcard.item.CardItem)) return;
+
+                // Make sure it's actually double-faced
+                if (!isDoubleFaced(stack)) return;
+
+                int faceCount = getFaceCount(stack);
+                if (faceCount <= 1) return;
+
+                int cur = readFaceIndex(stack);
+                int next = (cur + 1) % faceCount;
+
+                writeFaceIndex(stack, next);
+
+                // force inventory sync (usually not necessary, but helps in edge cases)
+                player.currentScreenHandler.sendContentUpdates();
+            });
+        });
+
         // -------------------------
         // Graveyard actions
         // -------------------------
@@ -345,6 +374,41 @@ public final class ModPayloads {
         Path clientStyle    = run.resolve("saves").resolve(levelName);
 
         return Files.exists(dedicatedStyle) ? dedicatedStyle : clientStyle;
+    }
+
+    private static net.minecraft.nbt.NbtCompound getMeta(net.minecraft.item.ItemStack st) {
+        var comp = st.get(net.minecraft.component.DataComponentTypes.CUSTOM_DATA);
+        net.minecraft.nbt.NbtCompound root = (comp == null) ? new net.minecraft.nbt.NbtCompound() : comp.copyNbt();
+        return root.getCompound("mtg_meta").orElseGet(net.minecraft.nbt.NbtCompound::new);
+    }
+
+    private static boolean isDoubleFaced(net.minecraft.item.ItemStack st) {
+        var meta = getMeta(st);
+        var el = meta.get("card_faces");
+        return el instanceof net.minecraft.nbt.NbtList list && list.size() >= 2;
+    }
+
+    private static int getFaceCount(net.minecraft.item.ItemStack st) {
+        var meta = getMeta(st);
+        var el = meta.get("card_faces");
+        if (el instanceof net.minecraft.nbt.NbtList list) return Math.max(1, list.size());
+        return 1;
+    }
+
+    private static int readFaceIndex(net.minecraft.item.ItemStack st) {
+        var meta = getMeta(st);
+        return meta.getInt("mtg_face").orElse(0);
+    }
+
+    private static void writeFaceIndex(net.minecraft.item.ItemStack st, int idx) {
+        var comp = st.get(net.minecraft.component.DataComponentTypes.CUSTOM_DATA);
+        net.minecraft.nbt.NbtCompound root = (comp == null) ? new net.minecraft.nbt.NbtCompound() : comp.copyNbt();
+        net.minecraft.nbt.NbtCompound meta = root.getCompound("mtg_meta").orElseGet(net.minecraft.nbt.NbtCompound::new);
+
+        meta.putInt("mtg_face", idx);
+        root.put("mtg_meta", meta);
+
+        st.set(net.minecraft.component.DataComponentTypes.CUSTOM_DATA, net.minecraft.component.type.NbtComponent.of(root));
     }
 
     private ModPayloads() {}
