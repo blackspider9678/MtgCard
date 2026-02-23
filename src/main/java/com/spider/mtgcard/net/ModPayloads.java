@@ -8,14 +8,10 @@ import com.spider.mtgcard.net.payload.*;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.core.component.DataComponents;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.network.chat.Component;
+import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.CustomData;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -114,15 +110,15 @@ public final class ModPayloads {
                 int slot = payload.slot();
                 boolean hidden = payload.hidden();
 
-                if (slot < 0 || slot >= player.getInventory().getContainerSize()) return;
+                if (slot < 0 || slot >= player.getInventory().size()) return;
 
-                ItemStack st = player.getInventory().getItem(slot);
+                ItemStack st = player.getInventory().getStack(slot);
                 if (st.isEmpty()) return;
 
                 com.spider.mtgcard.util.StackData.writeHidden(st, hidden);
 
-                player.getInventory().setChanged();
-                player.containerMenu.broadcastChanges();
+                player.getInventory().markDirty();
+                player.currentScreenHandler.sendContentUpdates();
             });
         });
 
@@ -130,9 +126,9 @@ public final class ModPayloads {
         ServerPlayNetworking.registerGlobalReceiver(CardDisplayPayloads.DisplaySetHiddenC2S.ID, (payload, ctx) -> {
             ctx.server().execute(() -> {
                 var player = ctx.player();
-                var world = player.level();
+                var world = player.getEntityWorld();
 
-                var ent = world.getEntity(payload.entityId());
+                var ent = world.getEntityById(payload.entityId());
                 if (!(ent instanceof com.spider.mtgcard.display.CardDisplayEntity display)) return;
 
                 ItemStack st = display.getStack().copy();
@@ -150,23 +146,28 @@ public final class ModPayloads {
                 int slot = payload.slot();
                 int face = payload.face();
 
-                if (slot < 0 || slot >= player.getInventory().getContainerSize()) return;
+                if (slot < 0 || slot >= player.getInventory().size()) return;
 
-                var st = player.getInventory().getItem(slot);
+                var st = player.getInventory().getStack(slot);
                 if (st.isEmpty()) return;
 
                 // write mtg_face into CUSTOM_DATA -> mtg_meta
-                var comp = st.get(DataComponents.CUSTOM_DATA);
-                CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
-                CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
+                var comp = st.get(net.minecraft.component.DataComponentTypes.CUSTOM_DATA);
+                net.minecraft.nbt.NbtCompound root = (comp == null)
+                        ? new net.minecraft.nbt.NbtCompound()
+                        : comp.copyNbt();
+
+                net.minecraft.nbt.NbtCompound meta = root.getCompound("mtg_meta")
+                        .orElseGet(net.minecraft.nbt.NbtCompound::new);
 
                 meta.putInt("mtg_face", Math.max(0, face));
                 root.put("mtg_meta", meta);
 
-                st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
+                st.set(net.minecraft.component.DataComponentTypes.CUSTOM_DATA,
+                        net.minecraft.component.type.NbtComponent.of(root));
 
-                player.getInventory().setChanged();
-                player.containerMenu.broadcastChanges();
+                player.getInventory().markDirty();
+                player.currentScreenHandler.sendContentUpdates();
             });
         });
 
@@ -176,24 +177,24 @@ public final class ModPayloads {
                 int slot = payload.slot();
                 String key = payload.key();
 
-                if (slot < 0 || slot >= player.getInventory().getContainerSize()) return;
+                if (slot < 0 || slot >= player.getInventory().size()) return;
 
-                ItemStack st = player.getInventory().getItem(slot);
+                ItemStack st = player.getInventory().getStack(slot);
                 if (st.isEmpty()) return;
 
                 com.spider.mtgcard.util.StackData.deleteCounterKey(st, key);
 
-                player.getInventory().setChanged();
-                player.containerMenu.broadcastChanges();
+                player.getInventory().markDirty();
+                player.currentScreenHandler.sendContentUpdates();
             });
         });
 
         ServerPlayNetworking.registerGlobalReceiver(CardDisplayPayloads.DisplayDeleteCounterC2S.ID, (payload, ctx) -> {
             ctx.server().execute(() -> {
                 var player = ctx.player();
-                var world = player.level();
+                var world = player.getEntityWorld();
 
-                var ent = world.getEntity(payload.entityId());
+                var ent = world.getEntityById(payload.entityId());
                 if (!(ent instanceof com.spider.mtgcard.display.CardDisplayEntity display)) return;
 
                 ItemStack st = display.getStack().copy();
@@ -211,16 +212,16 @@ public final class ModPayloads {
                 String key = payload.key();
 
                 if (key == null || key.isBlank()) return;
-                if (slot < 0 || slot >= player.getInventory().getContainerSize()) return;
+                if (slot < 0 || slot >= player.getInventory().size()) return;
 
-                ItemStack st = player.getInventory().getItem(slot);
+                ItemStack st = player.getInventory().getStack(slot);
                 if (st.isEmpty()) return;
 
                 // remove from mtg_meta
                 com.spider.mtgcard.util.StackData.deleteCounterKey(st, key);
 
-                player.getInventory().setChanged();
-                player.containerMenu.broadcastChanges();
+                player.getInventory().markDirty();
+                player.currentScreenHandler.sendContentUpdates();
             });
         });
 
@@ -229,7 +230,7 @@ public final class ModPayloads {
                 var player = context.player();
                 if (player == null) return;
 
-                var stack = player.getItemInHand(payload.hand());
+                var stack = player.getStackInHand(payload.hand());
                 if (stack == null || stack.isEmpty()) return;
 
                 // Make sure it's your card item
@@ -247,7 +248,7 @@ public final class ModPayloads {
                 writeFaceIndex(stack, next);
 
                 // force inventory sync (usually not necessary, but helps in edge cases)
-                player.containerMenu.broadcastChanges();
+                player.currentScreenHandler.sendContentUpdates();
             });
         });
 
@@ -259,11 +260,11 @@ public final class ModPayloads {
                 var player = ctx.player();
 
                 // Must have the graveyard screen open and match sync/pos
-                if (!(player.containerMenu instanceof com.spider.mtgcard.graveyard.GraveyardScreenHandler sh)) return;
-                if (sh.containerId != payload.syncId()) return;
+                if (!(player.currentScreenHandler instanceof com.spider.mtgcard.graveyard.GraveyardScreenHandler sh)) return;
+                if (sh.syncId != payload.syncId()) return;
                 if (!sh.pos.equals(payload.pos())) return;
 
-                var world = player.level();
+                var world = player.getEntityWorld();
                 var be = world.getBlockEntity(payload.pos());
                 if (!(be instanceof GraveyardBlockEntity gy)) return;
 
@@ -315,9 +316,9 @@ public final class ModPayloads {
                     }
 
                     Files.write(out, png);
-                    player.sendSystemMessage(Component.literal("[MTGCard] Saved XML art to world: " + out.getFileName()));
+                    player.sendMessage(Text.literal("[MTGCard] Saved XML art to world: " + out.getFileName()), false);
                 } catch (Throwable t) {
-                    player.sendSystemMessage(Component.literal("[MTGCard] Failed to save XML art: " + t.getClass().getSimpleName()));
+                    player.sendMessage(Text.literal("[MTGCard] Failed to save XML art: " + t.getClass().getSimpleName()), false);
                 }
             });
         });
@@ -327,13 +328,13 @@ public final class ModPayloads {
         // -------------------------
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             var player = handler.player;
-            var uuid = player.getUUID();
+            var uuid = player.getUuid();
 
             server.execute(() -> {
                 var positions = com.spider.mtgcard.deckcontrol.DeckControlBlockEntity.getPendingPositions(uuid);
                 if (positions.isEmpty()) return;
 
-                for (var world : server.getAllLevels()) {
+                for (var world : server.getWorlds()) {
                     for (var p : positions) {
                         var be = world.getBlockEntity(p);
                         if (be instanceof com.spider.mtgcard.deckcontrol.DeckControlBlockEntity dc) {
@@ -348,26 +349,26 @@ public final class ModPayloads {
     }
 
     /** Server helper: send unbundle progress to a player (0..100). Thread-safe. */
-    public static void sendUnpackProgress(ServerPlayer player, int percent) {
+    public static void sendUnpackProgress(ServerPlayerEntity player, int percent) {
         if (player == null) return;
 
         int p = Math.max(0, Math.min(100, percent));
-        var server = player.level().getServer();
+        var server = player.getEntityWorld().getServer();
         if (server == null) return;
 
         Runnable send = () -> {
-            if (player.connection == null) return;
+            if (player.networkHandler == null) return;
             ServerPlayNetworking.send(player, new UnbundleProgressPayload(p));
         };
 
-        if (server.isSameThread()) send.run();
+        if (server.isOnThread()) send.run();
         else server.execute(send);
     }
 
     // Portable world root that works for both dedicated and dev client
     private static Path resolveWorldRoot(MinecraftServer server) {
-        String levelName = server.getWorldData().getLevelName();
-        Path run = server.getServerDirectory();
+        String levelName = server.getSaveProperties().getLevelName();
+        Path run = server.getRunDirectory();
 
         Path dedicatedStyle = run.resolve(levelName);
         Path clientStyle    = run.resolve("saves").resolve(levelName);
@@ -375,39 +376,39 @@ public final class ModPayloads {
         return Files.exists(dedicatedStyle) ? dedicatedStyle : clientStyle;
     }
 
-    private static CompoundTag getMeta(ItemStack st) {
-        var comp = st.get(DataComponents.CUSTOM_DATA);
-        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
-        return root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
+    private static net.minecraft.nbt.NbtCompound getMeta(net.minecraft.item.ItemStack st) {
+        var comp = st.get(net.minecraft.component.DataComponentTypes.CUSTOM_DATA);
+        net.minecraft.nbt.NbtCompound root = (comp == null) ? new net.minecraft.nbt.NbtCompound() : comp.copyNbt();
+        return root.getCompound("mtg_meta").orElseGet(net.minecraft.nbt.NbtCompound::new);
     }
 
-    private static boolean isDoubleFaced(ItemStack st) {
+    private static boolean isDoubleFaced(net.minecraft.item.ItemStack st) {
         var meta = getMeta(st);
         var el = meta.get("card_faces");
-        return el instanceof ListTag list && list.size() >= 2;
+        return el instanceof net.minecraft.nbt.NbtList list && list.size() >= 2;
     }
 
-    private static int getFaceCount(ItemStack st) {
+    private static int getFaceCount(net.minecraft.item.ItemStack st) {
         var meta = getMeta(st);
         var el = meta.get("card_faces");
-        if (el instanceof ListTag list) return Math.max(1, list.size());
+        if (el instanceof net.minecraft.nbt.NbtList list) return Math.max(1, list.size());
         return 1;
     }
 
-    private static int readFaceIndex(ItemStack st) {
+    private static int readFaceIndex(net.minecraft.item.ItemStack st) {
         var meta = getMeta(st);
         return meta.getInt("mtg_face").orElse(0);
     }
 
-    private static void writeFaceIndex(ItemStack st, int idx) {
-        var comp = st.get(DataComponents.CUSTOM_DATA);
-        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
-        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
+    private static void writeFaceIndex(net.minecraft.item.ItemStack st, int idx) {
+        var comp = st.get(net.minecraft.component.DataComponentTypes.CUSTOM_DATA);
+        net.minecraft.nbt.NbtCompound root = (comp == null) ? new net.minecraft.nbt.NbtCompound() : comp.copyNbt();
+        net.minecraft.nbt.NbtCompound meta = root.getCompound("mtg_meta").orElseGet(net.minecraft.nbt.NbtCompound::new);
 
         meta.putInt("mtg_face", idx);
         root.put("mtg_meta", meta);
 
-        st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
+        st.set(net.minecraft.component.DataComponentTypes.CUSTOM_DATA, net.minecraft.component.type.NbtComponent.of(root));
     }
 
     private ModPayloads() {}

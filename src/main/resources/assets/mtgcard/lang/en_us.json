@@ -508,5 +508,10 @@
   "guide.mtgcard.config.h_tips": "Tips",
   "guide.mtgcard.config.b_tips_restart": "Most config changes are easiest to apply with a game/server restart.",
   "guide.mtgcard.config.b_tips_servers": "On servers, the server config controls pack/custom-card behavior for everyone.",
-  "guide.mtgcard.config.b_tips_ranges": "Chances are clamped to 0..1, and invalid language codes fall back to English."
+  "guide.mtgcard.config.b_tips_ranges": "Chances are clamped to 0..1, and invalid language codes fall back to English.",
+
+  "key.categories.mtgcard": "MTG Card",
+  "key.mtgcard.toggle_card_peek": "Toggle Card Peek",
+  "tooltip.mtgcard.peek_hint": "Press %s to toggle sneak peek",
+  "tooltip.mtgcard.flip_hint": "Press %s to flip card"
 }

@@ -1,25 +1,25 @@
 package com.spider.mtgcard.net.payload;
 
 import com.spider.mtgcard.Mtgcard;
-import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
-import net.minecraft.world.InteractionHand;
+import net.minecraft.network.RegistryByteBuf;
+import net.minecraft.network.codec.PacketCodec;
+import net.minecraft.network.packet.CustomPayload;
+import net.minecraft.util.Hand;
+import net.minecraft.util.Identifier;
 
-public record FlipHeldCardFacePayload(InteractionHand hand) implements CustomPacketPayload {
+public record FlipHeldCardFacePayload(Hand hand) implements CustomPayload {
 
-    public static final Type<FlipHeldCardFacePayload> ID =
-            new Type<>(Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "flip_held_card_face"));
+    public static final Id<FlipHeldCardFacePayload> ID =
+            new Id<>(Identifier.of(Mtgcard.MOD_ID, "flip_held_card_face"));
 
-    public static final StreamCodec<RegistryFriendlyByteBuf, FlipHeldCardFacePayload> CODEC =
-            StreamCodec.of(
-                    (buf, payload) -> buf.writeEnum(payload.hand()),
-                    (buf) -> new FlipHeldCardFacePayload(buf.readEnum(InteractionHand.class))
+    public static final PacketCodec<RegistryByteBuf, FlipHeldCardFacePayload> CODEC =
+            PacketCodec.ofStatic(
+                    (buf, pkt) -> buf.writeEnumConstant(pkt.hand()),
+                    (buf) -> new FlipHeldCardFacePayload(buf.readEnumConstant(Hand.class))
             );
 
     @Override
-    public Type<? extends CustomPacketPayload> type() {
+    public Id<? extends CustomPayload> getId() {
         return ID;
     }
 }
