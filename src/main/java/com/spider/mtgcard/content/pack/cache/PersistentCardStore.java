@@ -1,8 +1,8 @@
 package com.spider.mtgcard.content.pack.cache;
 
 import com.google.gson.*;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -17,8 +17,8 @@ public final class PersistentCardStore {
 
     private PersistentCardStore(Path file) { this.file = file; }
 
-    public static PersistentCardStore load(ServerWorld world) {
-        Path dir = world.getServer().getSavePath(WorldSavePath.ROOT).resolve("mtgcard");
+    public static PersistentCardStore load(ServerLevel world) {
+        Path dir = world.getServer().getWorldPath(LevelResource.ROOT).resolve("mtgcard");
         Path file = dir.resolve("scryfall_cache.json");
         try {
             Files.createDirectories(dir);

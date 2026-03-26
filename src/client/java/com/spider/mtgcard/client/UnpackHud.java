@@ -4,9 +4,9 @@ package com.spider.mtgcard.client;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.RenderTickCounter;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.DeltaTracker;
 
 @Environment(EnvType.CLIENT)
 public final class UnpackHud implements HudRenderCallback {
@@ -31,8 +31,8 @@ public final class UnpackHud implements HudRenderCallback {
     }
 
     @Override
-    public void onHudRender(DrawContext ctx, RenderTickCounter tickCounter) {
-        var mc = MinecraftClient.getInstance();
+    public void onHudRender(GuiGraphics ctx, DeltaTracker tickCounter) {
+        var mc = Minecraft.getInstance();
         if (mc == null || mc.player == null) return;
 
         if (lastUpdateNs == 0L) return;
@@ -41,8 +41,8 @@ public final class UnpackHud implements HudRenderCallback {
         boolean visible = (progress < 100) || (sinceNs < KEEP_ALIVE_AFTER_DONE_NS);
         if (!visible) return;
 
-        int w = ctx.getScaledWindowWidth();
-        int h = ctx.getScaledWindowHeight();
+        int w = ctx.guiWidth();
+        int h = ctx.guiHeight();
 
         int barWidth  = Math.min(180, (int)(w * 0.45f));
         int barHeight = 3;
@@ -64,10 +64,10 @@ public final class UnpackHud implements HudRenderCallback {
         ctx.fill(x + barWidth, y, x + barWidth + 1, y + barHeight, br);
 
         var text = progress + "%";
-        var tm = mc.textRenderer;
-        int tw = tm.getWidth(text);
+        var tm = mc.font;
+        int tw = tm.width(text);
         int tx = x + (barWidth - tw) / 2;
         int ty = y - 10;
-        ctx.drawText(tm, text, tx, ty, 0xFFFFFFFF, false);
+        ctx.drawString(tm, text, tx, ty, 0xFFFFFFFF, false);
     }
 }

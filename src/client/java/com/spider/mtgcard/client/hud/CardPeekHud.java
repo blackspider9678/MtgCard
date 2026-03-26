@@ -5,14 +5,14 @@ import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.client.input.ModKeybinds;
 import com.spider.mtgcard.item.CardItem;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.util.Mth;
 
 public final class CardPeekHud implements HudRenderCallback {
 
@@ -35,12 +35,12 @@ public final class CardPeekHud implements HudRenderCallback {
     }
 
     @Override
-    public void onHudRender(DrawContext ctx, RenderTickCounter tickCounter) {
-        MinecraftClient client = MinecraftClient.getInstance();
+    public void onHudRender(GuiGraphics ctx, DeltaTracker tickCounter) {
+        Minecraft client = Minecraft.getInstance();
         if (client == null || client.player == null) return;
 
         // Never show when ANY screen is open
-        if (client.currentScreen != null) {
+        if (client.screen != null) {
             stepToward(0f, tickCounter);
             return;
         }
@@ -60,11 +60,11 @@ public final class CardPeekHud implements HudRenderCallback {
         renderPeek(ctx, client, held);
     }
 
-    private static ItemStack pickHeldCard(MinecraftClient client) {
-        ItemStack main = client.player.getMainHandStack();
+    private static ItemStack pickHeldCard(Minecraft client) {
+        ItemStack main = client.player.getMainHandItem();
         if (isCard(main)) return main;
 
-        ItemStack off = client.player.getOffHandStack();
+        ItemStack off = client.player.getOffhandItem();
         if (isCard(off)) return off;
 
         return ItemStack.EMPTY;
@@ -74,7 +74,7 @@ public final class CardPeekHud implements HudRenderCallback {
         return !st.isEmpty() && st.getItem() instanceof CardItem;
     }
 
-    private void stepToward(float target, RenderTickCounter tickCounter) {
+    private void stepToward(float target, DeltaTracker tickCounter) {
         // Convert render-tick delta to seconds.
         // tickCounter gives partial tick; 20 ticks/sec.
         float dt = getDeltaSeconds(tickCounter);
@@ -88,7 +88,7 @@ public final class CardPeekHud implements HudRenderCallback {
         }
     }
 
-    private static float getDeltaSeconds(RenderTickCounter tickCounter) {
+    private static float getDeltaSeconds(DeltaTracker tickCounter) {
         // Different mappings expose this differently across minor versions.
         // We’ll try a couple known accessors and fall back to 1/60.
         try {
@@ -108,13 +108,13 @@ public final class CardPeekHud implements HudRenderCallback {
         return 1f / 60f;
     }
 
-    private void renderPeek(DrawContext ctx, MinecraftClient client, ItemStack stack) {
+    private void renderPeek(GuiGraphics ctx, Minecraft client, ItemStack stack) {
         int face = readFaceIndex(stack);
 
         CardArtManager.TextureRef texRef = CardArtManager.getOrRequestFace(stack, face);
         if (texRef == null || texRef.id() == null) return;
 
-        int sh = ctx.getScaledWindowHeight();
+        int sh = ctx.guiHeight();
 
         float eased = smoothstep(t);
 
@@ -125,7 +125,7 @@ public final class CardPeekHud implements HudRenderCallback {
         float y = sh - PREVIEW_H - PAD - HOTBAR_LIFT;
 
         // Fade with slide
-        float alpha = MathHelper.clamp(eased, 0f, 1f);
+        float alpha = Mth.clamp(eased, 0f, 1f);
 
         drawBackdrop(ctx, (int) x, (int) y, PREVIEW_W, PREVIEW_H, alpha);
 
@@ -144,7 +144,7 @@ public final class CardPeekHud implements HudRenderCallback {
         // Apply alpha for the draw (best-effort across versions)
         setCtxShaderColor(ctx, 1f, 1f, 1f, alpha);
 
-        ctx.drawTexture(
+        ctx.blit(
                 RenderPipelines.GUI_TEXTURED,
                 texRef.id(),
                 dx, dy,
@@ -157,7 +157,7 @@ public final class CardPeekHud implements HudRenderCallback {
         setCtxShaderColor(ctx, 1f, 1f, 1f, 1f);
     }
 
-    private static void setCtxShaderColor(DrawContext ctx, float r, float g, float b, float a) {
+    private static void setCtxShaderColor(GuiGraphics ctx, float r, float g, float b, float a) {
         // Newer MC versions: DrawContext has setShaderColor(float,float,float,float)
         try {
             var m = ctx.getClass().getMethod("setShaderColor", float.class, float.class, float.class, float.class);
@@ -174,14 +174,14 @@ public final class CardPeekHud implements HudRenderCallback {
         }
     }
 
-    private static void drawBackdrop(DrawContext ctx, int x, int y, int w, int h, float alpha) {
-        int a = (int) (MathHelper.clamp(alpha, 0f, 1f) * 140f);
+    private static void drawBackdrop(GuiGraphics ctx, int x, int y, int w, int h, float alpha) {
+        int a = (int) (Mth.clamp(alpha, 0f, 1f) * 140f);
         int bg = (a << 24);
         ctx.fill(x - 2, y - 2, x + w + 2, y + h + 2, bg);
     }
 
     private static float smoothstep(float v) {
-        v = MathHelper.clamp(v, 0f, 1f);
+        v = Mth.clamp(v, 0f, 1f);
         return v * v * (3f - 2f * v);
     }
 
@@ -191,13 +191,13 @@ public final class CardPeekHud implements HudRenderCallback {
 
     // --- NBT reads to match your CardLargeViewScreen ---
     private static int readFaceIndex(ItemStack st) {
-        NbtCompound meta = getMeta(st);
+        CompoundTag meta = getMeta(st);
         return meta.getInt("mtg_face").orElse(0);
     }
 
-    private static NbtCompound getMeta(ItemStack st) {
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
-        return root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+    private static CompoundTag getMeta(ItemStack st) {
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
+        return root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
     }
 }

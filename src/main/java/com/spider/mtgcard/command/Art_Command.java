@@ -3,25 +3,25 @@ package com.spider.mtgcard.command;
 
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.arguments.StringArgumentType;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.Locale;
 import java.util.stream.Stream;
 
-import static net.minecraft.server.command.CommandManager.argument;
-import static net.minecraft.server.command.CommandManager.literal;
+import static net.minecraft.commands.Commands.argument;
+import static net.minecraft.commands.Commands.literal;
 
 public final class Art_Command {
 
     // Change if needed
     private static final String ART_DIR_NAME = "art"; // <world>/mtgcard/art/
 
-    public static LiteralArgumentBuilder<ServerCommandSource> node() {
+    public static LiteralArgumentBuilder<CommandSourceStack> node() {
         return literal("art")
                 // ✅ NEW: /mtg art -> stats
                 .executes(ctx -> stats(ctx.getSource()))
@@ -39,12 +39,12 @@ public final class Art_Command {
                         .executes(ctx -> purge(ctx.getSource())));
     }
 
-    private static int stats(ServerCommandSource src) {
+    private static int stats(CommandSourceStack src) {
         Path artDir = worldArtDir(src.getServer());
 
         if (!Files.exists(artDir)) {
-            src.sendFeedback(() -> Text.literal("§7No art directory found at: §e" + artDir), false);
-            src.sendFeedback(() -> Text.literal("§aCustom Art: §e0§a, Total Art: §e0"), false);
+            src.sendSuccess(() -> Component.literal("§7No art directory found at: §e" + artDir), false);
+            src.sendSuccess(() -> Component.literal("§aCustom Art: §e0§a, Total Art: §e0"), false);
             return 1;
         }
 
@@ -59,29 +59,29 @@ public final class Art_Command {
                 if (fn.startsWith("custom_")) custom++;
             }
         } catch (IOException e) {
-            src.sendFeedback(() -> Text.literal("§cFailed to read art dir: §7" + e.getMessage()), false);
+            src.sendSuccess(() -> Component.literal("§cFailed to read art dir: §7" + e.getMessage()), false);
             return 0;
         }
 
         long finalTotal = total;
         long finalCustom = custom;
-        src.sendFeedback(() -> Text.literal("§aCustom Art: §e" + finalCustom + "§a, Total Art: §e" + finalTotal), false);
-        src.sendFeedback(() -> Text.literal("§7Folder: §e" + artDir), false);
+        src.sendSuccess(() -> Component.literal("§aCustom Art: §e" + finalCustom + "§a, Total Art: §e" + finalTotal), false);
+        src.sendSuccess(() -> Component.literal("§7Folder: §e" + artDir), false);
         return 1;
     }
 
     // existing find/rebuild/purge/isOp/worldArtDir/sanitizeKeyForSearch below...
 
-    private static int find(ServerCommandSource src, String id) { /* unchanged */ return 1; }
-    private static int rebuild(ServerCommandSource src) { /* unchanged */ return 1; }
-    private static int purge(ServerCommandSource src) { /* unchanged */ return 1; }
+    private static int find(CommandSourceStack src, String id) { /* unchanged */ return 1; }
+    private static int rebuild(CommandSourceStack src) { /* unchanged */ return 1; }
+    private static int purge(CommandSourceStack src) { /* unchanged */ return 1; }
 
     private static Path worldArtDir(net.minecraft.server.MinecraftServer server) {
-        return server.getSavePath(WorldSavePath.ROOT).resolve("mtgcard").resolve(ART_DIR_NAME);
+        return server.getWorldPath(LevelResource.ROOT).resolve("mtgcard").resolve(ART_DIR_NAME);
     }
 
-    private static boolean isOp(ServerCommandSource src) {
-        ServerPlayerEntity p;
+    private static boolean isOp(CommandSourceStack src) {
+        ServerPlayer p;
         try { p = src.getPlayer(); } catch (Exception e) { return false; }
         return p != null && com.spider.mtgcard.config.Perms.isOp(p);
     }

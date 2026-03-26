@@ -1,25 +1,26 @@
 package com.spider.mtgcard.client.guidebook;
 
 import com.spider.mtgcard.Mtgcard;
+import com.spider.mtgcard.client.compat.LegacyScreen;
+import com.spider.mtgcard.client.gui.MtgGuiChrome;
 import com.spider.mtgcard.guidebook.*;
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.item.ItemStack;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-public final class GuideBookScreen extends Screen {
+public final class GuideBookScreen extends LegacyScreen {
 
-    private static final Identifier DEFAULT_ICON = Identifier.of(Mtgcard.MOD_ID, "textures/gui/guidebook/book.png");
+    private static final Identifier DEFAULT_ICON = Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "textures/gui/guidebook/book.png");
 
-    private TextFieldWidget search;
+    private EditBox search;
     private GuideCategory selectedCategory = GuideCategory.HOME;
     private GuideChapter selectedChapter;
 
@@ -35,7 +36,7 @@ public final class GuideBookScreen extends Screen {
     private int contentScrollMax = 0;
 
     public GuideBookScreen(Identifier startChapterId) {
-        super(Text.translatable("guide.mtgcard.title"));
+        super(Component.translatable("guide.mtgcard.title"));
         if (startChapterId != null) {
             this.selectedChapter = GuideChapterRegistry.get(startChapterId);
             if (this.selectedChapter != null) {
@@ -105,20 +106,20 @@ public final class GuideBookScreen extends Screen {
         int searchY = topY + padding + 10;
         int searchW = sidebarW - padding * 2;
 
-        search = new TextFieldWidget(this.textRenderer, searchX, searchY, searchW, 18, Text.translatable("guide.mtgcard.search"));
+        search = new EditBox(this.font, searchX, searchY, searchW, 18, Component.translatable("guide.mtgcard.search"));
         search.setMaxLength(64);
-        search.setChangedListener(s -> listScroll = 0);
-        addSelectableChild(search);
+        search.setResponder(s -> listScroll = 0);
+        addWidget(search);
         setInitialFocus(search);
     }
 
     @Override
-    public boolean shouldPause() {
+    public boolean isPauseScreen() {
         return false;
     }
 
     @Override
-    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
         // background
         ctx.fill(0, 0, this.width, this.height, 0xAA000000);
 
@@ -138,11 +139,11 @@ public final class GuideBookScreen extends Screen {
         ctx.fill(mainX, mainY, mainX + mainW, mainY + mainH, 0xAA0A0A0A);
 
         // Title
-        ctx.drawTextWithShadow(textRenderer, Text.translatable("guide.mtgcard.title"), sidebarX + padding, sidebarY + padding, 0xFFFFFFFF);
+        ctx.drawString(font, Component.translatable("guide.mtgcard.title"), sidebarX + padding, sidebarY + padding, 0xFFFFFFFF);
 
         // Search label + widget
-        ctx.drawTextWithShadow(textRenderer, Text.translatable("guide.mtgcard.search"), sidebarX + padding, sidebarY + padding + 20, 0xFFB0B0B0);
-        search.render(ctx, mouseX, mouseY, delta);
+        ctx.drawString(font, Component.translatable("guide.mtgcard.search"), sidebarX + padding, sidebarY + padding + 20, 0xFFB0B0B0);
+        search.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
 
         // Category tabs (simple text buttons)
         for (GuideCategory cat : TAB_ORDER) {
@@ -158,15 +159,15 @@ public final class GuideBookScreen extends Screen {
         super.render(ctx, mouseX, mouseY, delta);
     }
 
-    private void drawCategoryTab(DrawContext ctx, GuideCategory cat, int x, int y, int w, int h) {
+    private void drawCategoryTab(GuiGraphics ctx, GuideCategory cat, int x, int y, int w, int h) {
         boolean active = (cat == selectedCategory);
         ctx.fill(x, y, x + w, y + h, active ? 0x55333333 : 0x22000000);
 
-        Text label = Text.literal(cat.displayName);
-        ctx.drawTextWithShadow(textRenderer, label, x + 4, y + 4, active ? 0xFFFFFFFF : 0xFFB0B0B0);
+        Component label = Component.literal(cat.displayName);
+        ctx.drawString(font, label, x + 4, y + 4, active ? 0xFFFFFFFF : 0xFFB0B0B0);
     }
 
-    private void drawChapterList(DrawContext ctx, int x, int y, int w, int h, int mouseX, int mouseY) {
+    private void drawChapterList(GuiGraphics ctx, int x, int y, int w, int h, int mouseX, int mouseY) {
         // clip region
         ctx.enableScissor(x, y, x + w, y + h);
 
@@ -192,16 +193,16 @@ public final class GuideBookScreen extends Screen {
 
             ItemStack itemIcon = ch.itemIcon();
             if (itemIcon != null && !itemIcon.isEmpty()) {
-                ctx.drawItem(itemIcon, iconX, iconY);
+                ctx.renderItem(itemIcon, iconX, iconY);
             } else {
                 Identifier tex = ch.textureIcon();
                 if (tex == null) tex = DEFAULT_ICON;
-                ctx.drawTexture(RenderPipelines.GUI_TEXTURED, tex, iconX, iconY, 0f, 0f, 16, 16, 16, 16);
+                ctx.blit(RenderPipelines.GUI_TEXTURED, tex, iconX, iconY, 0f, 0f, 16, 16, 16, 16);
 
             }
 
-            Text title = Text.translatable(ch.titleKey());
-            ctx.drawTextWithShadow(textRenderer, title, x + 22, rowY + 6, 0xFFFFFFFF);
+            Component title = Component.translatable(ch.titleKey());
+            ctx.drawString(font, title, x + 22, rowY + 6, 0xFFFFFFFF);
         }
 
         ctx.disableScissor();
@@ -209,21 +210,21 @@ public final class GuideBookScreen extends Screen {
 
     private List<GuideChapter> filteredChapters() {
         List<GuideChapter> base = GuideChapterRegistry.byCategory(selectedCategory);
-        String q = (search.getText() == null ? "" : search.getText()).trim().toLowerCase(Locale.ROOT);
+        String q = (search.getValue() == null ? "" : search.getValue()).trim().toLowerCase(Locale.ROOT);
 
         if (q.isEmpty()) return base;
 
         List<GuideChapter> out = new ArrayList<>();
         for (GuideChapter c : base) {
-            String title = Text.translatable(c.titleKey()).getString().toLowerCase(Locale.ROOT);
+            String title = Component.translatable(c.titleKey()).getString().toLowerCase(Locale.ROOT);
             if (title.contains(q)) out.add(c);
         }
         return out;
     }
 
-    private void drawMain(DrawContext ctx, int x, int y, int w, int h) {
+    private void drawMain(GuiGraphics ctx, int x, int y, int w, int h) {
         if (selectedChapter == null) {
-            ctx.drawTextWithShadow(textRenderer, Text.translatable("guide.mtgcard.empty"), x + padding, y + padding, 0xFFFFFFFF);
+            ctx.drawString(font, Component.translatable("guide.mtgcard.empty"), x + padding, y + padding, 0xFFFFFFFF);
             return;
         }
 
@@ -234,15 +235,15 @@ public final class GuideBookScreen extends Screen {
 
         ItemStack itemIcon = selectedChapter.itemIcon();
         if (itemIcon != null && !itemIcon.isEmpty()) {
-            ctx.drawItem(itemIcon, iconX, iconY);
+            ctx.renderItem(itemIcon, iconX, iconY);
         } else {
             Identifier tex = selectedChapter.textureIcon();
             if (tex == null) tex = DEFAULT_ICON;
-            ctx.drawTexture(RenderPipelines.GUI_TEXTURED, tex, iconX, iconY, 0f, 0f, 32, 32, 32, 32);
+            ctx.blit(RenderPipelines.GUI_TEXTURED, tex, iconX, iconY, 0f, 0f, 32, 32, 32, 32);
         }
 
-        Text title = Text.translatable(selectedChapter.titleKey());
-        ctx.drawTextWithShadow(textRenderer, title, iconX + 40, headerY + 10, 0xFFFFFFFF);
+        Component title = Component.translatable(selectedChapter.titleKey());
+        ctx.drawString(font, title, iconX + 40, headerY + 10, 0xFFFFFFFF);
 
         int contentX = x + padding;
         int contentY = headerY + 40;
@@ -263,7 +264,7 @@ public final class GuideBookScreen extends Screen {
 
         var sections = selectedChapter.sections();
         if (sections == null || sections.isEmpty()) {
-            ctx.drawTextWithShadow(textRenderer, Text.translatable("guide.mtgcard.chapter_blank"), contentX, contentY, 0xFFB0B0B0);
+            ctx.drawString(font, Component.translatable("guide.mtgcard.chapter_blank"), contentX, contentY, 0xFFB0B0B0);
             ctx.disableScissor();
             return;
         }
@@ -277,8 +278,8 @@ public final class GuideBookScreen extends Screen {
                 cy = drawWrapped(ctx, p.text(), contentX, cy, contentW, 0xFFDDDDDD) + 10;
             }
             else if (section instanceof GuideSection.Bullets b) {
-                for (Text bullet : b.bullets()) {
-                    cy = drawWrapped(ctx, Text.literal("• ").append(bullet), contentX, cy, contentW, 0xFFDDDDDD) + 4;
+                for (Component bullet : b.bullets()) {
+                    cy = drawWrapped(ctx, Component.literal("• ").append(bullet), contentX, cy, contentW, 0xFFDDDDDD) + 4;
                 }
                 cy += 6;
             }
@@ -288,7 +289,14 @@ public final class GuideBookScreen extends Screen {
 
         // Optional: draw a scrollbar if needed
         if (contentScrollMax > 0) {
-            drawScrollbar(ctx, contentX, contentY, contentW, contentH, contentScroll, contentScrollMax);
+            var scrollbar = MtgGuiChrome.layoutScrollbar(
+                    new MtgGuiChrome.Rect(contentX + contentW - 4, contentY, 4, contentH),
+                    contentH + contentScrollMax,
+                    contentH,
+                    contentScroll,
+                    12
+            );
+            MtgGuiChrome.drawScrollbar(ctx, scrollbar, 0x33000000, 0x88FFFFFF, 0x33000000);
         }
     }
 
@@ -302,8 +310,8 @@ public final class GuideBookScreen extends Screen {
             } else if (section instanceof GuideSection.Paragraph p) {
                 h += measureWrappedHeight(p.text(), width) + 10;
             } else if (section instanceof GuideSection.Bullets b) {
-                for (Text bullet : b.bullets()) {
-                    h += measureWrappedHeight(Text.literal("• ").append(bullet), width) + 4;
+                for (Component bullet : b.bullets()) {
+                    h += measureWrappedHeight(Component.literal("• ").append(bullet), width) + 4;
                 }
                 h += 6;
             }
@@ -311,41 +319,24 @@ public final class GuideBookScreen extends Screen {
         return h;
     }
 
-    private int measureWrappedHeight(Text text, int width) {
-        var lines = textRenderer.wrapLines(text, width);
+    private int measureWrappedHeight(Component text, int width) {
+        var lines = font.split(text, width);
         return lines.size() * 10; // matches your drawWrapped line height
     }
 
-    private void drawScrollbar(DrawContext ctx, int x, int y, int w, int h, int scroll, int scrollMax) {
-        int barW = 4;
-        int trackX = x + w - barW;
-        int trackY0 = y;
-        int trackY1 = y + h;
-
-        // track
-        ctx.fill(trackX, trackY0, trackX + barW, trackY1, 0x33000000);
-
-        // thumb
-        float ratio = (scrollMax <= 0) ? 0f : (scroll / (float) scrollMax);
-        int thumbH = Math.max(12, (int) (h * (h / (float) (h + scrollMax))));
-        int thumbY = trackY0 + (int) ((h - thumbH) * ratio);
-
-        ctx.fill(trackX, thumbY, trackX + barW, thumbY + thumbH, 0x88FFFFFF);
-    }
-
-    private int drawWrapped(DrawContext ctx, Text text, int x, int y, int width, int color) {
+    private int drawWrapped(GuiGraphics ctx, Component text, int x, int y, int width, int color) {
         // Wrap into multiple OrderedText lines
-        var lines = textRenderer.wrapLines(text, width);
+        var lines = font.split(text, width);
         int cy = y;
         for (var line : lines) {
-            ctx.drawTextWithShadow(textRenderer, line, x, cy, color);
+            ctx.drawString(font, line, x, cy, color);
             cy += 10; // line height
         }
         return cy;
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean down) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean down) {
 
         // Only process press
         if (down) return false;

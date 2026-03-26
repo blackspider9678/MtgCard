@@ -2,31 +2,31 @@
 package com.spider.mtgcard.deckbox;
 
 import com.spider.mtgcard.registry.ModBlocks;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.DispenserBlock;
-import net.minecraft.block.dispenser.BlockPlacementDispenserBehavior;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.math.BlockPointer;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.DispenserBlock;
+import net.minecraft.core.dispenser.ShulkerBoxDispenseBehavior;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.dispenser.BlockSource;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 
-public class DeckboxDispenserBehavior extends BlockPlacementDispenserBehavior {
+public class DeckboxDispenserBehavior extends ShulkerBoxDispenseBehavior {
 
     @Override
-    protected ItemStack dispenseSilently(BlockPointer pointer, ItemStack stack) {
+    protected ItemStack execute(BlockSource pointer, ItemStack stack) {
         // Let vanilla place it first
-        ItemStack result = super.dispenseSilently(pointer, stack);
+        ItemStack result = super.execute(pointer, stack);
 
-        Direction dispFacing = pointer.state().get(DispenserBlock.FACING);
-        BlockPos placedPos = pointer.pos().offset(dispFacing);
+        Direction dispFacing = pointer.state().getValue(DispenserBlock.FACING);
+        BlockPos placedPos = pointer.pos().relative(dispFacing);
 
-        BlockState placed = pointer.world().getBlockState(placedPos);
-        if (placed.isOf(ModBlocks.DECKBOX) && placed.contains(DeckboxBlock.FACING)) {
-            pointer.world().setBlockState(
+        BlockState placed = pointer.level().getBlockState(placedPos);
+        if (placed.is(ModBlocks.DECKBOX) && placed.hasProperty(DeckboxBlock.FACING)) {
+            pointer.level().setBlock(
                     placedPos,
-                    placed.with(DeckboxBlock.FACING, dispFacing).with(DeckboxBlock.OPEN, false),
-                    Block.NOTIFY_ALL
+                    placed.setValue(DeckboxBlock.FACING, dispFacing).setValue(DeckboxBlock.OPEN, false),
+                    Block.UPDATE_ALL
             );
         }
 

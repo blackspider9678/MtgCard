@@ -5,15 +5,15 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.hit.EntityHitResult;
-import net.minecraft.util.hit.HitResult;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
 
 import java.util.*;
 
@@ -32,10 +32,10 @@ public final class CardCounterHoverHud {
         HudRenderCallback.EVENT.register((ctx, tickDelta) -> renderHud(ctx));
     }
 
-    private static void tick(MinecraftClient client) {
+    private static void tick(Minecraft client) {
         CardDisplayEntity now = null;
 
-        HitResult hr = client.crosshairTarget;
+        HitResult hr = client.hitResult;
         if (hr instanceof EntityHitResult ehr && ehr.getEntity() instanceof CardDisplayEntity cde) {
             now = cde;
         }
@@ -49,7 +49,7 @@ public final class CardCounterHoverHud {
         }
     }
 
-    private static void renderHud(DrawContext ctx) {
+    private static void renderHud(GuiGraphics ctx) {
         if (hovered == null) return;
 
         ItemStack st = hovered.getStack();
@@ -59,8 +59,8 @@ public final class CardCounterHoverHud {
         List<Row> rows = buildCounterRows(st);
         if (rows.isEmpty()) return;
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        int screenH = client.getWindow().getScaledHeight();
+        Minecraft client = Minecraft.getInstance();
+        int screenH = client.getWindow().getGuiScaledHeight();
         int x = PAD_X;
         int y = (screenH - rows.size() * ROW_H) / 2;
 
@@ -77,18 +77,18 @@ public final class CardCounterHoverHud {
             // icon
             if (r.iconTex != null) {
                 // draw full texture into 16x16 (no stretching weirdness)
-                ctx.drawTexture(RenderPipelines.GUI_TEXTURED, r.iconTex,
+                ctx.blit(RenderPipelines.GUI_TEXTURED, r.iconTex,
                         x, ry, 0, 0,
                         ICON, ICON,
                         ICON, ICON,
                         ICON, ICON
                 );
             } else {
-                ctx.drawText(client.textRenderer, "—", x + 4, ry + 4, 0xFF777777, false);
+                ctx.drawString(client.font, "—", x + 4, ry + 4, 0xFF777777, false);
             }
 
             // value
-            ctx.drawTextWithShadow(client.textRenderer, r.valueText, x + ICON + 6, ry + 4, 0xFFFFFFFF);
+            ctx.drawString(client.font, r.valueText, x + ICON + 6, ry + 4, 0xFFFFFFFF);
 
             // optional label (uncomment if you want)
             // ctx.drawTextWithShadow(client.textRenderer, r.label, x + ICON + 34, ry + 4, 0xFFAAAAAA);
@@ -98,22 +98,22 @@ public final class CardCounterHoverHud {
     private record Row(String key, String label, Identifier iconTex, String valueText) {}
 
     private static List<Row> buildCounterRows(ItemStack st) {
-        NbtCompound meta = getMeta(st);
-        NbtCompound counters = meta.getCompound("counters").orElse(null);
+        CompoundTag meta = getMeta(st);
+        CompoundTag counters = meta.getCompound("counters").orElse(null);
         if (counters == null) return List.of();
 
-        NbtCompound icons = meta.getCompound("counter_icons").orElse(null);
-        NbtCompound names = meta.getCompound("counter_names").orElse(null);
+        CompoundTag icons = meta.getCompound("counter_icons").orElse(null);
+        CompoundTag names = meta.getCompound("counter_names").orElse(null);
 
         List<Row> out = new ArrayList<>();
 
-        for (String k : counters.getKeys()) {
+        for (String k : counters.keySet()) {
             int v = counters.getInt(k).orElse(0);
             if (v <= 0) continue;
 
             String iconKey = (icons == null) ? "none" : icons.getString(k).orElse("none");
             Identifier tex = (!"none".equals(iconKey))
-                    ? Identifier.of("mtgcard", "textures/gui/counters/" + iconKey + ".png")
+                    ? Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/" + iconKey + ".png")
                     : null;
 
             String label = (names == null) ? "" : names.getString(k).orElse("");
@@ -160,10 +160,10 @@ public final class CardCounterHoverHud {
         return out.toString();
     }
 
-    private static NbtCompound getMeta(ItemStack st) {
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
-        return root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+    private static CompoundTag getMeta(ItemStack st) {
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
+        return root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
     }
 
     private CardCounterHoverHud() {}

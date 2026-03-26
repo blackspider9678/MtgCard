@@ -3,40 +3,41 @@ package com.spider.mtgcard.client;
 
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import com.mojang.serialization.Codec;
-import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.datafixer.DataFixTypes;
-import net.minecraft.world.PersistentState;
-import net.minecraft.world.PersistentStateManager;
-import net.minecraft.world.PersistentStateType;
+import net.minecraft.util.datafix.DataFixTypes;
+import net.minecraft.world.level.storage.SavedDataStorage;
+import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.saveddata.SavedDataType;
 
 import java.util.Map;
 
-public final class NetState extends PersistentState {
+public final class NetState extends SavedData {
     private final Map<String, String> art = new Object2ObjectOpenHashMap<>();
 
     /* -------------------- Public API -------------------- */
     public void registerArt(String key, String fileName, MinecraftServer server) {
         art.put(key, fileName);
-        this.markDirty();
+        this.setDirty();
     }
     public Map<String, String> artView() { return art; }
 
     /* -------------------- NBT IO -------------------- */
     // No @Override (mapping signatures vary)
-    public NbtCompound writeNbt(NbtCompound nbt) {
-        NbtCompound a = new NbtCompound();
+    public CompoundTag writeNbt(CompoundTag nbt) {
+        CompoundTag a = new CompoundTag();
         for (var e : art.entrySet()) a.putString(e.getKey(), e.getValue());
         nbt.put("art", a);
         return nbt;
     }
 
     // Reader that does not depend on registries (since ctor wants a plain Codec)
-    public static NetState fromNbt(NbtCompound nbt) {
+    public static NetState fromNbt(CompoundTag nbt) {
         NetState s = new NetState();
         // Your getters return Optionals — unwrap safely:
-        NbtCompound a = nbt.getCompound("art").orElse(new NbtCompound());
-        for (String k : a.getKeys()) {
+        CompoundTag a = nbt.getCompound("art").orElse(new CompoundTag());
+        for (String k : a.keySet()) {
             String v = a.getString(k).orElse("");
             s.art.put(k, v);
         }
@@ -45,14 +46,14 @@ public final class NetState extends PersistentState {
 
     /* -------------------- Codec & Type -------------------- */
     private static final Codec<NetState> CODEC =
-            NbtCompound.CODEC.xmap(
+            CompoundTag.CODEC.xmap(
                     NetState::fromNbt,
-                    state -> state.writeNbt(new NbtCompound())
+                    state -> state.writeNbt(new CompoundTag())
             );
 
-    private static final PersistentStateType<NetState> TYPE =
-            new PersistentStateType<>(
-                    "mtgcard_net",
+    private static final SavedDataType<NetState> TYPE =
+            new SavedDataType<>(
+                    Identifier.fromNamespaceAndPath("mtgcard", "net"),
                     NetState::new,             // supplier for new/empty state
                     CODEC,                     // how to (de)serialize
                     DataFixTypes.LEVEL         // pick LEVEL (or WORLD) in your mappings
@@ -60,7 +61,7 @@ public final class NetState extends PersistentState {
 
     /* -------------------- Access -------------------- */
     public static NetState get(MinecraftServer server) {
-        PersistentStateManager mgr = server.getOverworld().getPersistentStateManager();
-        return mgr.getOrCreate(TYPE);
+        SavedDataStorage mgr = server.overworld().getDataStorage();
+        return mgr.computeIfAbsent(TYPE);
     }
 }

@@ -2,19 +2,19 @@
 package com.spider.mtgcard.content.pack.custom;
 
 import com.spider.mtgcard.util.StackData;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtList;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.server.level.ServerPlayer;
 
 public final class CustomCardItems {
 
     /** Give a custom card item to a player, using server-side metadata. */
-    public static void give(ServerPlayerEntity to, CustomCardStore.CardMeta m, boolean foil) {
+    public static void give(ServerPlayer to, CustomCardStore.CardMeta m, boolean foil) {
         ItemStack stack = new ItemStack(com.spider.mtgcard.item.ModItems.CARD);
 
         // Build mtg_meta
-        NbtCompound meta = new NbtCompound();
+        CompoundTag meta = new CompoundTag();
         meta.putString("id", m.id); // critical: makes artKey = id + "_fX"
         meta.putString("name", nz(m.name));
         meta.putString("mana_cost", nz(m.manaCost));
@@ -27,9 +27,9 @@ public final class CustomCardItems {
         meta.putString("loyalty", nz(m.loyalty));
 
         if (m.doubleFaced) {
-            NbtList faces = new NbtList();
+            ListTag faces = new ListTag();
 
-            NbtCompound f0 = new NbtCompound();
+            CompoundTag f0 = new CompoundTag();
             f0.putString("name", nz(m.name));
             f0.putString("type_line", nz(m.typeLine));
             f0.putString("oracle_text", nz(m.oracleText));
@@ -42,7 +42,7 @@ public final class CustomCardItems {
             }
             faces.add(f0);
 
-            NbtCompound f1 = new NbtCompound();
+            CompoundTag f1 = new CompoundTag();
             f1.putString("name", nz(m.backName));
             f1.putString("type_line", nz(m.backTypeLine));
             f1.putString("oracle_text", nz(m.backOracleText));
@@ -67,12 +67,12 @@ public final class CustomCardItems {
 
 
         // Root CUSTOM_DATA
-        NbtCompound root = new NbtCompound();
+        CompoundTag root = new CompoundTag();
         root.put("mtg_meta", meta);
         root.putBoolean("mtg_foil", foil);
         StackData.writeCustom(stack, root);
 
-        to.getInventory().insertStack(stack);
+        to.getInventory().add(stack);
     }
 
     private static String nz(String s) { return s == null ? "" : s; }

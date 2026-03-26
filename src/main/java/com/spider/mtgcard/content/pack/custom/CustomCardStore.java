@@ -2,9 +2,9 @@
 package com.spider.mtgcard.content.pack.custom;
 
 import com.spider.mtgcard.net.CustomCardPackets;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.world.level.storage.LevelResource;
 
 import com.google.gson.*;
 import java.nio.charset.StandardCharsets;
@@ -29,14 +29,14 @@ public final class CustomCardStore {
 
 
     public CustomCardStore(MinecraftServer server) {
-        Path root = server.getSavePath(WorldSavePath.ROOT).resolve("mtgcard");
+        Path root = server.getWorldPath(LevelResource.ROOT).resolve("mtgcard");
         this.artDir = root.resolve("art");
         this.json   = root.resolve("custom").resolve("cards.json");
         try { Files.createDirectories(artDir); Files.createDirectories(json.getParent()); } catch (Exception ignored) {}
         load();
     }
 
-    public synchronized int addAllFromClient(List<CustomCardPackets.BatchEntry> entries, ServerPlayerEntity who) {
+    public synchronized int addAllFromClient(List<CustomCardPackets.BatchEntry> entries, ServerPlayer who) {
         int added = 0;
 
         for (var be : entries) {
@@ -57,7 +57,7 @@ public final class CustomCardStore {
 
     private boolean dirty = false;
 
-    public synchronized String addFromClient(CustomCardPackets.BatchEntry be, ServerPlayerEntity who) {
+    public synchronized String addFromClient(CustomCardPackets.BatchEntry be, ServerPlayer who) {
         try {
             String id = sanitizeClientId(be.id());
             if (id == null) return null;

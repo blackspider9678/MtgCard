@@ -4,7 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
-import net.minecraft.server.world.ServerWorld;
+import net.minecraft.server.level.ServerLevel;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -15,7 +15,7 @@ public final class ScryfallCollectionFetch {
     public record Id(String set, String cn) {}
 
     public static CompletableFuture<Map<Id, ScryfallModels.Card>> fetchBySetCnBatchAsync(
-            ServerWorld world,
+            ServerLevel world,
             List<Id> ids
     ) {
         // Chunking should be done by caller (<= 75), but we’ll be safe:

@@ -22,7 +22,7 @@ public final class DBClientPackets {
                 com.spider.mtgcard.net.payload.DeckboxTabNamesPayload.ID,
                 (payload, ctx) -> {
                     ctx.client().execute(() -> {
-                        var screen = ctx.client().currentScreen;
+                        var screen = ctx.client().screen;
                         if (screen instanceof com.spider.mtgcard.client.gui.CardDatabaseScreen db) {
                             db.applyDeckboxTabNames(payload.syncId(), payload.entries());
                         }

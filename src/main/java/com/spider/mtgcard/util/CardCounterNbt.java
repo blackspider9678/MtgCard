@@ -1,9 +1,9 @@
 package com.spider.mtgcard.util;
 
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.NbtComponent;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
 
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -18,18 +18,18 @@ public final class CardCounterNbt {
 
     private CardCounterNbt() {}
 
-    public static NbtCompound getCounters(ItemStack stack) {
+    public static CompoundTag getCounters(ItemStack stack) {
         return getOrCreateMetaChild(stack, TAG_COUNTERS);
     }
 
-    public static NbtCompound getIcons(ItemStack stack) {
+    public static CompoundTag getIcons(ItemStack stack) {
         return getOrCreateMetaChild(stack, TAG_ICONS);
     }
 
     public static Map<String, Integer> readCounterMap(ItemStack stack) {
-        NbtCompound c = getCounters(stack);
+        CompoundTag c = getCounters(stack);
         Map<String, Integer> out = new LinkedHashMap<>();
-        for (String k : c.getKeys()) {
+        for (String k : c.keySet()) {
             int v = c.getInt(k).orElse(0);
             if (v > 0) out.put(norm(k), v);
         }
@@ -38,7 +38,7 @@ public final class CardCounterNbt {
 
     public static String getIcon(ItemStack stack, String key) {
         key = norm(key);
-        NbtCompound icons = getIcons(stack);
+        CompoundTag icons = getIcons(stack);
         return icons.getString(key).orElse("none");
     }
 
@@ -46,7 +46,7 @@ public final class CardCounterNbt {
         key = norm(key);
         value = Math.max(0, value);
 
-        NbtCompound counters = getCounters(stack);
+        CompoundTag counters = getCounters(stack);
         if (value <= 0) counters.remove(key);
         else counters.putInt(key, value);
 
@@ -58,8 +58,8 @@ public final class CardCounterNbt {
     public static void removeCounter(ItemStack stack, String key) {
         key = norm(key);
 
-        NbtCompound counters = getCounters(stack);
-        NbtCompound icons = getIcons(stack);
+        CompoundTag counters = getCounters(stack);
+        CompoundTag icons = getIcons(stack);
 
         counters.remove(key);
         icons.remove(key);
@@ -72,7 +72,7 @@ public final class CardCounterNbt {
         key = norm(key);
         iconKey = (iconKey == null || iconKey.isBlank()) ? "none" : iconKey.trim().toLowerCase(Locale.ROOT);
 
-        NbtCompound icons = getIcons(stack);
+        CompoundTag icons = getIcons(stack);
         if ("none".equals(iconKey)) icons.remove(key);
         else icons.putString(key, iconKey);
 
@@ -81,32 +81,32 @@ public final class CardCounterNbt {
 
     // ---------------- internals ----------------
 
-    private static NbtCompound getOrCreateMetaChild(ItemStack stack, String childKey) {
-        NbtCompound root = getRoot(stack);
-        NbtCompound meta = root.getCompound(TAG_META).orElseGet(NbtCompound::new);
+    private static CompoundTag getOrCreateMetaChild(ItemStack stack, String childKey) {
+        CompoundTag root = getRoot(stack);
+        CompoundTag meta = root.getCompound(TAG_META).orElseGet(CompoundTag::new);
 
-        NbtCompound child = meta.getCompound(childKey).orElseGet(NbtCompound::new);
+        CompoundTag child = meta.getCompound(childKey).orElseGet(CompoundTag::new);
         meta.put(childKey, child);
         root.put(TAG_META, meta);
 
         // ensure component exists
-        stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        stack.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
         return child;
     }
 
-    private static void writeMetaChild(ItemStack stack, String childKey, NbtCompound child) {
-        NbtCompound root = getRoot(stack);
-        NbtCompound meta = root.getCompound(TAG_META).orElseGet(NbtCompound::new);
+    private static void writeMetaChild(ItemStack stack, String childKey, CompoundTag child) {
+        CompoundTag root = getRoot(stack);
+        CompoundTag meta = root.getCompound(TAG_META).orElseGet(CompoundTag::new);
 
         meta.put(childKey, child);
         root.put(TAG_META, meta);
 
-        stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        stack.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
     }
 
-    private static NbtCompound getRoot(ItemStack stack) {
-        var comp = stack.get(DataComponentTypes.CUSTOM_DATA);
-        return (comp == null) ? new NbtCompound() : comp.copyNbt();
+    private static CompoundTag getRoot(ItemStack stack) {
+        var comp = stack.get(DataComponents.CUSTOM_DATA);
+        return (comp == null) ? new CompoundTag() : comp.copyTag();
     }
 
     private static String norm(String k) {

@@ -14,7 +14,6 @@ import com.spider.mtgcard.registry.ModBlockEntities;
 import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.screen.ModScreenHandlers;
 
-import com.spider.mtgcard.trade.ModWanderingTraderTrades;
 import com.spider.mtgcard.util.ModDispenserBehaviors;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -71,10 +70,9 @@ public final class Mtgcard implements ModInitializer {
         MtgRootCommand.register();
 
         // Ticks / loot / events
-        ServerTickEvents.END_WORLD_TICK.register(LifePlayGroups::tickWorld);
+        ServerTickEvents.END_LEVEL_TICK.register(LifePlayGroups::tickWorld);
         MtgLootInject.init();
         ModEvents.register();
-        ModWanderingTraderTrades.init();
 
         //Guide Book
         GuideBookPackets.init();

@@ -2,17 +2,17 @@ package com.spider.mtgcard.db;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.Dynamic;
-import net.minecraft.datafixer.DataFixTypes;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtList;
+import net.minecraft.util.datafix.DataFixTypes;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
-import net.minecraft.registry.RegistryWrapper;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.Uuids;
-import net.minecraft.world.PersistentState;
-import net.minecraft.world.PersistentStateManager;
-import net.minecraft.world.PersistentStateType;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.UUIDUtil;
+import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.saveddata.SavedDataType;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -22,19 +22,19 @@ import java.util.UUID;
  * World-scoped per-player storage for the Card Database intake list (unbounded).
  * Mirrors CardDBState’s pattern so getOrCreate(TYPE) compiles under your mappings.
  */
-public final class PlayerCardDBState extends PersistentState {
+public final class PlayerCardDBState extends SavedData {
     public static final String NAME = "mtgcard_player_card_db";
 
     /** player UUID -> serialized intake snapshot (compact list entry format) */
-    private final Map<UUID, NbtList> intakeByPlayer = new HashMap<>();
+    private final Map<UUID, ListTag> intakeByPlayer = new HashMap<>();
 
     /* --------------------- Public API --------------------- */
 
-    public NbtList getIntake(UUID id) { return intakeByPlayer.get(id); }
+    public ListTag getIntake(UUID id) { return intakeByPlayer.get(id); }
 
-    public void putIntake(UUID id, NbtList list) {
+    public void putIntake(UUID id, ListTag list) {
         // shallow copy so callers can’t mutate our stored reference
-        NbtList copy = new NbtList();
+        ListTag copy = new ListTag();
         if (list != null) {
             for (int i = 0; i < list.size(); i++) {
                 var c = list.getCompound(i).orElse(null);
@@ -42,23 +42,23 @@ public final class PlayerCardDBState extends PersistentState {
             }
         }
         intakeByPlayer.put(id, copy);
-        markDirty();
+        setDirty();
     }
 
     /* --------------------- NBT write/read --------------------- */
     // NOTE: Don’t annotate with @Override in your mappings.
 
     /** Writes: players:[ {id:"<uuid>", intake:[...]} ] */
-    public NbtCompound writeNbt(NbtCompound nbt) {
-        var players = new NbtList();
+    public CompoundTag writeNbt(CompoundTag nbt) {
+        var players = new ListTag();
         for (var e : intakeByPlayer.entrySet()) {
-            var c = new NbtCompound();
+            var c = new CompoundTag();
             c.putString("id", e.getKey().toString());  // store UUID as string
-            var listCopy = new NbtList();
+            var listCopy = new ListTag();
             var src = e.getValue();
             if (src != null) {
                 for (int i = 0; i < src.size(); i++) {
-                    listCopy.add(src.getCompound(i).orElse(new NbtCompound()).copy());
+                    listCopy.add(src.getCompound(i).orElse(new CompoundTag()).copy());
                 }
             }
             c.put("intake", listCopy);
@@ -69,7 +69,7 @@ public final class PlayerCardDBState extends PersistentState {
     }
 
     /** Reader used by the TYPE codec. */
-    public static PlayerCardDBState readFromNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup lookup) {
+    public static PlayerCardDBState readFromNbt(CompoundTag nbt, HolderLookup.Provider lookup) {
         var s = new PlayerCardDBState();
         var playersOpt = nbt.getList("players");
         if (playersOpt.isPresent()) {
@@ -88,7 +88,7 @@ public final class PlayerCardDBState extends PersistentState {
                     continue;
                 }
 
-                var intake = c.getList("intake").orElse(new NbtList());
+                var intake = c.getList("intake").orElse(new ListTag());
                 s.intakeByPlayer.put(id, intake);
             }
         }
@@ -101,29 +101,34 @@ public final class PlayerCardDBState extends PersistentState {
     public static final Codec<PlayerCardDBState> CODEC = Codec.PASSTHROUGH.xmap(
             dyn -> {
                 Object val = dyn.convert(NbtOps.INSTANCE).getValue();
-                NbtCompound root;
-                if (val instanceof NbtCompound c) {
+                CompoundTag root;
+                if (val instanceof CompoundTag c) {
                     root = c;
-                } else if (val instanceof NbtElement el) {
-                    root = new NbtCompound();
+                } else if (val instanceof Tag el) {
+                    root = new CompoundTag();
                 } else {
-                    root = new NbtCompound();
+                    root = new CompoundTag();
                 }
                 return readFromNbt(root, null);
             },
             state -> {
-                NbtCompound out = state.writeNbt(new NbtCompound());
+                CompoundTag out = state.writeNbt(new CompoundTag());
                 return new Dynamic<>(NbtOps.INSTANCE, out);
             }
     );
 
     /** Use the same DataFixTypes bucket CardDBState used. */
-    public static final PersistentStateType<PlayerCardDBState> TYPE =
-            new PersistentStateType<>(NAME, PlayerCardDBState::new, CODEC, DataFixTypes.SAVED_DATA_RANDOM_SEQUENCES);
+    public static final SavedDataType<PlayerCardDBState> TYPE =
+            new SavedDataType<>(
+                    Identifier.withDefaultNamespace(NAME),
+                    PlayerCardDBState::new,
+                    CODEC,
+                    DataFixTypes.SAVED_DATA_RANDOM_SEQUENCES
+            );
 
     /** Accessor used by server code (compatible with your getOrCreate signature). */
-    public static PlayerCardDBState get(ServerWorld world) {
-        PersistentStateManager mgr = world.getPersistentStateManager();
-        return mgr.getOrCreate(TYPE);
+    public static PlayerCardDBState get(ServerLevel world) {
+        var mgr = world.getDataStorage();
+        return mgr.computeIfAbsent(TYPE);
     }
 }

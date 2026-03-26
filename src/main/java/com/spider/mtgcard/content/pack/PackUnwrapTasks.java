@@ -1,19 +1,19 @@
 package com.spider.mtgcard.content.pack;
 
 import com.spider.mtgcard.net.ModPayloads;
-import net.minecraft.item.ItemStack;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
 
 // com.spider.mtgcard.content.pack.PackUnwrapTasks
 public final class PackUnwrapTasks {
-    public static void start(ServerWorld world, ServerPlayerEntity player, ItemStack pack) {
+    public static void start(ServerLevel world, ServerPlayer player, ItemStack pack) {
         // 15 cards -> do 15 steps
         final int steps = 15;
         world.getServer().execute(() -> runStep(world, player, pack, 0, steps));
     }
 
-    private static void runStep(ServerWorld world, ServerPlayerEntity player, ItemStack pack, int i, int steps) {
+    private static void runStep(ServerLevel world, ServerPlayer player, ItemStack pack, int i, int steps) {
         if (i >= steps) {
             ModPayloads.sendUnpackProgress(player, 100);
             // replace pack with bundle (already filled by your generator)

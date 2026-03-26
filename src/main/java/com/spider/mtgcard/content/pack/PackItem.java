@@ -1,51 +1,52 @@
 package com.spider.mtgcard.content.pack;
 
 import com.spider.mtgcard.net.ModPayloads;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.NbtComponent;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.world.World;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.Item.Properties;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.level.Level;
 
 import java.util.UUID;
 
 public class PackItem extends Item {
-    public PackItem(Settings s){ super(s); }
+    public PackItem(Properties s){ super(s); }
 
     @Override
-    public ActionResult use(World world, PlayerEntity user, Hand hand) {
-        if (world.isClient()) return ActionResult.SUCCESS;
-        if (!(user instanceof ServerPlayerEntity player)) return ActionResult.PASS;
+    public InteractionResult use(Level world, Player user, InteractionHand hand) {
+        if (world.isClientSide()) return InteractionResult.SUCCESS;
+        if (!(user instanceof ServerPlayer player)) return InteractionResult.PASS;
 
-        ItemStack stack = user.getStackInHand(hand);
+        ItemStack stack = user.getItemInHand(hand);
 
         // ---- NEW: lock out if already opening ----
         if (PackOpenManager.isActive(player)) {
-            player.sendMessage(net.minecraft.text.Text.literal("You're already opening a pack."), true);
-            return ActionResult.FAIL;
+            player.sendSystemMessage(net.minecraft.network.chat.Component.literal("You're already opening a pack."), true);
+            return InteractionResult.FAIL;
         }
 
         // Read desired set BEFORE consuming
         final String desiredSet = PackGenerator.detectPackSetPublic(stack);
 
         // Stamp a UID (kept for correlation/logging)
-        var comp = stack.getOrDefault(DataComponentTypes.CUSTOM_DATA, NbtComponent.DEFAULT);
-        NbtCompound root = comp.copyNbt();
-        NbtCompound tag  = root.getCompound("mtg_pack").orElseGet(NbtCompound::new);
+        var comp = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY);
+        CompoundTag root = comp.copyTag();
+        CompoundTag tag  = root.getCompound("mtg_pack").orElseGet(CompoundTag::new);
 
         String uid = tag.getString("uid").orElse("");
         if (uid.isEmpty()) {
             uid = UUID.randomUUID().toString();
             tag.putString("uid", uid);
             root.put("mtg_pack", tag);
-            stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+            stack.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
         }
 
         // ---- NEW: snapshot EXACT pack for refund (count=1, includes custom name, custom data, etc.) ----
@@ -54,8 +55,8 @@ public class PackItem extends Item {
 
         // ---- NEW: acquire the active lock BEFORE decrement/async ----
         if (!PackOpenManager.tryStart(player, refundOne)) {
-            player.sendMessage(net.minecraft.text.Text.literal("You're already opening a pack."), true);
-            return ActionResult.FAIL;
+            player.sendSystemMessage(net.minecraft.network.chat.Component.literal("You're already opening a pack."), true);
+            return InteractionResult.FAIL;
         }
 
         // Start HUD
@@ -63,13 +64,13 @@ public class PackItem extends Item {
 
         // Consume immediately (unless Creative)
         if (!player.isCreative()) {
-            stack.decrement(1);
+            stack.shrink(1);
         }
 
-        ServerWorld sw = (ServerWorld) player.getEntityWorld();
+        ServerLevel sw = (ServerLevel) player.level();
         PackGenerator.openPackAsync(sw.getServer(), player, uid);
 
         player.playSound(SoundEvents.UI_TOAST_IN, 1f, 1f);
-        return ActionResult.SUCCESS;
+        return InteractionResult.SUCCESS;
     }
 }

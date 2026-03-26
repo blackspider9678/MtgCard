@@ -1,6 +1,6 @@
 package com.spider.mtgcard.guidebook;
 
-import net.minecraft.util.Identifier;
+import net.minecraft.resources.Identifier;
 
 import java.util.*;
 

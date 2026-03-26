@@ -1,8 +1,8 @@
 package com.spider.mtgcard.content.pack;
 
-import net.minecraft.item.ItemStack;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.level.ServerPlayer;
 
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,23 +23,23 @@ public final class PackOpenManager {
     private static final ConcurrentHashMap<UUID, Active> ACTIVE = new ConcurrentHashMap<>();
 
     /** Returns true if started, false if player already has an active opening. */
-    public static boolean tryStart(ServerPlayerEntity player, ItemStack refundPackOne) {
-        UUID id = player.getUuid();
+    public static boolean tryStart(ServerPlayer player, ItemStack refundPackOne) {
+        UUID id = player.getUUID();
         Active a = new Active(id, refundPackOne);
         return ACTIVE.putIfAbsent(id, a) == null;
     }
 
-    public static boolean isActive(ServerPlayerEntity player) {
-        return ACTIVE.containsKey(player.getUuid());
+    public static boolean isActive(ServerPlayer player) {
+        return ACTIVE.containsKey(player.getUUID());
     }
 
-    public static Active get(ServerPlayerEntity player) {
-        return ACTIVE.get(player.getUuid());
+    public static Active get(ServerPlayer player) {
+        return ACTIVE.get(player.getUUID());
     }
 
     /** Mark finished successfully. */
-    public static void finish(ServerPlayerEntity player) {
-        ACTIVE.remove(player.getUuid());
+    public static void finish(ServerPlayer player) {
+        ACTIVE.remove(player.getUUID());
     }
 
     /**

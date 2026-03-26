@@ -1,8 +1,8 @@
 package com.spider.mtgcard.displayblock;
 
-import net.minecraft.util.StringIdentifiable;
+import net.minecraft.util.StringRepresentable;
 
-public enum DisplayShape implements StringIdentifiable {
+public enum DisplayShape implements StringRepresentable {
     SINGLE("single"),
 
     H_LEFT("horizontal_right"),
@@ -28,5 +28,5 @@ public enum DisplayShape implements StringIdentifiable {
     private final String id;
     DisplayShape(String id) { this.id = id; }
 
-    @Override public String asString() { return id; }
+    @Override public String getSerializedName() { return id; }
 }

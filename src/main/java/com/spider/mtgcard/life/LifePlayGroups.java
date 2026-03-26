@@ -2,13 +2,13 @@ package com.spider.mtgcard.life;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.Dynamic;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtList;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.PersistentState;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.saveddata.SavedData;
 
 import java.util.*;
 
@@ -40,7 +40,7 @@ public final class LifePlayGroups {
         public Group(UUID id) { this.id = id; }
     }
 
-    private static List<String> resolveMemberNames(ServerWorld world, List<BlockPos> order) {
+    private static List<String> resolveMemberNames(ServerLevel world, List<BlockPos> order) {
         var names = new ArrayList<String>(order.size());
         for (var bp : order) {
             String nm = "";
@@ -53,16 +53,16 @@ public final class LifePlayGroups {
     }
 
 
-    public static final class State extends PersistentState {
+    public static final class State extends SavedData {
         private final Map<UUID, Group> groups = new HashMap<>();
         public Map<UUID, Group> groups() { return groups; }
 
-        public NbtCompound toNbt() {
-            NbtCompound nbt = new NbtCompound();
-            NbtList list = new NbtList();
+        public CompoundTag toNbt() {
+            CompoundTag nbt = new CompoundTag();
+            ListTag list = new ListTag();
 
             for (Group g : groups.values()) {
-                NbtCompound gc = new NbtCompound();
+                CompoundTag gc = new CompoundTag();
                 gc.putString("Id", g.id.toString());
                 gc.putString("Name", g.name == null ? "" : g.name);
 
@@ -70,9 +70,9 @@ public final class LifePlayGroups {
                 gc.putBoolean("Started", g.started);
 
                 // members
-                NbtList members = new NbtList();
+                ListTag members = new ListTag();
                 for (BlockPos p : g.order) {
-                    NbtCompound pc = new NbtCompound();
+                    CompoundTag pc = new CompoundTag();
                     pc.putInt("X", p.getX());
                     pc.putInt("Y", p.getY());
                     pc.putInt("Z", p.getZ());
@@ -81,9 +81,9 @@ public final class LifePlayGroups {
                 gc.put("Members", members);
 
                 // dead
-                NbtList deadList = new NbtList();
+                ListTag deadList = new ListTag();
                 for (BlockPos p : g.dead) {
-                    NbtCompound pc = new NbtCompound();
+                    CompoundTag pc = new CompoundTag();
                     pc.putInt("X", p.getX());
                     pc.putInt("Y", p.getY());
                     pc.putInt("Z", p.getZ());
@@ -98,16 +98,16 @@ public final class LifePlayGroups {
             return nbt;
         }
 
-        public static State fromNbtCompound(NbtCompound nbt) {
+        public static State fromNbtCompound(CompoundTag nbt) {
             State s = new State();
 
-            Optional<NbtList> listOpt = nbt.getList("Groups");
+            Optional<ListTag> listOpt = nbt.getList("Groups");
             if (listOpt.isEmpty()) return s;
 
-            NbtList list = listOpt.get();
+            ListTag list = listOpt.get();
             for (int i = 0; i < list.size(); i++) {
-                NbtElement e = list.get(i);
-                if (!(e instanceof NbtCompound gc)) continue;
+                Tag e = list.get(i);
+                if (!(e instanceof CompoundTag gc)) continue;
 
                 String idStr = gc.getString("Id").orElse("");
                 if (idStr.isEmpty()) continue;
@@ -124,12 +124,12 @@ public final class LifePlayGroups {
                 g.started = gc.getBoolean("Started").orElse(false);
 
                 // members
-                Optional<NbtList> memOpt = gc.getList("Members");
+                Optional<ListTag> memOpt = gc.getList("Members");
                 if (memOpt.isPresent()) {
-                    NbtList members = memOpt.get();
+                    ListTag members = memOpt.get();
                     for (int mi = 0; mi < members.size(); mi++) {
-                        NbtElement me = members.get(mi);
-                        if (!(me instanceof NbtCompound pc)) continue;
+                        Tag me = members.get(mi);
+                        if (!(me instanceof CompoundTag pc)) continue;
 
                         int x = pc.getInt("X").orElse(0);
                         int y = pc.getInt("Y").orElse(0);
@@ -139,12 +139,12 @@ public final class LifePlayGroups {
                 }
 
                 // dead
-                Optional<NbtList> deadOpt = gc.getList("Dead");
+                Optional<ListTag> deadOpt = gc.getList("Dead");
                 if (deadOpt.isPresent()) {
-                    NbtList deadList = deadOpt.get();
+                    ListTag deadList = deadOpt.get();
                     for (int di = 0; di < deadList.size(); di++) {
-                        NbtElement de = deadList.get(di);
-                        if (!(de instanceof NbtCompound pc)) continue;
+                        Tag de = deadList.get(di);
+                        if (!(de instanceof CompoundTag pc)) continue;
 
                         int x = pc.getInt("X").orElse(0);
                         int y = pc.getInt("Y").orElse(0);
@@ -164,23 +164,23 @@ public final class LifePlayGroups {
             dyn -> {
                 Dynamic<?> nd = dyn.convert(NbtOps.INSTANCE);
                 Object v = nd.getValue();
-                if (v instanceof NbtCompound nbt) return State.fromNbtCompound(nbt);
-                if (v instanceof NbtElement el && el instanceof NbtCompound nbt) return State.fromNbtCompound(nbt);
+                if (v instanceof CompoundTag nbt) return State.fromNbtCompound(nbt);
+                if (v instanceof Tag el && el instanceof CompoundTag nbt) return State.fromNbtCompound(nbt);
                 return new State();
             },
             st -> new Dynamic<>(NbtOps.INSTANCE, st.toNbt())
     );
 
-    private static final net.minecraft.world.PersistentStateType<State> TYPE =
-            new net.minecraft.world.PersistentStateType<>(
-                    KEY,
+    private static final net.minecraft.world.level.saveddata.SavedDataType<State> TYPE =
+            new net.minecraft.world.level.saveddata.SavedDataType<>(
+                    net.minecraft.resources.Identifier.fromNamespaceAndPath("mtgcard", "life_play_groups"),
                     State::new,
                     CODEC,
                     null
             );
 
-    private static State get(ServerWorld world) {
-        return world.getPersistentStateManager().getOrCreate(TYPE);
+    private static State get(ServerLevel world) {
+        return world.getDataStorage().computeIfAbsent(TYPE);
     }
 
     // ---------------- operations ----------------
@@ -201,7 +201,7 @@ public final class LifePlayGroups {
         }
     }
 
-    public static UUID createEmptyGroup(ServerWorld world) {
+    public static UUID createEmptyGroup(ServerLevel world) {
         State st = get(world);
         UUID id = UUID.randomUUID();
 
@@ -209,7 +209,7 @@ public final class LifePlayGroups {
         g.name = uniqueNewGroupName(st);
 
         st.groups().put(id, g);
-        st.markDirty();
+        st.setDirty();
 
         // send list update + snapshot
         LifePointPackets.groupsList(world, buildGroupsList(st));
@@ -218,7 +218,7 @@ public final class LifePlayGroups {
     }
 
     /** Update a group name + members/order. Removes those members from other groups first. */
-    public static void saveGroup(ServerWorld world, UUID groupId, String newName, List<BlockPos> newOrder) {
+    public static void saveGroup(ServerLevel world, UUID groupId, String newName, List<BlockPos> newOrder) {
         State st = get(world);
         Group g = st.groups().get(groupId);
         if (g == null) return;
@@ -265,14 +265,14 @@ public final class LifePlayGroups {
             }
         }
 
-        st.markDirty();
+        st.setDirty();
 
         applyGroupToMembers(world, g);
         LifePointPackets.groupsList(world, buildGroupsList(st));
         broadcastGroup(world, g);
     }
 
-    public static void deleteGroup(ServerWorld world, UUID groupId) {
+    public static void deleteGroup(ServerLevel world, UUID groupId) {
         State st = get(world);
         Group g = st.groups().remove(groupId);
         if (g == null) return;
@@ -283,13 +283,13 @@ public final class LifePlayGroups {
             if (be instanceof LifePointBlockEntity lp) lp.clearGroup();
         }
 
-        st.markDirty();
+        st.setDirty();
         LifePointPackets.groupRemoved(world, groupId);
         LifePointPackets.groupsList(world, buildGroupsList(st));
     }
 
     /** Remove member from its current group (used for block break safety). */
-    public static void removeFromGroup(ServerWorld world, BlockPos member) {
+    public static void removeFromGroup(ServerLevel world, BlockPos member) {
         State st = get(world);
 
         Group g = null;
@@ -300,7 +300,7 @@ public final class LifePlayGroups {
         if (g == null || gid == null) return;
 
         removeMemberInternal(world, st, gid, g, member);
-        st.markDirty();
+        st.setDirty();
 
         LifePointPackets.groupsList(world, buildGroupsList(st));
     }
@@ -309,7 +309,7 @@ public final class LifePlayGroups {
      * Removes member from ANY groups it appears in.
      * If excludeGroup != null, it will NOT remove from that group (used when saving).
      */
-    public static void dropGroupsContaining(ServerWorld world, BlockPos member, UUID excludeGroup) {
+    public static void dropGroupsContaining(ServerLevel world, BlockPos member, UUID excludeGroup) {
         State st = get(world);
 
         boolean changed = false;
@@ -333,17 +333,17 @@ public final class LifePlayGroups {
         }
 
         if (changed) {
-            st.markDirty();
+            st.setDirty();
             LifePointPackets.groupsList(world, buildGroupsList(st));
         }
     }
 
     /** Convenience for block break: remove from any group(s). */
-    public static void dropGroupsContaining(ServerWorld world, BlockPos member) {
+    public static void dropGroupsContaining(ServerLevel world, BlockPos member) {
         dropGroupsContaining(world, member, null);
     }
 
-    public static void startGame(ServerWorld world, UUID groupId) {
+    public static void startGame(ServerLevel world, UUID groupId) {
         State st = get(world);
         Group g = st.groups().get(groupId);
         if (g == null || g.order.isEmpty()) return;
@@ -355,7 +355,7 @@ public final class LifePlayGroups {
         if (g.dead.size() >= g.order.size()) {
             g.started = true;
             g.activeIndex = -1;
-            st.markDirty();
+            st.setDirty();
             applyGroupToMembers(world, g);
             broadcastGroup(world, g);
             return;
@@ -381,20 +381,20 @@ public final class LifePlayGroups {
         g.rollMinSteps = 20;        // was 10 (spin a bit longer)
 
 
-        st.markDirty();
+        st.setDirty();
         applyGroupToMembers(world, g);
         broadcastGroup(world, g);
     }
 
 
-    public static void passTurn(ServerWorld world, BlockPos fromMember) {
+    public static void passTurn(ServerLevel world, BlockPos fromMember) {
         State st = get(world);
         Group g = findGroup(st, fromMember);
         if (g == null || g.order.isEmpty()) return;
 
         if (g.dead.size() >= g.order.size()) {
             g.activeIndex = -1;
-            st.markDirty();
+            st.setDirty();
             applyGroupToMembers(world, g);
             broadcastGroup(world, g);
             return;
@@ -403,12 +403,12 @@ public final class LifePlayGroups {
         if (g.activeIndex < 0) g.activeIndex = firstAliveIndex(g);
         advanceToNextAlive(world, g);
 
-        st.markDirty();
+        st.setDirty();
         applyGroupToMembers(world, g);
         broadcastGroup(world, g);
     }
 
-    public static void setDead(ServerWorld world, BlockPos member, boolean dead) {
+    public static void setDead(ServerLevel world, BlockPos member, boolean dead) {
         State st = get(world);
         Group g = findGroup(st, member);
         if (g == null) return;
@@ -430,12 +430,12 @@ public final class LifePlayGroups {
             }
         }
 
-        st.markDirty();
+        st.setDirty();
         applyGroupToMembers(world, g);
         broadcastGroup(world, g);
     }
 
-    public static UUID findGroupId(ServerWorld world, BlockPos member) {
+    public static UUID findGroupId(ServerLevel world, BlockPos member) {
         State st = get(world);
         for (Group g : st.groups().values()) {
             if (g.order.contains(member)) return g.id;
@@ -443,23 +443,23 @@ public final class LifePlayGroups {
         return null;
     }
 
-    public static Group getGroup(ServerWorld world, UUID id) {
+    public static Group getGroup(ServerLevel world, UUID id) {
         return get(world).groups().get(id);
     }
 
-    public static List<LifePointPackets.GroupsListS2C.Entry> getGroupsList(ServerWorld world) {
+    public static List<LifePointPackets.GroupsListS2C.Entry> getGroupsList(ServerLevel world) {
         return buildGroupsList(get(world));
     }
 
     // ---------------- scanning ----------------
 
     /** Finds LifePoint blocks near origin. */
-    public static List<BlockPos> scan(ServerWorld world, BlockPos origin, int radius) {
+    public static List<BlockPos> scan(ServerLevel world, BlockPos origin, int radius) {
         int r = Math.max(1, Math.min(radius, 96));
         int r2 = r * r;
 
         var out = new ArrayList<BlockPos>();
-        BlockPos.Mutable m = new BlockPos.Mutable();
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
 
         for (int dx = -r; dx <= r; dx++) {
             for (int dy = -r; dy <= r; dy++) {
@@ -470,19 +470,19 @@ public final class LifePlayGroups {
                     m.set(origin.getX() + dx, origin.getY() + dy, origin.getZ() + dz);
 
                     // ✅ final absolute safety check
-                    if (m.getSquaredDistance(origin) > r2) continue;
+                    if (m.distSqr(origin) > r2) continue;
 
                     var be = world.getBlockEntity(m);
-                    if (be instanceof LifePointBlockEntity) out.add(m.toImmutable());
+                    if (be instanceof LifePointBlockEntity) out.add(m.immutable());
                 }
             }
         }
 
-        out.sort(Comparator.comparingDouble(p -> p.getSquaredDistance(origin)));
+        out.sort(Comparator.comparingDouble(p -> p.distSqr(origin)));
         return out;
     }
 
-    public static void resetGame(ServerWorld world, UUID groupId) {
+    public static void resetGame(ServerLevel world, UUID groupId) {
         State st = get(world);
         Group g = st.groups().get(groupId);
         if (g == null) return;
@@ -506,7 +506,7 @@ public final class LifePlayGroups {
             }
         }
 
-        st.markDirty();
+        st.setDirty();
         applyGroupToMembers(world, g);
         broadcastGroup(world, g);
     }
@@ -514,7 +514,7 @@ public final class LifePlayGroups {
 
 
     /** Scan + include each block's DisplayName. */
-    public static List<LifePointPackets.NearbyResultS2C.Entry> scanNamed(ServerWorld world, BlockPos origin, int radius) {
+    public static List<LifePointPackets.NearbyResultS2C.Entry> scanNamed(ServerLevel world, BlockPos origin, int radius) {
         List<BlockPos> positions = scan(world, origin, radius);
         var out = new ArrayList<LifePointPackets.NearbyResultS2C.Entry>(positions.size());
 
@@ -544,18 +544,18 @@ public final class LifePlayGroups {
         return -1;
     }
 
-    private static int pickRandomAliveIndex(ServerWorld world, Group g) {
+    private static int pickRandomAliveIndex(ServerLevel world, Group g) {
         if (g.order.isEmpty()) return -1;
         if (g.dead.size() >= g.order.size()) return -1;
 
         for (int tries = 0; tries < 256; tries++) {
-            int idx = world.random.nextInt(g.order.size());
+            int idx = world.getRandom().nextInt(g.order.size());
             if (!g.dead.contains(g.order.get(idx))) return idx;
         }
         return firstAliveIndex(g);
     }
 
-    private static void advanceToNextAlive(ServerWorld world, Group g) {
+    private static void advanceToNextAlive(ServerLevel world, Group g) {
         if (g.order.isEmpty()) { g.activeIndex = -1; return; }
 
         if (g.dead.size() >= g.order.size()) {
@@ -577,7 +577,7 @@ public final class LifePlayGroups {
     }
 
     /** Core removal that also handles "if active removed, pass to next". */
-    private static void removeMemberInternal(ServerWorld world, State st, UUID gid, Group g, BlockPos member) {
+    private static void removeMemberInternal(ServerLevel world, State st, UUID gid, Group g, BlockPos member) {
         int removedIndex = g.order.indexOf(member);
         boolean removedWasActive = (removedIndex >= 0 && removedIndex == g.activeIndex);
 
@@ -618,7 +618,7 @@ public final class LifePlayGroups {
         broadcastGroup(world, g);
     }
 
-    private static void applyGroupToMembers(ServerWorld world, Group g) {
+    private static void applyGroupToMembers(ServerLevel world, Group g) {
         for (int i = 0; i < g.order.size(); i++) {
             BlockPos p = g.order.get(i);
             var be = world.getBlockEntity(p);
@@ -640,7 +640,7 @@ public final class LifePlayGroups {
         return list;
     }
 
-    private static void broadcastGroup(ServerWorld world, Group g) {
+    private static void broadcastGroup(ServerLevel world, Group g) {
         var members = List.copyOf(g.order);
         var names   = resolveMemberNames(world, members);
 
@@ -657,7 +657,7 @@ public final class LifePlayGroups {
     }
 
 
-    public static void tickWorld(ServerWorld world) {
+    public static void tickWorld(ServerLevel world) {
         State st = get(world);
         boolean changed = false;
 
@@ -702,7 +702,7 @@ public final class LifePlayGroups {
         }
 
         if (changed) {
-            st.markDirty();
+            st.setDirty();
             // push visuals to players: BE turnActive updates + group snapshot
             for (Group g : st.groups().values()) {
                 if (!g.started) continue;
@@ -714,7 +714,7 @@ public final class LifePlayGroups {
 
 
     /** Called when a LifePoint block is broken/removed. Safely removes it from groups. */
-    public static void onMemberBroken(ServerWorld world, BlockPos pos) {
+    public static void onMemberBroken(ServerLevel world, BlockPos pos) {
         dropGroupsContaining(world, pos);
     }
 

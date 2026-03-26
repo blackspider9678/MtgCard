@@ -1,43 +1,43 @@
 package com.spider.mtgcard.util;
 
-import net.minecraft.inventory.Inventories;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.collection.DefaultedList;
+import net.minecraft.world.ContainerHelper;
+import net.minecraft.world.Container;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.NonNullList;
 
-public interface ImplementedInventory extends Inventory {
-    DefaultedList<ItemStack> getItems();
+public interface ImplementedInventory extends Container {
+    NonNullList<ItemStack> getItems();
 
-    static ImplementedInventory of(DefaultedList<ItemStack> items) {
+    static ImplementedInventory of(NonNullList<ItemStack> items) {
         return new ImplementedInventory() {
-            @Override public DefaultedList<ItemStack> getItems() { return items; }
+            @Override public NonNullList<ItemStack> getItems() { return items; }
         };
     }
 
     static ImplementedInventory ofSize(int size) {
-        return of(DefaultedList.ofSize(size, ItemStack.EMPTY));
+        return of(NonNullList.withSize(size, ItemStack.EMPTY));
     }
 
-    @Override default int size() { return getItems().size(); }
+    @Override default int getContainerSize() { return getItems().size(); }
     @Override default boolean isEmpty() {
-        for (int i = 0; i < size(); i++) if (!getStack(i).isEmpty()) return false;
+        for (int i = 0; i < getContainerSize(); i++) if (!getItem(i).isEmpty()) return false;
         return true;
     }
-    @Override default ItemStack getStack(int slot) { return getItems().get(slot); }
-    @Override default ItemStack removeStack(int slot, int count) {
-        ItemStack result = Inventories.splitStack(getItems(), slot, count);
-        if (!result.isEmpty()) markDirty();
+    @Override default ItemStack getItem(int slot) { return getItems().get(slot); }
+    @Override default ItemStack removeItem(int slot, int count) {
+        ItemStack result = ContainerHelper.removeItem(getItems(), slot, count);
+        if (!result.isEmpty()) setChanged();
         return result;
     }
-    @Override default ItemStack removeStack(int slot) {
-        return Inventories.removeStack(getItems(), slot);
+    @Override default ItemStack removeItemNoUpdate(int slot) {
+        return ContainerHelper.takeItem(getItems(), slot);
     }
-    @Override default void setStack(int slot, ItemStack stack) {
+    @Override default void setItem(int slot, ItemStack stack) {
         getItems().set(slot, stack);
-        if (stack.getCount() > getMaxCountPerStack()) stack.setCount(getMaxCountPerStack());
-        markDirty();
+        if (stack.getCount() > getMaxStackSize()) stack.setCount(getMaxStackSize());
+        setChanged();
     }
-    @Override default void clear() { getItems().clear(); }
-    @Override default void markDirty() {}
-    @Override default boolean canPlayerUse(net.minecraft.entity.player.PlayerEntity player) { return true; }
+    @Override default void clearContent() { getItems().clear(); }
+    @Override default void setChanged() {}
+    @Override default boolean stillValid(net.minecraft.world.entity.player.Player player) { return true; }
 }

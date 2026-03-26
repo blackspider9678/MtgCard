@@ -2,14 +2,14 @@
 package com.spider.mtgcard.cardstore;
 
 import com.spider.mtgcard.screen.ModScreenHandlers;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.core.BlockPos;
 
-public class CardStoreScreenHandler extends ScreenHandler {
+public class CardStoreScreenHandler extends AbstractContainerMenu {
 
     public final BlockPos blockPos;
 
@@ -17,7 +17,11 @@ public class CardStoreScreenHandler extends ScreenHandler {
     public static final int MARGIN = 10;
     public static final int INV_BLOCK_H = (3 * 18) + 4 + 18; // 3 rows + gap + hotbar
 
-    public CardStoreScreenHandler(int syncId, PlayerInventory playerInv, BlockPos blockPos) {
+    public CardStoreScreenHandler(int syncId, Inventory playerInv) {
+        this(syncId, playerInv, BlockPos.ZERO);
+    }
+
+    public CardStoreScreenHandler(int syncId, Inventory playerInv, BlockPos blockPos) {
         super(ModScreenHandlers.CARD_STORE, syncId);
         this.blockPos = blockPos;
 
@@ -38,16 +42,16 @@ public class CardStoreScreenHandler extends ScreenHandler {
     }
 
     @Override
-    public ItemStack quickMove(PlayerEntity player, int slotIndex) {
+    public ItemStack quickMoveStack(Player player, int slotIndex) {
         return ItemStack.EMPTY;
     }
 
     @Override
-    public boolean canUse(PlayerEntity player) {
+    public boolean stillValid(Player player) {
         return true;
     }
 
-    private void addPlayerInventory(PlayerInventory inv, int x, int y) {
+    private void addPlayerInventory(Inventory inv, int x, int y) {
         for (int row = 0; row < 3; ++row) {
             for (int col = 0; col < 9; ++col) {
                 this.addSlot(new Slot(inv, col + row * 9 + 9, x + col * 18, y + row * 18));
@@ -55,7 +59,7 @@ public class CardStoreScreenHandler extends ScreenHandler {
         }
     }
 
-    private void addHotbar(PlayerInventory inv, int x, int y) {
+    private void addHotbar(Inventory inv, int x, int y) {
         for (int col = 0; col < 9; ++col) {
             this.addSlot(new Slot(inv, col, x + col * 18, y));
         }

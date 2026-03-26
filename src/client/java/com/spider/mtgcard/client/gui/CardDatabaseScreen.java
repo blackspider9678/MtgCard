@@ -1,28 +1,28 @@
 package com.spider.mtgcard.client.gui;
 
+import com.spider.mtgcard.client.compat.LegacyContainerScreen;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.client.net.DBClientPackets;
 import com.spider.mtgcard.db.CardDatabaseScreenHandler;
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 
-public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler> {
+public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreenHandler> {
 
-    private static final Identifier DB_BG  = Identifier.of("mtgcard", "textures/gui/card_database.png");
-    private static final Identifier DBX_BG = Identifier.of("mtgcard", "textures/gui/deckbox_cb.png");
+    private static final Identifier DB_BG  = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/card_database.png");
+    private static final Identifier DBX_BG = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/deckbox_cb.png");
 
     private static final int DB_W  = 194;
     private static final int DB_H  = 252;
@@ -42,13 +42,11 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
     private boolean dirAsc = true;
 
     // --- Search / sort widgets ---
-    private TextFieldWidget search;
-    private ButtonWidget btnClear;
+    private EditBox search;
+    private Button btnClear;
 
     // --- Scrollbar geometry/state ---
     private int trackX, trackY, trackH;   // track rect (2 px wide visual, but we draw 4 for easier hit)
-    private int thumbY;                   // top of thumb
-    private int thumbH = 12;              // min thumb height
     private boolean dragging = false;
     private int dragGrabDy = 0;           // mouseY - thumbY when click begins
     private int lastSentOffset = -1;      // avoid spamming identical offsets
@@ -71,22 +69,22 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
     private static final int ANIM_MS = 180;     // duration in ms
     private static final float ANIM_SCALE_FROM = 0.92f;
 
-    private int rightPanelX() { return this.x + DB_W + GAP_W; }
-    private int rightPanelY() { return this.y; }
+    private int rightPanelX() { return this.leftPos + DB_W + GAP_W; }
+    private int rightPanelY() { return this.topPos; }
 
-    private ButtonWidget btnStoreAll;
-    private ButtonWidget btnRoute;
+    private Button btnStoreAll;
+    private Button btnRoute;
 
     private boolean suppressSearchListener = false;
 
 
     private java.util.List<com.spider.mtgcard.net.payload.DeckboxTabNamesPayload.Entry> tabNames = java.util.List.of();
-    private java.util.List<ButtonWidget> tabButtons = new java.util.ArrayList<>();
+    private java.util.List<Button> tabButtons = new java.util.ArrayList<>();
 
     // Sort dropdown
-    private ButtonWidget btnSort;
+    private Button btnSort;
     private boolean sortMenuOpen = false;
-    private final java.util.List<ButtonWidget> sortMenuButtons = new java.util.ArrayList<>();
+    private final java.util.List<Button> sortMenuButtons = new java.util.ArrayList<>();
 
     private static final SortOpt[] SORT_OPTS = {
             new SortOpt("Name",       "name"),
@@ -101,26 +99,26 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
     private record SortOpt(String label, String key) {}
 
     public void applyDeckboxTabNames(int syncId, java.util.List<com.spider.mtgcard.net.payload.DeckboxTabNamesPayload.Entry> entries) {
-        if (this.handler == null) return;
-        if (syncId != this.handler.syncId) return; // make sure it’s for this screen
+        if (this.menu == null) return;
+        if (syncId != this.menu.containerId) return; // make sure it’s for this screen
         this.tabNames = (entries == null) ? java.util.List.of() : java.util.List.copyOf(entries);
     }
 
-    private CardDatabaseScreenHandler H() { return (CardDatabaseScreenHandler) this.handler; }
+    private CardDatabaseScreenHandler H() { return (CardDatabaseScreenHandler) this.menu; }
 
-    public CardDatabaseScreen(CardDatabaseScreenHandler handler, PlayerInventory inv, Text title) {
+    public CardDatabaseScreen(CardDatabaseScreenHandler handler, Inventory inv, Component title) {
         super(handler, inv, title);
 
         // Will be finalized in init() based on deckboxes
-        this.backgroundWidth  = DB_W;
-        this.backgroundHeight = DB_H;
+        this.imageWidth = DB_W;
+        this.imageHeight = DB_H;
 
         // With your +12 shift, we will set this precisely in init()
     }
 
     private void sendSearchToServer() {
-        if (this.client == null) return;
-        String q   = (this.search == null) ? "" : this.search.getText();
+        if (this.minecraft == null) return;
+        String q   = (this.search == null) ? "" : this.search.getValue();
         String dir = (dirAsc ? "asc" : "desc");
         DBClientPackets.sendSearch(q, orderKey, dir);
     }
@@ -134,7 +132,7 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
         long now = System.currentTimeMillis();
         if (now >= this.nextSearchAtMs) {
             this.nextSearchAtMs = -1;
-            String q = (this.search == null) ? "" : this.search.getText();
+            String q = (this.search == null) ? "" : this.search.getValue();
             if (!q.equals(lastSentQuery)) {
                 lastSentQuery = q;
                 triggerSearchFromUI(); // sends packet to server
@@ -143,24 +141,24 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
     }
 
     @Override
-    protected void handledScreenTick() {
-        super.handledScreenTick();
+    protected void containerTick() {
+        super.containerTick();
         maybeFireAutoSearch();
 
         if (btnRoute != null) {
             boolean hasDeckbox = H().getClientDeckboxCount() > 0;
             btnRoute.active = hasDeckbox;
-            btnRoute.setMessage(Text.literal(routeLabel()));
+            btnRoute.setMessage(Component.literal(routeLabel()));
         }
     }
 
     @Override
     protected void init() {
-        boolean hasDeckbox = (this.handler.getClientDeckboxCount() > 0);
+        boolean hasDeckbox = (this.menu.getClientDeckboxCount() > 0);
 
         // Size depends on whether the right deckbox panel is visible
-        this.backgroundWidth  = hasDeckbox ? (DB_W + GAP_W + DBX_W) : DB_W;
-        this.backgroundHeight = DB_H;
+        this.imageWidth = hasDeckbox ? (DB_W + GAP_W + DBX_W) : DB_W;
+        this.imageHeight = DB_H;
 
         super.init();
 
@@ -170,14 +168,14 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
         // ----------------------------
         // Scrollbar geometry (left panel)
         // ----------------------------
-        this.trackX = this.x + DB_W - 6;
-        this.trackY = this.y + CardDatabaseScreenHandler.DB_GRID_Y; // 36
+        this.trackX = this.leftPos + DB_W - 6;
+        this.trackY = this.topPos + CardDatabaseScreenHandler.DB_GRID_Y; // 36
         this.trackH = 6 * 18;
 
         // ----------------------------
         // Header: Search + Clear
         // ----------------------------
-        final int headerY = this.y + 16;
+        final int headerY = this.topPos + 16;
         final int fieldH  = 14;
 
         final int padL = 8;
@@ -186,45 +184,45 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
         final int clearW = 16;
 
         // Search field starts after the left gutter area (18) + a little breathing room
-        final int leftX  = this.x + padL + CardDatabaseScreenHandler.DB_LEFT_GUTTER;
-        final int rightX = this.x + DB_W - padR;
+        final int leftX  = this.leftPos + padL + CardDatabaseScreenHandler.DB_LEFT_GUTTER;
+        final int rightX = this.leftPos + DB_W - padR;
 
         final int clearX  = rightX - clearW;
         final int searchW = Math.max(60, clearX - 2 - leftX);
 
-        this.search = new TextFieldWidget(this.textRenderer, leftX, headerY, searchW, fieldH, Text.literal(""));
-        this.search.setDrawsBackground(true);
+        this.search = new EditBox(this.font, leftX, headerY, searchW, fieldH, Component.literal(""));
+        this.search.setBordered(true);
         this.search.setEditable(true);
-        this.addDrawableChild(this.search);
+        this.addRenderableWidget(this.search);
         this.setInitialFocus(this.search);
 
-        this.search.setChangedListener(s -> {
+        this.search.setResponder(s -> {
             if (suppressSearchListener) return;
             lastQuery = s;
             scheduleAutoSearch();
         });
 
-        this.btnClear = ButtonWidget.builder(Text.literal("×"), b -> {
-            this.search.setText("");
+        this.btnClear = Button.builder(Component.literal("×"), b -> {
+            this.search.setValue("");
             this.search.setFocused(true);
             lastSentQuery = "";
             triggerSearchFromUI();
-        }).dimensions(clearX, headerY, clearW, fieldH).build();
-        this.addDrawableChild(this.btnClear);
+        }).bounds(clearX, headerY, clearW, fieldH).build();
+        this.addRenderableWidget(this.btnClear);
 
         // ----------------------------
         // Left gutter buttons (your requested stack)
         // Top button: x+5, y+33, then +18 each
         // ----------------------------
-        final int gx = this.x + 5;
-        final int gy = this.y + 35;
+        final int gx = this.leftPos + 5;
+        final int gy = this.topPos + 35;
         final int step = 18;
         int row = 0;
 
         // Store All
         this.btnStoreAll = addGutterButton(gx, gy + (row++ * step), "⇪", "Store all cards into DB", () -> {
-            if (this.client != null && this.client.interactionManager != null) {
-                this.client.interactionManager.clickButton(this.handler.syncId, CardDatabaseScreenHandler.BTN_STORE_ALL);
+            if (this.minecraft != null && this.minecraft.gameMode != null) {
+                this.minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId, CardDatabaseScreenHandler.BTN_STORE_ALL);
             }
         });
 
@@ -233,8 +231,8 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
 
         // Route toggle
         this.btnRoute = addGutterButton(gx, gy + (row++ * step), routeLabel(), "Shift-click destination (P/D)", () -> {
-            if (this.client != null && this.client.interactionManager != null) {
-                this.client.interactionManager.clickButton(this.handler.syncId, CardDatabaseScreenHandler.BTN_TOGGLE_ROUTE);
+            if (this.minecraft != null && this.minecraft.gameMode != null) {
+                this.minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId, CardDatabaseScreenHandler.BTN_TOGGLE_ROUTE);
             }
         });
         this.btnRoute.active = hasDeckbox;
@@ -246,31 +244,25 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
         tabButtons.clear();
         int deckboxCount = H().getClientDeckboxCount();
         if (deckboxCount > 1) {
-            int panelLeft = this.x + DB_W + GAP_W;
-            int tabY = this.y + 6;     // inside deckbox header strip
+            int panelLeft = this.leftPos + DB_W + GAP_W;
+            int tabY = this.topPos + 6;     // inside deckbox header strip
             int tabX = panelLeft + 8;
 
             for (int i = 0; i < deckboxCount; i++) {
                 int idx = i;
-                ButtonWidget b = ButtonWidget.builder(Text.literal(String.valueOf(i + 1)), btn -> {
-                    if (this.client != null && this.client.interactionManager != null) {
-                        this.client.interactionManager.clickButton(this.handler.syncId,
+                Button b = Button.builder(Component.literal(String.valueOf(i + 1)), btn -> {
+                    if (this.minecraft != null && this.minecraft.gameMode != null) {
+                        this.minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId,
                                 CardDatabaseScreenHandler.TAB_BASE + idx);
                     }
-                }).dimensions(tabX + i * 20, tabY, 18, 14).build();
+                }).bounds(tabX + i * 20, tabY, 18, 14).build();
 
                 tabButtons.add(b);
-                this.addDrawableChild(b);
+                this.addRenderableWidget(b);
             }
         }
 
-        // ----------------------------
-        // Thumb calc + inventory label shift
-        // ----------------------------
-        updateThumbFromHandler();
-        updateThumbFromOffset();
-
-        this.playerInventoryTitleY = (this.backgroundHeight - 94) + 12;
+        this.inventoryLabelY = (this.imageHeight - 94) + 12;
     }
 
 
@@ -279,7 +271,7 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
     }
 
     private void triggerSearchFromUI() {
-        String q   = (this.search == null) ? "" : this.search.getText();
+        String q   = (this.search == null) ? "" : this.search.getValue();
         String dir = (dirAsc ? "asc" : "desc");
         DBClientPackets.sendSearch(q, orderKey, dir);
     }
@@ -289,22 +281,22 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
     public boolean mouseScrolled(double mx, double my, double hx, double vy) {
         if (vy == 0) return false;
         boolean overWindow =
-                mx >= this.x + CardDatabaseScreenHandler.DB_GRID_X &&
-                        mx <  this.x + CardDatabaseScreenHandler.DB_GRID_X + 9 * 18 &&
-                        my >= this.y + CardDatabaseScreenHandler.DB_GRID_Y &&
-                        my <  this.y + CardDatabaseScreenHandler.DB_GRID_Y + 6 * 18;
+                mx >= this.leftPos + CardDatabaseScreenHandler.DB_GRID_X &&
+                        mx <  this.leftPos + CardDatabaseScreenHandler.DB_GRID_X + 9 * 18 &&
+                        my >= this.topPos + CardDatabaseScreenHandler.DB_GRID_Y &&
+                        my <  this.topPos + CardDatabaseScreenHandler.DB_GRID_Y + 6 * 18;
         if (!overWindow) return false;
         int id = (vy < 0) ? CardDatabaseScreenHandler.SCROLL_ROW_DOWN
                 : CardDatabaseScreenHandler.SCROLL_ROW_UP;
-        if (this.client != null && this.client.interactionManager != null) {
-            this.client.interactionManager.clickButton(this.handler.syncId, id);
+        if (this.minecraft != null && this.minecraft.gameMode != null) {
+            this.minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId, id);
             return true;
         }
         return false;
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean isSimulated) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean isSimulated) {
         double mouseX = click.x();
         double mouseY = click.y();
         int button = click.button();
@@ -322,33 +314,34 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
         }
 
         if (button == 0) {
-            if (isOverThumb(mouseX, mouseY)) {
+            var scrollbar = intakeScrollbar();
+            if (scrollbar != null && MtgGuiChrome.ptInExpanded(scrollbar.thumb(), mouseX, mouseY, 1, 0)) {
                 dragging = true;
-                dragGrabDy = (int) mouseY - thumbY;
+                dragGrabDy = (int) mouseY - scrollbar.thumb().y();
                 return true;
             }
-            if (isOverTrack(mouseX, mouseY)) {
+            if (scrollbar != null && MtgGuiChrome.ptInExpanded(scrollbar.track(), mouseX, mouseY, 1, 0)) {
                 int cur = H().getClientWindowOffset();
-                int max = H().getClientMaxWindowOffset();
+                int max = scrollbar.maxScroll();
                 if (max > 0) {
                     int page = 54;
-                    int next = (mouseY < thumbY) ? cur - page : cur + page;
+                    int next = (mouseY < scrollbar.thumb().y()) ? cur - page : cur + page;
                     sendAbsoluteOffset(Math.max(0, Math.min(max, next)));
                 }
                 return true;
             }
         }
-        if (isOverTrack(mouseX, mouseY)) {
-            int max = H().getClientMaxWindowOffset();
+        var scrollbar = intakeScrollbar();
+        if (scrollbar != null && MtgGuiChrome.ptInExpanded(scrollbar.track(), mouseX, mouseY, 1, 0)) {
+            int max = scrollbar.maxScroll();
             if (max > 0) {
-                int travel = Math.max(1, trackH - thumbH);
-                int bottom = trackY + travel;
+                int bottom = scrollbar.track().y() + scrollbar.track().h() - scrollbar.thumb().h();
                 if (mouseY >= bottom - 1) {
                     sendAbsoluteOffset(max);  // jump straight to bottom if you click at the end
                 } else {
                     int cur = H().getClientWindowOffset();
                     int page = 54;
-                    int next = (mouseY < thumbY) ? cur - page : cur + page;
+                    int next = (mouseY < scrollbar.thumb().y()) ? cur - page : cur + page;
                     next = Math.max(0, Math.min(max, next));
                     sendAbsoluteOffset(next);
                 }
@@ -358,7 +351,7 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
         return super.mouseClicked(click, isSimulated);
     }
 
-    private void drawBottomPadding(DrawContext ctx) {
+    private void drawBottomPadding(GuiGraphics ctx) {
         final int total = H().getClientIntakeCount();
         final int offset = H().getClientWindowOffset();
         final int pageSize = 54;   // 6x9 window
@@ -375,8 +368,8 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
         final int fullRows = cellsOnPage / cols;
         final int lastRowCells = cellsOnPage % cols;
 
-        final int x0 = this.x + CardDatabaseScreenHandler.DB_GRID_X; // 26
-        final int y0 = this.y + CardDatabaseScreenHandler.DB_GRID_Y; // 36
+        final int x0 = this.leftPos + CardDatabaseScreenHandler.DB_GRID_X; // 26
+        final int y0 = this.topPos + CardDatabaseScreenHandler.DB_GRID_Y; // 36
         final int cell = 18;
         final int inner = 16;
 
@@ -403,24 +396,22 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
     }
 
     @Override
-    public boolean mouseDragged(Click click, double dx, double dy) {
+    public boolean mouseDragged(MouseButtonEvent click, double dx, double dy) {
         if (dragging && click.button() == 0) {
-            int max = H().getClientMaxWindowOffset();
+            var scrollbar = intakeScrollbar();
+            if (scrollbar == null) return true;
+
+            int max = scrollbar.maxScroll();
             if (max > 0) {
-                int travel = Math.max(1, trackH - thumbH);
-
-                int thumbTop = (int) click.y() - dragGrabDy;
-                thumbTop = Math.max(trackY, Math.min(trackY + travel, thumbTop));
-
-                double t = (thumbTop - trackY) / (double) travel; // 0..1
-
+                int rawTarget = MtgGuiChrome.scrollFromThumb(scrollbar, (int) click.y(), dragGrabDy);
                 int target;
-                boolean atBottom = (thumbTop >= trackY + travel - 1) || (t > 0.999_5);
+                boolean atBottom = rawTarget >= max;
 
                 if (atBottom) {
                     target = max;
                 } else {
                     int rowsMax = (int) Math.ceil(max / 9.0);
+                    double t = rawTarget / (double) max;
                     int rowIndex = (int) Math.round(t * rowsMax);
                     rowIndex = Math.max(0, Math.min(rowsMax, rowIndex));
                     target = Math.min(max, rowIndex * 9);
@@ -436,7 +427,7 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
     }
 
     @Override
-    public boolean mouseReleased(Click click) {
+    public boolean mouseReleased(MouseButtonEvent click) {
         if (click.button() == 0 && dragging) {
             dragging = false;
             return true;
@@ -447,17 +438,17 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
     public void applyResults(Object ignored) { }
 
     @Override
-    public boolean keyPressed(KeyInput key) {
+    public boolean keyPressed(KeyEvent key) {
         // If the search box is focused, swallow the Inventory keybind (E) so the GUI doesn't close.
-        if (this.search != null && this.search.isFocused() && this.client != null) {
-            var invKey = this.client.options.inventoryKey;
-            if (invKey != null && invKey.matchesKey(key)) {
+        if (this.search != null && this.search.isFocused() && this.minecraft != null) {
+            var invKey = this.minecraft.options.keyInventory;
+            if (invKey != null && invKey.matches(key)) {
                 return true; // consume E (or whatever the inventory key is)
             }
         }
 
         // Optional: Enter triggers search manually (auto-search still works)
-        int code = key.getKeycode();
+        int code = key.input();
         if ((code == GLFW.GLFW_KEY_ENTER || code == GLFW.GLFW_KEY_KP_ENTER)
                 && this.search != null && this.search.isFocused()) {
             triggerSearchFromUI();
@@ -472,13 +463,13 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
         int sx, sy;
         try {
             // most mappings: public fields
-            sx = this.x + slot.x;
-            sy = this.y + slot.y;
+            sx = this.leftPos + slot.x;
+            sy = this.topPos + slot.y;
         } catch (Throwable ignore) {
             // if your mappings use getters, uncomment these two lines and delete the try/catch:
             // sx = this.x + slot.getX();
             // sy = this.y + slot.getY();
-            sx = this.x; sy = this.y; // placeholder to keep compile if you switch to getters
+            sx = this.leftPos; sy = this.topPos; // placeholder to keep compile if you switch to getters
         }
         // 16x16 slot box (same as vanilla)
         return mouseX >= sx && mouseX < sx + 16 && mouseY >= sy && mouseY < sy + 16;
@@ -487,32 +478,32 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
     /** Matches Deckbox foil/glint check so previews shimmer the same way. */
     private boolean isFoil(ItemStack st) {
         // Component-based glint (your foil slot uses this)
-        Boolean glint = st.get(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE);
+        Boolean glint = st.get(DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
         boolean hasGlint = glint != null && glint;
 
         // Optional NBT flag support (if you decide to store mtg_foil)
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        net.minecraft.nbt.NbtCompound root = (comp == null)
-                ? new net.minecraft.nbt.NbtCompound()
-                : comp.copyNbt();
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        net.minecraft.nbt.CompoundTag root = (comp == null)
+                ? new net.minecraft.nbt.CompoundTag()
+                : comp.copyTag();
 
         boolean foilNbt = root.getBoolean("mtg_foil").orElse(false);
 
         return hasGlint || foilNbt;
     }
 
-    private void renderHoverPreview(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    private void renderHoverPreview(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
 
         // Which slot are we hovering?
-        var slot = this.focusedSlot;
-        if (slot == null || !slot.hasStack() || !isMouseOverSlotArea(slot, mouseX, mouseY)) {
+        var slot = this.hoveredSlot;
+        if (slot == null || !slot.hasItem() || !isMouseOverSlotArea(slot, mouseX, mouseY)) {
             lastHoverStack = ItemStack.EMPTY;
             lastTexRef = null;
             return;
         }
 
-        ItemStack st = slot.getStack();
-        if (!st.isOf(com.spider.mtgcard.item.ModItems.CARD)) {
+        ItemStack st = slot.getItem();
+        if (!st.is(com.spider.mtgcard.item.ModItems.CARD)) {
             lastHoverStack = ItemStack.EMPTY;
             lastTexRef = null;
             return;
@@ -520,7 +511,7 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
 
         // Debounce hover so we don't spam loads while sweeping the mouse
         long now = System.currentTimeMillis();
-        if (!ItemStack.areEqual(st, lastHoverStack)) {
+        if (!ItemStack.matches(st, lastHoverStack)) {
             hoverSinceMs = now;
             lastHoverStack = st.copy();
             lastTexRef = null;
@@ -542,14 +533,14 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
 
         // --- Layout: left of GUI, with capped size ---
         final int PANEL_PAD = 4;
-        final int panelMaxH = Math.min(this.backgroundHeight - 8, 220);
+        final int panelMaxH = Math.min(this.imageHeight - 8, 220);
         final int panelMaxW = 180;
 
         int panelW = panelMaxW;
         int panelH = panelMaxH;
-        int panelX = this.x - (panelW + 12);
-        int panelY = this.y + 4;
-        if (panelX < 8) panelX = this.x + this.backgroundWidth + 12; // flip to right if off-screen
+        int panelX = this.leftPos - (panelW + 12);
+        int panelY = this.topPos + 4;
+        if (panelX < 8) panelX = this.leftPos + this.imageWidth + 12; // flip to right if off-screen
 
         // Fit card into panel while preserving aspect
         final int texW = ref.texW();
@@ -588,7 +579,7 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
         float sy = (float) drawH / (float) texH;
 
         // Save matrix
-        var m = ctx.getMatrices();
+        var m = ctx.pose();
         float m00 = m.m00(), m01 = m.m01();
         float m10 = m.m10(), m11 = m.m11();
         float m20 = m.m20(), m21 = m.m21();
@@ -601,7 +592,7 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
         m.translate(-texW / 2f, -texH / 2f);
         m.translate(2f, 3f);
 
-        ctx.drawTexture(
+        ctx.blit(
                 RenderPipelines.GUI_TEXTURED,
                 ref.id(),
                 0, 0, 0f, 0f,
@@ -617,7 +608,7 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
         m.rotate((float) Math.toRadians(angleDeg));
         m.translate(-texW / 2f, -texH / 2f);
 
-        ctx.drawTexture(
+        ctx.blit(
                 RenderPipelines.GUI_TEXTURED,
                 ref.id(),
                 0, 0, 0f, 0f,
@@ -648,7 +639,7 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
                 int shimmerAlpha = (int) (0x88 + 0x2A * ease); // a bit brighter
                 int colorShimmer = (shimmerAlpha << 24) | 0x00FFFFFF;
 
-                ctx.drawTexture(
+                ctx.blit(
                         RenderPipelines.GUI_TEXTURED,
                         ref.id(),
                         drawU, 0,
@@ -666,13 +657,13 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
 
     // ---------- Drawing ----------
     @Override
-    protected void drawBackground(DrawContext ctx, float delta, int mouseX, int mouseY) {
+    protected void renderBg(GuiGraphics ctx, float delta, int mouseX, int mouseY) {
 
         // LEFT: card database texture (512 atlas)
-        ctx.drawTexture(
+        ctx.blit(
                 RenderPipelines.GUI_TEXTURED,
                 DB_BG,
-                this.x, this.y,
+                this.leftPos, this.topPos,
                 0, 0,
                 DB_W, DB_H,
                 512, 512
@@ -683,36 +674,29 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
             int py = rightPanelY();
             int tab = H().getClientActiveDeckboxTab();
             String title = "Deckbox " + (tab + 1) + "/" + H().getClientDeckboxCount();
-            ctx.drawText(this.textRenderer, title, px + 52, py + 9, 0xFFFFFFFF, false);
+            ctx.text(this.font, title, px + 52, py + 9, 0xFFFFFFFF, false);
         }
 
         // scrollbar geometry (left panel)
-        this.trackX = this.x + DB_W - 6;
-        this.trackY = this.y + CardDatabaseScreenHandler.DB_GRID_Y;
+        this.trackX = this.leftPos + DB_W - 6;
+        this.trackY = this.topPos + CardDatabaseScreenHandler.DB_GRID_Y;
         this.trackH = 6 * 18;
 
-        int maxOff = H().getClientMaxWindowOffset();
-        if (maxOff > 0) {
-            updateThumbFromHandler();
-
-            int x0 = trackX - 1, x1 = trackX + 3;
-            ctx.fill(x0, trackY, x1, trackY + trackH, 0xFF1E1E1E);
-
-            int y0 = thumbY;
-            int y1 = Math.min(trackY + trackH, y0 + thumbH);
-            ctx.fill(x0, y0, x1, y1, 0xFFBFBFBF);
+        var scrollbar = intakeScrollbar();
+        if (scrollbar != null && scrollbar.enabled()) {
+            MtgGuiChrome.drawScrollbar(ctx, scrollbar, 0xFF1E1E1E, 0xFFBFBFBF, 0xFF1E1E1E);
         }
 
         drawBottomPadding(ctx);
 
         // RIGHT: deckbox texture (also 512 atlas)
         if (H().getClientDeckboxCount() > 0) {
-            int panelLeft = this.x + DB_W + GAP_W;
+            int panelLeft = this.leftPos + DB_W + GAP_W;
 
-            ctx.drawTexture(
+            ctx.blit(
                     RenderPipelines.GUI_TEXTURED,
                     DBX_BG,
-                    panelLeft, this.y,
+                    panelLeft, this.topPos,
                     0, 0,
                     DBX_W, DBX_H,
                     512, 512
@@ -721,18 +705,18 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
     }
 
     @Override
-    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
         this.renderBackground(ctx, mouseX, mouseY, delta);
         super.render(ctx, mouseX, mouseY, delta);
 
         renderDeckboxTabTooltip(ctx, mouseX, mouseY);
-        this.drawMouseoverTooltip(ctx, mouseX, mouseY);
+        this.renderTooltip(ctx, mouseX, mouseY);
 
         // Hover preview
         renderHoverPreview(ctx, mouseX, mouseY, delta);
     }
 
-    private void renderDeckboxTabTooltip(DrawContext ctx, int mouseX, int mouseY) {
+    private void renderDeckboxTabTooltip(GuiGraphics ctx, int mouseX, int mouseY) {
         if (tabButtons == null || tabButtons.isEmpty()) return;
         if (tabNames == null || tabNames.isEmpty()) return;
 
@@ -746,76 +730,35 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
             if (i >= tabNames.size()) return;
             var e = tabNames.get(i);
 
-            java.util.List<Text> lines = new java.util.ArrayList<>();
+            java.util.List<Component> lines = new java.util.ArrayList<>();
             if (e.commander() != null && !e.commander().isBlank()) {
-                lines.add(Text.literal("Commander: ").append(Text.literal(e.commander())));
+                lines.add(Component.literal("Commander: ").append(Component.literal(e.commander())));
             }
             if (e.partner() != null && !e.partner().isBlank()) {
-                lines.add(Text.literal("Partner: ").append(Text.literal(e.partner())));
+                lines.add(Component.literal("Partner: ").append(Component.literal(e.partner())));
             }
-            if (lines.isEmpty()) lines.add(Text.literal("Empty"));
+            if (lines.isEmpty()) lines.add(Component.literal("Empty"));
 
-            ctx.drawTooltip(this.textRenderer, lines, mouseX, mouseY);
+            ctx.setComponentTooltipForNextFrame(this.font, lines, mouseX, mouseY);
             return;
         }
     }
 
     // ---------- Helpers ----------
-    private void updateThumbFromHandler() {
-        final int count  = this.H().getClientIntakeCount();
-        final int maxOff = Math.max(0, count - 54);
-
-        if (maxOff <= 0) {
-            thumbH = trackH;
-            thumbY = trackY;
-            return;
-        }
-
-        int totalRows   = (count + 8) / 9; // ceil(count / 9)
-        int visibleRows = 6;
-        int minThumbPx  = 12;
-
-        thumbH = Math.max(minThumbPx, (int)Math.round(trackH * (visibleRows / (double) totalRows)));
-
-        int off    = this.H().getClientWindowOffset();
-        int travel = Math.max(1, trackH - thumbH);
-        double t   = off / (double) maxOff;          // 0..1
-        thumbY     = trackY + (int)Math.round(t * travel);
-    }
-
-    private void updateThumbFromOffset() {
-        int max = H().getClientMaxWindowOffset();
-        int total = Math.max(1, H().getClientIntakeCount());
-        int vis = 54;
-        int minH = 12;
-        int est = (int) Math.max(minH, Math.floor((vis / (double) total) * trackH));
-        thumbH = clamp(est, minH, trackH);
-
-        if (max <= 0) {
-            thumbY = trackY;
-            return;
-        }
-        int off = H().getClientWindowOffset();
-        int travel = Math.max(1, trackH - thumbH);
-        thumbY = trackY + (int) Math.round((off / (double) max) * travel);
-    }
-
-    private boolean isOverThumb(double mx, double my) {
-        int x0 = trackX - 1, x1 = trackX + 3;
-        int y0 = thumbY,     y1 = thumbY + thumbH;
-        return mx >= x0 && mx <= x1 && my >= y0 && my <= y1;
-    }
-
-    private boolean isOverTrack(double mx, double my) {
-        int x0 = trackX - 1, x1 = trackX + 3;
-        int y0 = trackY,     y1 = trackY + trackH;
-        return mx >= x0 && mx <= x1 && my >= y0 && my <= y1;
+    private MtgGuiChrome.Scrollbar intakeScrollbar() {
+        return MtgGuiChrome.layoutScrollbar(
+                new MtgGuiChrome.Rect(trackX - 1, trackY, 4, trackH),
+                Math.max(1, H().getClientIntakeCount()),
+                54,
+                H().getClientWindowOffset(),
+                12
+        );
     }
 
     private void sendAbsoluteOffset(int offset) {
         lastSentOffset = offset;
-        if (this.client != null && this.client.interactionManager != null) {
-            this.client.interactionManager.clickButton(this.handler.syncId, SET_OFFSET_BASE + offset);
+        if (this.minecraft != null && this.minecraft.gameMode != null) {
+            this.minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId, SET_OFFSET_BASE + offset);
         }
     }
 
@@ -825,7 +768,7 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
 
     /** Ensure exactly one token key:<value> exists in the search box; update or append. */
     private void rewriteTokenInQuery(String key, String value) {
-        String raw = search.getText();
+        String raw = search.getValue();
         java.util.List<String> toks = new java.util.ArrayList<>();
         java.util.regex.Matcher m = java.util.regex.Pattern
                 .compile("\"([^\"]+)\"|(\\S+)").matcher(raw == null ? "" : raw);
@@ -846,7 +789,7 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
         if (!replaced) toks.add(key + ":" + value);
 
         String rebuilt = rebuildQuery(toks);
-        search.setText(rebuilt);
+        search.setValue(rebuilt);
     }
 
     private static String rebuildQuery(java.util.List<String> toks) {
@@ -861,11 +804,11 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
         return String.join(" ", out);
     }
 
-    private ButtonWidget addGutterButton(int gx, int gy, String label, String tooltip, Runnable onClick) {
-        var b = ButtonWidget.builder(Text.literal(label), btn -> onClick.run())
-                .dimensions(gx, gy, 16, 16)
+    private Button addGutterButton(int gx, int gy, String label, String tooltip, Runnable onClick) {
+        var b = Button.builder(Component.literal(label), btn -> onClick.run())
+                .bounds(gx, gy, 16, 16)
                 .build();
-        this.addDrawableChild(b);
+        this.addRenderableWidget(b);
         // store tooltip info however you prefer (simple: reuse render loop + isMouseOver)
         return b;
     }
@@ -899,7 +842,7 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
         for (int i = 0; i < SORT_OPTS.length; i++) {
             SortOpt opt = SORT_OPTS[i];
 
-            ButtonWidget b = ButtonWidget.builder(Text.literal(opt.label()), btn -> {
+            Button b = Button.builder(Component.literal(opt.label()), btn -> {
                 // Update visible query text
                 suppressSearchListener = true;
                 rewriteTokenInQuery("order", opt.key()); // puts/updates order:<key> in the search box
@@ -909,14 +852,14 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
                 this.orderKey = opt.key();
 
                 // Fire exactly one search now
-                lastSentQuery = this.search.getText();
+                lastSentQuery = this.search.getValue();
                 triggerSearchFromUI();
 
                 closeSortMenu();
-            }).dimensions(x0, y0 + i * rowH, w, rowH).build();
+            }).bounds(x0, y0 + i * rowH, w, rowH).build();
 
             sortMenuButtons.add(b);
-            this.addDrawableChild(b);
+            this.addRenderableWidget(b);
         }
 
         sortMenuOpen = true;
@@ -926,7 +869,7 @@ public class CardDatabaseScreen extends HandledScreen<CardDatabaseScreenHandler>
         if (!sortMenuButtons.isEmpty()) {
             // remove from drawable children list
             for (var b : sortMenuButtons) {
-                this.remove(b); // Available in modern Screen; if mappings differ, see note below
+                this.removeWidget(b); // Available in modern Screen; if mappings differ, see note below
             }
             sortMenuButtons.clear();
         }

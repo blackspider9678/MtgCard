@@ -2,19 +2,19 @@
 package com.spider.mtgcard.data;
 
 import com.mojang.serialization.Codec;
-import net.minecraft.component.ComponentType;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
-import net.minecraft.util.Identifier;
+import net.minecraft.core.component.DataComponentType;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.Registry;
+import net.minecraft.resources.Identifier;
 
 public final class ModDataComponents {
-    public static final ComponentType<String> CARD_ART_ID = Registry.register(
-            Registries.DATA_COMPONENT_TYPE,
-            Identifier.of("mtgcard", "card_art_id"),
-            ComponentType.<String>builder()
-                    .codec(Codec.STRING)                // data <-> NBT
-                    .packetCodec(PacketCodecs.STRING)   // data <-> network
+    public static final DataComponentType<String> CARD_ART_ID = Registry.register(
+            BuiltInRegistries.DATA_COMPONENT_TYPE,
+            Identifier.fromNamespaceAndPath("mtgcard", "card_art_id"),
+            DataComponentType.<String>builder()
+                    .persistent(Codec.STRING)                // data <-> NBT
+                    .networkSynchronized(ByteBufCodecs.STRING_UTF8)   // data <-> network
                     .build()
     );
 

@@ -1,19 +1,21 @@
 package com.spider.mtgcard.content.pack;
 
 import com.mojang.serialization.Codec;
-import net.minecraft.item.ItemStack;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.Uuids;
-import net.minecraft.world.PersistentState;
-import net.minecraft.world.PersistentStateType;
-import net.minecraft.world.World;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.UUIDUtil;
+import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.saveddata.SavedDataType;
+import net.minecraft.world.level.Level;
 
 import java.util.*;
 
-public final class PackRefundState extends PersistentState {
+public final class PackRefundState extends SavedData {
 
-    private static final String KEY = "mtgcard_pack_refunds";
+    private static final Identifier KEY =
+            Identifier.fromNamespaceAndPath("mtgcard", "pack_refunds");
 
     // UUID -> refunded packs
     private final Map<UUID, List<ItemStack>> pending = new HashMap<>();
@@ -30,22 +32,22 @@ public final class PackRefundState extends PersistentState {
 
     // Saves: { pending: { <uuid>: [<itemstack>, ...] } }
     private static final Codec<PackRefundState> CODEC =
-            Codec.unboundedMap(Uuids.CODEC, ItemStack.CODEC.listOf())
+            Codec.unboundedMap(UUIDUtil.AUTHLIB_CODEC, ItemStack.CODEC.listOf())
                     .fieldOf("pending")
                     .xmap(PackRefundState::new, PackRefundState::toMap)
                     .codec();
 
-    private static final PersistentStateType<PackRefundState> TYPE =
-            new PersistentStateType<>(
+    private static final SavedDataType<PackRefundState> TYPE =
+            new SavedDataType<>(
                     KEY,
-                    PackRefundState::new, // <-- no-arg supplier (THIS fixes your compile error)
+                    PackRefundState::new,
                     CODEC,
                     null
             );
 
     public static PackRefundState get(MinecraftServer server) {
-        ServerWorld overworld = Objects.requireNonNull(server.getWorld(World.OVERWORLD));
-        return overworld.getPersistentStateManager().getOrCreate(TYPE);
+        ServerLevel overworld = Objects.requireNonNull(server.getLevel(Level.OVERWORLD));
+        return overworld.getDataStorage().computeIfAbsent(TYPE);
     }
 
     public void addRefund(UUID playerId, ItemStack packOne) {
@@ -56,14 +58,14 @@ public final class PackRefundState extends PersistentState {
         one.setCount(1);
 
         pending.computeIfAbsent(playerId, k -> new ArrayList<>()).add(one);
-        markDirty();
+        setDirty();
     }
 
     public List<ItemStack> drain(UUID playerId) {
         if (playerId == null) return List.of();
         List<ItemStack> list = pending.remove(playerId);
         if (list == null || list.isEmpty()) return List.of();
-        markDirty();
+        setDirty();
         return list;
     }
 }

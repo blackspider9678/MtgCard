@@ -1,16 +1,17 @@
 package com.spider.mtgcard.item;
 
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.MutableText;
-import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Hand;
-import net.minecraft.world.World;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Item.Properties;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.ChatFormatting;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.level.Level;
 
 public class DiceItem extends Item {
     private static final double ANNOUNCE_RANGE = 50.0;
@@ -18,55 +19,55 @@ public class DiceItem extends Item {
 
     private final int sides;
 
-    public DiceItem(Settings settings, int sides) {
+    public DiceItem(Properties settings, int sides) {
         super(settings);
         this.sides = sides;
     }
 
     @Override
-    public ActionResult use(World world, PlayerEntity user, Hand hand) {
-        if (world.isClient()) return ActionResult.SUCCESS;
-        if (!(world instanceof ServerWorld sw) || !(user instanceof ServerPlayerEntity sp)) {
-            return ActionResult.SUCCESS;
+    public InteractionResult use(Level world, Player user, InteractionHand hand) {
+        if (world.isClientSide()) return InteractionResult.SUCCESS;
+        if (!(world instanceof ServerLevel sw) || !(user instanceof ServerPlayer sp)) {
+            return InteractionResult.SUCCESS;
         }
 
-        ItemStack stack = user.getStackInHand(hand);
+        ItemStack stack = user.getItemInHand(hand);
         int rolls = stack.getCount();
-        boolean detailed = sp.isSneaking();
+        boolean detailed = sp.isShiftKeyDown();
 
         int total = 0;
 
         // Build optional [r1, r2, ...]
-        MutableText detailList = Text.literal("[");
+        MutableComponent detailList = Component.literal("[");
         for (int i = 0; i < rolls; i++) {
-            int r = sw.random.nextInt(sides) + 1;
+            int r = sw.getRandom().nextInt(sides) + 1;
             total += r;
 
             if (detailed) {
-                if (i > 0) detailList.append(Text.literal(", ").formatted(Formatting.DARK_GRAY));
-                detailList.append(Text.literal(String.valueOf(r)).formatted(Formatting.WHITE));
+                if (i > 0) detailList.append(Component.literal(", ").withStyle(ChatFormatting.DARK_GRAY));
+                detailList.append(Component.literal(String.valueOf(r)).withStyle(ChatFormatting.WHITE));
             }
         }
-        if (detailed) detailList.append(Text.literal("]"));
+        if (detailed) detailList.append(Component.literal("]"));
 
-        MutableText msg = Text.literal("🎲 ")
-                .append(sp.getDisplayName().copy().formatted(Formatting.AQUA))
-                .append(Text.literal(" rolled ").formatted(Formatting.GRAY))
-                .append(Text.literal(rolls + "d" + sides).formatted(Formatting.WHITE));
+        MutableComponent msg = Component.literal("🎲 ")
+                .append(sp.getDisplayName().copy().withStyle(ChatFormatting.AQUA))
+                .append(Component.literal(" rolled ").withStyle(ChatFormatting.GRAY))
+                .append(Component.literal(rolls + "d" + sides).withStyle(ChatFormatting.WHITE));
 
         if (detailed) {
-            msg.append(Text.literal(": ").formatted(Formatting.GRAY))
-                    .append(detailList.formatted(Formatting.DARK_GRAY));
+            msg.append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
+                    .append(detailList.withStyle(ChatFormatting.DARK_GRAY));
         }
 
-        msg.append(Text.literal(" → ").formatted(Formatting.GRAY))
-                .append(Text.literal(String.valueOf(total)).formatted(Formatting.GOLD));
+        msg.append(Component.literal(" → ").withStyle(ChatFormatting.GRAY))
+                .append(Component.literal(String.valueOf(total)).withStyle(ChatFormatting.GOLD));
 
         // Send to players within 50 blocks (same dimension)
-        for (ServerPlayerEntity other : sw.getPlayers(p -> p.squaredDistanceTo(sp) <= ANNOUNCE_RANGE_SQ)) {
-            other.sendMessage(msg, false);
+        for (ServerPlayer other : sw.getPlayers(p -> p.distanceToSqr(sp) <= ANNOUNCE_RANGE_SQ)) {
+            other.sendSystemMessage(msg, false);
         }
 
-        return ActionResult.SUCCESS;
+        return InteractionResult.SUCCESS;
     }
 }

@@ -3,31 +3,32 @@ package com.spider.mtgcard.net;
 import com.spider.mtgcard.Mtgcard;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload.Type;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.resources.Identifier;
 
 public final class GuideBookPackets {
 
-    public static final Identifier OPEN_ID = Identifier.of(Mtgcard.MOD_ID, "guide_open");
+    public static final Identifier OPEN_ID = Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "guide_open");
 
     // C2S isn't needed. We do S2C: server tells client to open.
-    public record OpenPayload() implements CustomPayload {
-        public static final CustomPayload.Id<OpenPayload> ID = new CustomPayload.Id<>(OPEN_ID);
-        public static final PacketCodec<RegistryByteBuf, OpenPayload> CODEC =
-                PacketCodec.tuple(PacketCodecs.VAR_INT, ignored -> 0, v -> new OpenPayload()); // minimal no-data codec
+    public record OpenPayload() implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<OpenPayload> ID = new CustomPacketPayload.Type<>(OPEN_ID);
+        public static final StreamCodec<RegistryFriendlyByteBuf, OpenPayload> CODEC =
+                StreamCodec.composite(ByteBufCodecs.VAR_INT, ignored -> 0, v -> new OpenPayload()); // minimal no-data codec
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     public static void init() {
-        PayloadTypeRegistry.playS2C().register(OpenPayload.ID, OpenPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(OpenPayload.ID, OpenPayload.CODEC);
     }
 
-    public static void sendOpen(ServerPlayerEntity player) {
+    public static void sendOpen(ServerPlayer player) {
         ServerPlayNetworking.send(player, new OpenPayload());
     }
 

@@ -7,7 +7,7 @@ import com.spider.mtgcard.net.CustomCardPackets.*;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,7 +30,7 @@ public final class CustomCardSync {
         List<WireMeta> one = new ArrayList<>(1);
         one.add(toWire(m));
         var payload = new CustomSyncDelta(one.get(0));
-        for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
             ServerPlayNetworking.send(p, payload);
         }
     }

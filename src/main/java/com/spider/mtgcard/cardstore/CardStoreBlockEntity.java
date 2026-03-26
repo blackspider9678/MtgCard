@@ -1,24 +1,23 @@
-// src/main/java/com/spider/mtgcard/cardstore/CardStoreBlockEntity.java
 package com.spider.mtgcard.cardstore;
 
-import com.spider.mtgcard.registry.ModBlockEntities;
 import com.spider.mtgcard.deckbox.DeckboxBlockEntity;
 import com.spider.mtgcard.deckbox.DeckboxInsertUtil;
-import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.entity.ItemEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.state.property.Properties;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
+import com.spider.mtgcard.registry.ModBlockEntities;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayDeque;
@@ -26,11 +25,10 @@ import java.util.Deque;
 import java.util.Random;
 import java.util.UUID;
 
-public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenHandlerFactory<BlockPos> {
+public class CardStoreBlockEntity extends BlockEntity implements MenuProvider {
 
-    private static final Text TITLE = Text.literal("Card Store");
+    private static final Component TITLE = Component.literal("Card Store");
 
-    // Printing/delivery state
     private @Nullable UUID activeBuyer;
     private final Deque<DeliveryEntry> queue = new ArrayDeque<>();
     private int nextPrintTicks = 0;
@@ -42,25 +40,16 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenH
         super(ModBlockEntities.CARD_STORE, pos, state);
     }
 
-    // -------- Screen stuff --------
-
     @Override
-    public Text getDisplayName() {
+    public Component getDisplayName() {
         return TITLE;
-    }
-
-    @Override
-    public BlockPos getScreenOpeningData(ServerPlayerEntity player) {
-        return this.pos;
     }
 
     @Nullable
     @Override
-    public ScreenHandler createMenu(int syncId, PlayerInventory inv, PlayerEntity player) {
-        return new CardStoreScreenHandler(syncId, inv, this.pos);
+    public AbstractContainerMenu createMenu(int syncId, Inventory inv, Player player) {
+        return new CardStoreScreenHandler(syncId, inv, this.worldPosition);
     }
-
-    // -------- API used by CardStorePurchaseService --------
 
     public boolean isDelivering() {
         return delivering;
@@ -73,12 +62,11 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenH
         this.queue.addLast(new DeliveryEntry(stackTemplate.copyWithCount(1), count));
         this.delivering = true;
         this.nextPrintTicks = 0;
-        markDirty();
+        setChanged();
     }
 
-    // Called when broken mid-print: flush remaining out front
     public void flushQueueOutFront() {
-        if (world == null || world.isClient()) return;
+        if (level == null || level.isClientSide()) return;
 
         while (!queue.isEmpty()) {
             DeliveryEntry e = queue.pollFirst();
@@ -90,10 +78,8 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenH
         stopDelivering();
     }
 
-    // -------- Tick loop (called by CardStoreBlock.getTicker) --------
-
-    public static void tick(World world, BlockPos pos, BlockState state, CardStoreBlockEntity be) {
-        if (world.isClient()) return;
+    public static void tick(Level level, BlockPos pos, BlockState state, CardStoreBlockEntity be) {
+        if (level.isClientSide()) return;
         if (!be.delivering) return;
 
         if (be.queue.isEmpty()) {
@@ -106,7 +92,6 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenH
             return;
         }
 
-        // Print exactly 1 card now
         DeliveryEntry head = be.queue.peekFirst();
         if (head == null) {
             be.stopDelivering();
@@ -116,14 +101,17 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenH
         ItemStack one = head.template.copyWithCount(1);
         be.tryDeliverOne(one);
 
-        // decrement remaining
         head.remaining--;
-        if (head.remaining <= 0) be.queue.pollFirst();
+        if (head.remaining <= 0) {
+            be.queue.pollFirst();
+        }
 
-        be.nextPrintTicks = 2 + be.rng.nextInt(3); // 2..4 ticks
-        be.markDirty();
+        be.nextPrintTicks = 2 + be.rng.nextInt(3);
+        be.setChanged();
 
-        if (be.queue.isEmpty()) be.stopDelivering();
+        if (be.queue.isEmpty()) {
+            be.stopDelivering();
+        }
     }
 
     private void stopDelivering() {
@@ -131,27 +119,23 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenH
         this.activeBuyer = null;
         this.nextPrintTicks = 0;
         this.queue.clear();
-        markDirty();
+        setChanged();
     }
 
-    // -------- Delivery logic --------
-
     private void tryDeliverOne(ItemStack one) {
-        if (world == null || one.isEmpty()) return;
+        if (level == null || one.isEmpty()) return;
 
-        // 1) Adjacent deckboxes (slots 0–98)
         if (tryInsertIntoAdjacentDeckboxes(one)) return;
 
-        // 2) Otherwise: eject into world out front
         ejectOutFront(one);
     }
 
     private boolean tryInsertIntoAdjacentDeckboxes(ItemStack one) {
-        if (world == null) return false;
+        if (level == null) return false;
 
         for (Direction d : Direction.values()) {
-            BlockPos p = pos.offset(d);
-            BlockEntity be = world.getBlockEntity(p);
+            BlockPos p = worldPosition.relative(d);
+            BlockEntity be = level.getBlockEntity(p);
             if (be instanceof DeckboxBlockEntity deck) {
                 if (DeckboxInsertUtil.tryInsertOneIntoMainGrid(deck, one)) {
                     return true;
@@ -162,18 +146,19 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenH
     }
 
     private void ejectOutFront(ItemStack one) {
-        if (world == null || one.isEmpty()) return;
+        if (level == null || one.isEmpty()) return;
 
-        Direction front = getCachedState().contains(Properties.HORIZONTAL_FACING)
-                ? getCachedState().get(Properties.HORIZONTAL_FACING)
+        BlockState state = getBlockState();
+        Direction front = state.hasProperty(BlockStateProperties.HORIZONTAL_FACING)
+                ? state.getValue(BlockStateProperties.HORIZONTAL_FACING)
                 : Direction.NORTH;
 
-        Vec3d base = Vec3d.ofCenter(pos);
-        Vec3d spawn = base.add(front.getOffsetX() * 0.6, 0.1, front.getOffsetZ() * 0.6);
+        Vec3 base = Vec3.atCenterOf(worldPosition);
+        Vec3 spawn = base.add(front.getStepX() * 0.6, 0.1, front.getStepZ() * 0.6);
 
-        ItemEntity ent = new ItemEntity(world, spawn.x, spawn.y, spawn.z, one.copyWithCount(1));
-        ent.setVelocity(front.getOffsetX() * 0.20, 0.08, front.getOffsetZ() * 0.20);
-        world.spawnEntity(ent);
+        ItemEntity ent = new ItemEntity(level, spawn.x, spawn.y, spawn.z, one.copyWithCount(1));
+        ent.setDeltaMovement(front.getStepX() * 0.20, 0.08, front.getStepZ() * 0.20);
+        level.addFreshEntity(ent);
     }
 
     private static final class DeliveryEntry {

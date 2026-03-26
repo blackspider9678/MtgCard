@@ -5,18 +5,18 @@ import com.spider.mtgcard.registry.ModBlockEntities;
 import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.registry.ModRegistry;
 import com.spider.mtgcard.item.ModItems;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.registry.RegistryWrapper;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.storage.ReadView;
-import net.minecraft.storage.WriteView;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.core.BlockPos;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -46,12 +46,12 @@ public class CardDatabaseBlockEntity extends BlockEntity {
 
 
     /** 54-slot visible “window” that Screen/Handler bind to. */
-    private final net.minecraft.inventory.SimpleInventory window =
-            new net.minecraft.inventory.SimpleInventory(PAGE) {
-                @Override public boolean isValid(int slot, ItemStack stack) {
-                    return stack.isOf(ModItems.CARD);
+    private final net.minecraft.world.SimpleContainer window =
+            new net.minecraft.world.SimpleContainer(PAGE) {
+                @Override public boolean canPlaceItem(int slot, ItemStack stack) {
+                    return stack.is(ModItems.CARD);
                 }
-                @Override public void markDirty() {
+                @Override public void setChanged() {
                     // If *we* are updating the window from code, don't bounce updates back
                     if (syncingWindow) return;
 
@@ -60,11 +60,11 @@ public class CardDatabaseBlockEntity extends BlockEntity {
                     if (!projectingSearch) {
                         CardDatabaseBlockEntity.this.applyWindowToBacking();
                         CardDatabaseBlockEntity.this.persistToState();
-                        CardDatabaseBlockEntity.this.markDirty();
+                        CardDatabaseBlockEntity.this.setChanged();
                     }
-                    super.markDirty();
+                    super.setChanged();
                 }
-                @Override public boolean canPlayerUse(net.minecraft.entity.player.PlayerEntity player) { return true; }
+                @Override public boolean stillValid(net.minecraft.world.entity.player.Player player) { return true; }
             };
 
     /** Start index in backing list that the window shows (always row-aligned). */
@@ -81,8 +81,8 @@ public class CardDatabaseBlockEntity extends BlockEntity {
     }
 
     /** Expose the 54-slot window to the ScreenHandler. */
-    public net.minecraft.inventory.Inventory getIntakeInv() { return this.window; }
-    public net.minecraft.inventory.Inventory getWindowInventory() { return this.window; }
+    public net.minecraft.world.Container getIntakeInv() { return this.window; }
+    public net.minecraft.world.Container getWindowInventory() { return this.window; }
 
     /* ------------------------ Row-aligned offset helpers ------------------------ */
 
@@ -105,8 +105,8 @@ public class CardDatabaseBlockEntity extends BlockEntity {
 
     /** Append a CARD stack to the unbounded intake and refresh the window. (SERVER ONLY) */
     public void appendToIntake(ItemStack stack) {
-        if (!(world instanceof ServerWorld)) return;
-        if (stack.isEmpty() || !stack.isOf(ModItems.CARD)) return;
+        if (!(level instanceof ServerLevel)) return;
+        if (stack.isEmpty() || !stack.is(ModItems.CARD)) return;
 
         // were we already showing the bottom-most page?
         boolean anchoredToBottom = (this.windowOffset == getMaxWindowOffset());
@@ -121,9 +121,9 @@ public class CardDatabaseBlockEntity extends BlockEntity {
 
         final int MAX_INTAKE = 50_000;
         if (this.intakeAll.size() >= MAX_INTAKE) {
-            if (this.world instanceof ServerWorld sw) {
-                var p = sw.getClosestPlayer(this.pos.getX()+0.5, this.pos.getY()+0.5, this.pos.getZ()+0.5, 8.0, false);
-                if (p != null) p.sendMessage(net.minecraft.text.Text.literal("Card Database intake is full."), true);
+            if (this.level instanceof ServerLevel sw) {
+                var p = sw.getNearestPlayer(this.worldPosition.getX()+0.5, this.worldPosition.getY()+0.5, this.worldPosition.getZ()+0.5, 8.0, false);
+                if (p != null) p.sendSystemMessage(net.minecraft.network.chat.Component.literal("Card Database intake is full."));
             }
             return;
         }
@@ -138,8 +138,8 @@ public class CardDatabaseBlockEntity extends BlockEntity {
         // persist & notify
         persistToState();
         updateBinderVisual();
-        markDirty();
-        this.window.markDirty(); // nudge the handler to push an update
+        setChanged();
+        this.window.setChanged(); // nudge the handler to push an update
     }
 
     /** Force window to reflect backing (keeping current offset). */
@@ -167,7 +167,7 @@ public class CardDatabaseBlockEntity extends BlockEntity {
             for (int i = 0; i < PAGE; i++) {
                 int idx = windowOffset + i;
                 ItemStack st = (idx >= 0 && idx < intakeAll.size()) ? intakeAll.get(idx) : ItemStack.EMPTY;
-                window.setStack(i, st.copy());
+                window.setItem(i, st.copy());
             }
         } finally {
             syncingWindow = false;
@@ -183,7 +183,7 @@ public class CardDatabaseBlockEntity extends BlockEntity {
         // Copy window slice into backing
         for (int i = 0; i < PAGE; i++) {
             int idx = windowOffset + i;
-            ItemStack w = window.getStack(i).copy();
+            ItemStack w = window.getItem(i).copy();
             intakeAll.set(idx, w);
         }
 
@@ -203,24 +203,24 @@ public class CardDatabaseBlockEntity extends BlockEntity {
 
     /** Project a result set into the visible 54-slot window (does not mutate intakeAll). */
     public void projectSearchResults(List<ItemStack> results) {
-        if (!(world instanceof ServerWorld)) return;
+        if (!(level instanceof ServerLevel)) return;
         projectingSearch = true;
 
         syncingWindow = true;
         try {
             for (int i = 0; i < PAGE; i++) {
                 ItemStack st = (i >= 0 && i < results.size()) ? results.get(i) : ItemStack.EMPTY;
-                window.setStack(i, st == null ? ItemStack.EMPTY : st.copy());
+                window.setItem(i, st == null ? ItemStack.EMPTY : st.copy());
             }
         } finally {
             syncingWindow = false;
         }
 
         // force listeners to refresh container slots
-        window.markDirty();
+        window.setChanged();
         // visual ping (optional)
-        if (this.world != null) {
-            this.world.updateListeners(pos, getCachedState(), getCachedState(), 3);
+        if (this.level != null) {
+            this.level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
         }
     }
 
@@ -228,9 +228,9 @@ public class CardDatabaseBlockEntity extends BlockEntity {
     public void clearSearchProjection() {
         projectingSearch = false;
         applyBackingToWindow();
-        window.markDirty();
-        if (this.world != null) {
-            this.world.updateListeners(pos, getCachedState(), getCachedState(), 3);
+        window.setChanged();
+        if (this.level != null) {
+            this.level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
         }
     }
 
@@ -240,17 +240,17 @@ public class CardDatabaseBlockEntity extends BlockEntity {
 
     /** Load from world state (store + intake list). */
     public void ensureLoaded() {
-        if (!(world instanceof ServerWorld sw)) return;
+        if (!(level instanceof ServerLevel sw)) return;
         var st = CardDBState.get(sw);
 
         // restore virtual store
-        var saved = st.getStore(pos);
+        var saved = st.getStore(worldPosition);
         this.store.clear();
         this.store.putAll(saved);
         recomputeTotal();
 
         // restore intake
-        var intakeNbt = st.getIntake(pos);
+        var intakeNbt = st.getIntake(worldPosition);
         this.intakeAll.clear();
         if (intakeNbt != null) CardDBState.applyIntakeToList(this.intakeAll, intakeNbt);
 
@@ -275,16 +275,16 @@ public class CardDatabaseBlockEntity extends BlockEntity {
 
     /** Persist current intake window/backing + store into world state. */
     private void persistToState() {
-        if (!(world instanceof ServerWorld sw)) return;
+        if (!(level instanceof ServerLevel sw)) return;
         var st = CardDBState.get(sw);
-        st.putStore(pos, snapshot());
-        st.putIntake(pos, CardDBState.snapshotFromList(this.intakeAll));
+        st.putStore(worldPosition, snapshot());
+        st.putIntake(worldPosition, CardDBState.snapshotFromList(this.intakeAll));
     }
 
     /** Called once from ticker to lazy-load from CardDBState when the chunk is ready. */
     void serverTick() {
         if (loadedFromState) return;
-        if (this.world == null || this.world.isClient()) return;
+        if (this.level == null || this.level.isClientSide()) return;
 
         loadedFromState = true;
         ensureLoaded();
@@ -292,19 +292,19 @@ public class CardDatabaseBlockEntity extends BlockEntity {
 
     /** Remove our data when block breaks. */
     public void removeFromState() {
-        if (!(world instanceof ServerWorld sw)) return;
-        CardDBState.get(sw).remove(pos);
+        if (!(level instanceof ServerLevel sw)) return;
+        CardDBState.get(sw).remove(worldPosition);
     }
 
     /* ------------------------ Optional “Store All” ------------------------ */
 
     public void absorbFromIntake() {
-        if (this.world == null || this.world.isClient()) return;
+        if (this.level == null || this.level.isClientSide()) return;
 
         boolean any = false;
         for (int i = 0; i < intakeAll.size(); i++) {
             ItemStack st = intakeAll.get(i);
-            if (st.isEmpty() || !st.isOf(ModItems.CARD)) continue;
+            if (st.isEmpty() || !st.is(ModItems.CARD)) continue;
 
             long moved = st.getCount();
             String key = keyOf(st);
@@ -317,21 +317,21 @@ public class CardDatabaseBlockEntity extends BlockEntity {
 
         // clear window too
         syncingWindow = true;
-        for (int i = 0; i < PAGE; i++) window.setStack(i, ItemStack.EMPTY);
+        for (int i = 0; i < PAGE; i++) window.setItem(i, ItemStack.EMPTY);
         syncingWindow = false;
-        window.markDirty();
+        window.setChanged();
 
         intakeAll.clear();
         this.windowOffset = 0;
         projectingSearch = false;
 
         if (any) {
-            world.playSound(null, pos, SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, SoundCategory.BLOCKS, 0.15f, 1.2f);
-            world.syncWorldEvent(2002, pos, 0);
+            level.playSound(null, worldPosition, SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.BLOCKS, 0.15f, 1.2f);
+            level.levelEvent(2002, worldPosition, 0);
             updateBinderVisual();
             persistToState();
-            markDirty();
-            world.updateListeners(pos, getCachedState(), getCachedState(), 3);
+            setChanged();
+            level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
         }
     }
 
@@ -348,9 +348,9 @@ public class CardDatabaseBlockEntity extends BlockEntity {
     Map<String, Long> snapshot() { return new HashMap<>(store); }
 
     private static String keyOf(ItemStack stack) {
-        var comp = stack.getOrDefault(DataComponentTypes.CUSTOM_DATA, null);
-        var root = (comp == null) ? new net.minecraft.nbt.NbtCompound() : comp.copyNbt();
-        var meta = root.getCompound("mtg_meta").orElseGet(net.minecraft.nbt.NbtCompound::new);
+        var comp = stack.getOrDefault(DataComponents.CUSTOM_DATA, null);
+        var root = (comp == null) ? new net.minecraft.nbt.CompoundTag() : comp.copyTag();
+        var meta = root.getCompound("mtg_meta").orElseGet(net.minecraft.nbt.CompoundTag::new);
 
         String name = meta.getString("name").orElse("");
         String set  = meta.getString("set").orElse("");
@@ -361,28 +361,28 @@ public class CardDatabaseBlockEntity extends BlockEntity {
     }
 
     @Override
-    protected void writeData(WriteView view) {
-        super.writeData(view);
+    protected void saveAdditional(ValueOutput view) {
+        super.saveAdditional(view);
         view.putInt("BinderCount", this.serverBinderCount);
     }
 
     @Override
-    protected void readData(ReadView view) {
-        super.readData(view);
+    protected void loadAdditional(ValueInput view) {
+        super.loadAdditional(view);
         // ReadView uses Optional-style getters in your mappings
-        this.clientBinderCount = view.getInt("BinderCount", this.serverBinderCount);
+        this.clientBinderCount = view.getIntOr("BinderCount", this.serverBinderCount);
     }
 
     // Sent when chunk data is sent to client
     @Override
-    public NbtCompound toInitialChunkDataNbt(RegistryWrapper.WrapperLookup registries) {
+    public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
         // This will include writeData(...) automatically in your version
-        return super.toInitialChunkDataNbt(registries);
+        return super.getUpdateTag(registries);
     }
 
     @Override
-    public net.minecraft.network.packet.Packet<net.minecraft.network.listener.ClientPlayPacketListener> toUpdatePacket() {
-        return net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket.create(this);
+    public net.minecraft.network.protocol.Packet<net.minecraft.network.protocol.game.ClientGamePacketListener> getUpdatePacket() {
+        return net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket.create(this);
     }
 
     private void updateBinderVisual() {
@@ -391,9 +391,9 @@ public class CardDatabaseBlockEntity extends BlockEntity {
 
         if (newCount != this.serverBinderCount) {
             this.serverBinderCount = newCount;
-            markDirty();
-            if (this.world != null) {
-                this.world.updateListeners(this.pos, getCachedState(), getCachedState(), 3);
+            setChanged();
+            if (this.level != null) {
+                this.level.sendBlockUpdated(this.worldPosition, getBlockState(), getBlockState(), 3);
             }
         }
     }

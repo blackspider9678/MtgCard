@@ -3,27 +3,27 @@ package com.spider.mtgcard.net;
 import com.spider.mtgcard.graveyard.GraveyardBlockEntity;
 import com.spider.mtgcard.net.payload.GraveyardActionPayload;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.server.level.ServerPlayer;
 
 public final class GraveyardPackets {
 
     public static void registerServerReceivers() {
         ServerPlayNetworking.registerGlobalReceiver(GraveyardActionPayload.ID, (payload, context) -> {
-            ServerPlayerEntity player = context.player();
+            ServerPlayer player = context.player();
 
             context.server().execute(() -> {
                 // 1) basic "is this the screen they actually have open?" validation
-                ScreenHandler sh = player.currentScreenHandler;
-                if (sh == null || sh.syncId != payload.syncId()) return;
+                AbstractContainerMenu sh = player.containerMenu;
+                if (sh == null || sh.containerId != payload.syncId()) return;
 
                 // 2) grab BE at the position
-                var world = player.getEntityWorld();
+                var world = player.level();
                 var be = world.getBlockEntity(payload.pos());
                 if (!(be instanceof GraveyardBlockEntity gy)) return;
 
                 // Optional: distance sanity
-                if (!gy.getPos().isWithinDistance(player.getBlockPos(), 8.0)) return;
+                if (!gy.getBlockPos().closerThan(player.blockPosition(), 8.0)) return;
 
                 // 3) perform action
                 switch (payload.action()) {

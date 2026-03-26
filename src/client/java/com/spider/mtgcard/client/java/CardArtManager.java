@@ -3,14 +3,14 @@ package com.spider.mtgcard.client.java;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.spider.mtgcard.util.StackData;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.texture.NativeImageBackedTexture;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtList;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.client.Minecraft;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.storage.LevelResource;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -38,7 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class CardArtManager {
 
-    public record TextureRef(Identifier id, int texW, int texH, NativeImageBackedTexture tex) {}
+    public record TextureRef(Identifier id, int texW, int texH, DynamicTexture tex) {}
 
     private static final Map<String, TextureRef> TEX = new ConcurrentHashMap<>();
     private static final ConcurrentMap<String, String> DISK_INDEX = new ConcurrentHashMap<>();
@@ -99,11 +99,11 @@ public final class CardArtManager {
      * Call this from ClientTickEvents.END_CLIENT_TICK.
      */
     public static void pumpQueue() {
-        var mc = MinecraftClient.getInstance();
+        var mc = Minecraft.getInstance();
         if (mc == null) return;
 
         // Only pump when we’re in-world & networking is live
-        if (mc.player == null || mc.getNetworkHandler() == null) return;
+        if (mc.player == null || mc.getConnection() == null) return;
 
         int started = 0;
 
@@ -144,19 +144,19 @@ public final class CardArtManager {
      * - Remote MP client: <runDir>/mtgcard/art/<server-address or level-name>
      */
     public static Path cacheDir() {
-        var mc = MinecraftClient.getInstance();
+        var mc = Minecraft.getInstance();
         if (isIntegrated(mc)) {
-            Path root = mc.getServer().getSavePath(WorldSavePath.ROOT);
+            Path root = mc.getSingleplayerServer().getWorldPath(LevelResource.ROOT);
             Path dir = root.resolve("mtgcard").resolve("art");
             try { Files.createDirectories(dir); } catch (Exception ignored) {}
             return dir;
         }
-        var game = mc.runDirectory.toPath();
+        var game = mc.gameDirectory.toPath();
         String scope = "singleplayer";
-        if (mc.getCurrentServerEntry() != null) {
-            scope = mc.getCurrentServerEntry().address.replace(':','_');
-        } else if (mc.getServer() != null) {
-            scope = mc.getServer().getSaveProperties().getLevelName().replace(' ','_');
+        if (mc.getCurrentServer() != null) {
+            scope = mc.getCurrentServer().ip.replace(':','_');
+        } else if (mc.getSingleplayerServer() != null) {
+            scope = mc.getSingleplayerServer().getWorldData().getLevelName().replace(' ','_');
         }
         var dir = game.resolve("mtgcard").resolve("art").resolve(scope);
         try { Files.createDirectories(dir); } catch (Exception ignored) {}
@@ -165,9 +165,9 @@ public final class CardArtManager {
 
     /** Index file path: world-scoped in integrated server; null in remote MP (server owns it). */
     private static Path indexFile() {
-        var mc = MinecraftClient.getInstance();
+        var mc = Minecraft.getInstance();
         if (isIntegrated(mc)) {
-            Path root = mc.getServer().getSavePath(WorldSavePath.ROOT);
+            Path root = mc.getSingleplayerServer().getWorldPath(LevelResource.ROOT);
             Path file = root.resolve("mtgcard").resolve("art-index.json");
             try { Files.createDirectories(file.getParent()); } catch (Exception ignored) {}
             return file;
@@ -175,8 +175,8 @@ public final class CardArtManager {
         return null; // remote MP -> don't write an index on the client
     }
 
-    private static boolean isIntegrated(MinecraftClient mc) {
-        return mc.getServer() != null && mc.getCurrentServerEntry() == null;
+    private static boolean isIntegrated(Minecraft mc) {
+        return mc.getSingleplayerServer() != null && mc.getCurrentServer() == null;
     }
 
     private static void loadIndex() {
@@ -263,8 +263,8 @@ public final class CardArtManager {
     // ---- Texture logic ----
     /** Returns a TextureRef if already cached or loaded; otherwise requests and returns null. */
     public static TextureRef getOrRequestFace(ItemStack stack, int faceIndex) {
-        NbtCompound root = StackData.readCustom(stack);
-        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+        CompoundTag root = StackData.readCustom(stack);
+        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
 
         // world art path
         String worldKey = "";
@@ -330,7 +330,7 @@ public final class CardArtManager {
         TEX.clear();
     }
 
-    private static String computeArtKey(NbtCompound meta, int faceIndex) {
+    private static String computeArtKey(CompoundTag meta, int faceIndex) {
         String scryId = meta.getString("scryfall_id").orElse("");
         if (scryId.isEmpty()) scryId = meta.getString("id").orElse("");
         if (!scryId.isEmpty()) return scryId + "_f" + faceIndex;
@@ -343,16 +343,16 @@ public final class CardArtManager {
         return hash + "_f" + faceIndex;
     }
 
-    private static String extractImageUrl(NbtCompound meta, int faceIndex) {
-        Optional<NbtList> facesOpt = meta.getList("card_faces");
+    private static String extractImageUrl(CompoundTag meta, int faceIndex) {
+        Optional<ListTag> facesOpt = meta.getList("card_faces");
         if (facesOpt.isPresent() && !facesOpt.get().isEmpty()) {
             int idx = Math.max(0, Math.min(faceIndex, facesOpt.get().size() - 1));
-            Optional<NbtCompound> face0 = facesOpt.get().getCompound(idx);
+            Optional<CompoundTag> face0 = facesOpt.get().getCompound(idx);
             if (face0.isPresent()) {
                 String direct = face0.get().getString("image_png").orElse("");
                 if (!direct.isEmpty()) return direct;
 
-                Optional<NbtCompound> uris = face0.get().getCompound("image_uris");
+                Optional<CompoundTag> uris = face0.get().getCompound("image_uris");
                 if (uris.isPresent()) {
                     String u = choiceImageUrl(uris.get());
                     if (!u.isEmpty()) return u;
@@ -363,7 +363,7 @@ public final class CardArtManager {
         String directRoot = meta.getString("image_png").orElse("");
         if (!directRoot.isEmpty()) return directRoot;
 
-        Optional<NbtCompound> urisRoot = meta.getCompound("image_uris");
+        Optional<CompoundTag> urisRoot = meta.getCompound("image_uris");
         if (urisRoot.isPresent()) {
             String u = choiceImageUrl(urisRoot.get());
             if (!u.isEmpty()) return u;
@@ -371,7 +371,7 @@ public final class CardArtManager {
         return "";
     }
 
-    private static String choiceImageUrl(NbtCompound uris) {
+    private static String choiceImageUrl(CompoundTag uris) {
         String png   = uris.getString("png").orElse("");
         if (!png.isEmpty()) return png;
         String large = uris.getString("large").orElse("");
@@ -468,7 +468,7 @@ public final class CardArtManager {
                 int g = (c >>> 8)  & 0xFF;
                 int b =  c         & 0xFF;
                 int abgr = (a << 24) | (b << 16) | (g << 8) | r;
-                ni.setColor(x, y, abgr);
+                ni.setPixelABGR(x, y, abgr);
             }
         }
         return ni;
@@ -485,17 +485,17 @@ public final class CardArtManager {
             BufferedImage bi = readAnyImage(in);
             NativeImage img = bufferedToNative(bi);
 
-            MinecraftClient.getInstance().execute(() -> {
+            Minecraft.getInstance().execute(() -> {
                 try {
-                    Identifier texId = Identifier.of("mtgcard", "card/" + artKey);
+                    Identifier texId = Identifier.fromNamespaceAndPath("mtgcard", "card/" + artKey);
 
                     TextureRef old = TEX.remove(artKey);
                     if (old != null) {
                         try { old.tex().close(); } catch (Throwable ignored) {}
                     }
 
-                    NativeImageBackedTexture tex = new NativeImageBackedTexture(() -> "mtgcard/" + artKey, img);
-                    MinecraftClient.getInstance().getTextureManager().registerTexture(texId, tex);
+                    DynamicTexture tex = new DynamicTexture(() -> "mtgcard/" + artKey, img);
+                    Minecraft.getInstance().getTextureManager().register(texId, tex);
 
                     TEX.put(artKey, new TextureRef(texId, img.getWidth(), img.getHeight(), tex));
                 } catch (Throwable t) {
@@ -556,7 +556,7 @@ public final class CardArtManager {
         TextureRef ref = TEX.get(artKey);
         if (ref == null) return null;
 
-        var tm = MinecraftClient.getInstance().getTextureManager();
+        var tm = Minecraft.getInstance().getTextureManager();
         var tex = tm.getTexture(ref.id()); // if not registered, this tends to be null or MissingTexture
 
         if (tex == null) {

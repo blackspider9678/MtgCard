@@ -8,32 +8,32 @@ import com.spider.mtgcard.content.pack.PackGenerator;
 import com.spider.mtgcard.content.pack.cache.ScryfallCache;
 import com.spider.mtgcard.net.WorldState;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.network.chat.Component;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static net.minecraft.server.command.CommandManager.argument;
-import static net.minecraft.server.command.CommandManager.literal;
+import static net.minecraft.commands.Commands.argument;
+import static net.minecraft.commands.Commands.literal;
 
 public final class PackTest_Command {
 
     /** Attach as a child to /mtg root: root.then(PackTest_Command.node()); */
-    public static LiteralArgumentBuilder<ServerCommandSource> node() {
+    public static LiteralArgumentBuilder<CommandSourceStack> node() {
         return literal("packtest")
                 .then(argument("set", StringArgumentType.word())
                         .executes(ctx -> runPackTest(ctx, StringArgumentType.getString(ctx, "set"))));
     }
 
     // ---------- Command body ----------
-    public static int runPackTest(CommandContext<ServerCommandSource> ctx, String rawSet) {
-        ServerCommandSource src = ctx.getSource();
-        ServerWorld world = src.getServer().getOverworld();
-        ServerPlayerEntity player = null;
+    public static int runPackTest(CommandContext<CommandSourceStack> ctx, String rawSet) {
+        CommandSourceStack src = ctx.getSource();
+        ServerLevel world = src.getServer().overworld();
+        ServerPlayer player = null;
         try { player = src.getPlayer(); } catch (Exception ignored) {}
 
         String set = sanitize(rawSet);
@@ -170,8 +170,8 @@ public final class PackTest_Command {
         return s;
     }
 
-    private static void msg(ServerCommandSource src, String text) {
-        src.sendFeedback(() -> Text.literal(text), false);
+    private static void msg(CommandSourceStack src, String text) {
+        src.sendSuccess(() -> Component.literal(text), false);
     }
 
     private static List<String> splitForChat(String s, int max) {

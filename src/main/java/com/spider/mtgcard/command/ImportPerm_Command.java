@@ -4,22 +4,22 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.spider.mtgcard.config.MtgcardConfig;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.text.Text;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.network.chat.Component;
 
 import java.util.Locale;
 
-import static net.minecraft.server.command.CommandManager.argument;
-import static net.minecraft.server.command.CommandManager.literal;
+import static net.minecraft.commands.Commands.argument;
+import static net.minecraft.commands.Commands.literal;
 
 public final class ImportPerm_Command {
 
-    public static LiteralArgumentBuilder<ServerCommandSource> node() {
+    public static LiteralArgumentBuilder<CommandSourceStack> node() {
         return literal("importperm")
                 .requires(src -> true) // keep visible; we’ll guard mutations below
                 .executes(ctx -> {
                     MtgcardConfig cfg = MtgcardConfig.get();
-                    ctx.getSource().sendFeedback(() -> Text.literal(
+                    ctx.getSource().sendSuccess(() -> Component.literal(
                             "§aMTG Import Permissions\n" +
                                     "§7Anyone_Can_Import: §e" + cfg.Anyone_Can_Import + "\n" +
                                     "§7Whitelist size: §e" + cfg.Import_Whitelist.size()
@@ -35,7 +35,7 @@ public final class ImportPerm_Command {
                         })
                         .executes(ctx -> {
                             MtgcardConfig.reload();
-                            ctx.getSource().sendFeedback(() -> Text.literal("§aReloaded mtgcard.json"), false);
+                            ctx.getSource().sendSuccess(() -> Component.literal("§aReloaded mtgcard.json"), false);
                             return 1;
                         }))
 
@@ -51,7 +51,7 @@ public final class ImportPerm_Command {
                                     MtgcardConfig cfg = MtgcardConfig.get();
                                     cfg.Anyone_Can_Import = v;
                                     MtgcardConfig.save();
-                                    ctx.getSource().sendFeedback(() -> Text.literal("§aAnyone_Can_Import set to §e" + v), false);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("§aAnyone_Can_Import set to §e" + v), false);
                                     return 1;
                                 })))
 
@@ -65,10 +65,10 @@ public final class ImportPerm_Command {
                                 .executes(ctx -> {
                                     MtgcardConfig cfg = MtgcardConfig.get();
                                     if (cfg.Import_Whitelist.isEmpty()) {
-                                        ctx.getSource().sendFeedback(() -> Text.literal("§7Whitelist is empty."), false);
+                                        ctx.getSource().sendSuccess(() -> Component.literal("§7Whitelist is empty."), false);
                                     } else {
                                         String joined = String.join(", ", cfg.Import_Whitelist);
-                                        ctx.getSource().sendFeedback(() -> Text.literal("§aWhitelist: §e" + joined), false);
+                                        ctx.getSource().sendSuccess(() -> Component.literal("§aWhitelist: §e" + joined), false);
                                     }
                                     return 1;
                                 }))
@@ -86,7 +86,7 @@ public final class ImportPerm_Command {
                                             cfg.Import_Whitelist.add(norm);
                                             MtgcardConfig.save();
 
-                                            ctx.getSource().sendFeedback(() -> Text.literal("§aAdded to whitelist: §e" + norm), false);
+                                            ctx.getSource().sendSuccess(() -> Component.literal("§aAdded to whitelist: §e" + norm), false);
                                             return 1;
                                         })))
                         .then(literal("remove")
@@ -103,7 +103,7 @@ public final class ImportPerm_Command {
                                             boolean removed = cfg.Import_Whitelist.removeIf(s -> s != null && s.equalsIgnoreCase(norm));
                                             MtgcardConfig.save();
 
-                                            ctx.getSource().sendFeedback(() -> Text.literal(
+                                            ctx.getSource().sendSuccess(() -> Component.literal(
                                                     removed ? "§aRemoved from whitelist: §e" + norm
                                                             : "§cNot found in whitelist: §e" + norm
                                             ), false);
@@ -111,7 +111,7 @@ public final class ImportPerm_Command {
                                         })))
                 );
     }
-    private static boolean canManage(ServerCommandSource src) {
+    private static boolean canManage(CommandSourceStack src) {
         var p = src.getPlayer();
         return p != null && com.spider.mtgcard.config.Perms.isOp(p);
     }

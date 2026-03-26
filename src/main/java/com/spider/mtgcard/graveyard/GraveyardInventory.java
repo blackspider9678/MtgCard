@@ -1,41 +1,41 @@
 // com/spider/mtgcard/graveyard/GraveyardInventory.java
 package com.spider.mtgcard.graveyard;
 
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.ItemStack;
+import net.minecraft.world.Container;
+import net.minecraft.world.item.ItemStack;
 
-public class GraveyardInventory implements Inventory {
+public class GraveyardInventory implements Container {
     private final GraveyardBlockEntity be;
 
     public GraveyardInventory(GraveyardBlockEntity be) {
         this.be = be;
     }
 
-    @Override public int size() { return GraveyardBlockEntity.TOTAL; }
+    @Override public int getContainerSize() { return GraveyardBlockEntity.TOTAL; }
     @Override public boolean isEmpty() {
-        for (int i = 0; i < size(); i++) if (!getStack(i).isEmpty()) return false;
+        for (int i = 0; i < getContainerSize(); i++) if (!getItem(i).isEmpty()) return false;
         return true;
     }
-    @Override public ItemStack getStack(int slot) { return be == null ? ItemStack.EMPTY : be.getStack(slot); }
-    @Override public ItemStack removeStack(int slot, int amount) {
+    @Override public ItemStack getItem(int slot) { return be == null ? ItemStack.EMPTY : be.getItem(slot); }
+    @Override public ItemStack removeItem(int slot, int amount) {
         // cards are stack size 1 anyway; keep it simple
         if (be == null) return ItemStack.EMPTY;
-        ItemStack st = be.getStack(slot);
+        ItemStack st = be.getItem(slot);
         if (st.isEmpty()) return ItemStack.EMPTY;
-        return be.removeStack(slot);
+        return be.removeItemNoUpdate(slot);
     }
-    @Override public ItemStack removeStack(int slot) {
+    @Override public ItemStack removeItemNoUpdate(int slot) {
         if (be == null) return ItemStack.EMPTY;
-        return be.removeStack(slot);
+        return be.removeItemNoUpdate(slot);
     }
-    @Override public void setStack(int slot, ItemStack stack) {
+    @Override public void setItem(int slot, ItemStack stack) {
         if (be == null) return;
-        be.setStack(slot, stack);
+        be.setItem(slot, stack);
     }
-    @Override public void markDirty() {}
-    @Override public boolean canPlayerUse(net.minecraft.entity.player.PlayerEntity player) { return true; }
-    @Override public void clear() {
+    @Override public void setChanged() {}
+    @Override public boolean stillValid(net.minecraft.world.entity.player.Player player) { return true; }
+    @Override public void clearContent() {
         if (be == null) return;
-        for (int i = 0; i < size(); i++) be.setStack(i, ItemStack.EMPTY);
+        for (int i = 0; i < getContainerSize(); i++) be.setItem(i, ItemStack.EMPTY);
     }
 }

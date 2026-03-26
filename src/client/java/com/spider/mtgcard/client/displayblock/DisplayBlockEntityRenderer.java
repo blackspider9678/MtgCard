@@ -3,30 +3,30 @@ package com.spider.mtgcard.client.displayblock;
 import com.spider.mtgcard.client.life.LifePointClientState;
 import com.spider.mtgcard.displayblock.DisplayBlock;
 import com.spider.mtgcard.displayblock.DisplayBlockEntity;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.render.LightmapTextureManager;
-import net.minecraft.client.render.OverlayTexture;
-import net.minecraft.client.render.RenderLayers;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.block.entity.BlockEntityRenderer;
-import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
-import net.minecraft.client.render.block.entity.state.BlockEntityRenderState;
-import net.minecraft.client.render.command.OrderedRenderCommandQueue;
-import net.minecraft.client.render.state.CameraRenderState;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtList;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.renderer.Lightmap;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
+import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.Util;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.RotationAxis;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import com.mojang.math.Axis;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 
@@ -34,17 +34,19 @@ import java.util.*;
 
 public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBlockEntity, DisplayBlockEntityRenderer.State> {
 
-    private static final Identifier WHITE = Identifier.of("mtgcard", "textures/misc/white.png");
+    private static final Identifier WHITE = Identifier.fromNamespaceAndPath("mtgcard", "textures/misc/white.png");
 
-    private static final Identifier ICON_POISON     = Identifier.of("mtgcard", "textures/gui/counters/poison.png");
-    private static final Identifier ICON_ENERGY     = Identifier.of("mtgcard", "textures/gui/counters/energy.png");
-    private static final Identifier ICON_EXPERIENCE = Identifier.of("mtgcard", "textures/gui/counters/experience.png");
+    private static final Identifier ICON_POISON     = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/poison.png");
+    private static final Identifier ICON_ENERGY     = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/energy.png");
+    private static final Identifier ICON_EXPERIENCE = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/experience.png");
 
-    private static final Identifier ICON_NONE       = Identifier.of("mtgcard", "textures/gui/counters/none.png");
+    private static final Identifier ICON_NONE       = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/none.png");
 
     private final java.util.Map<String, Identifier> iconIdCache = new java.util.HashMap<>();
 
-    public DisplayBlockEntityRenderer(BlockEntityRendererFactory.Context ctx) {}
+    private static final int FULL_BRIGHT = 0x00F000F0; // 15728880
+
+    public DisplayBlockEntityRenderer(BlockEntityRendererProvider.Context ctx) {}
 
     // Z layers (screen local space). Bigger = closer to camera.
     private static final float Z_BG_FILL      = 0.0000f;
@@ -62,21 +64,21 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
     private static final float Z_NAME_TEXT    = 0.0029f;
 
     private final Map<String, Identifier> recolorIdCache = new HashMap<>();
-    private final Map<String, net.minecraft.client.texture.AbstractTexture> recolorTexCache = new HashMap<>();
+    private final Map<String, net.minecraft.client.renderer.texture.AbstractTexture> recolorTexCache = new HashMap<>();
 
 
     public static final class State extends BlockEntityRenderState {
         /** The blockstate-facing stored on each display tile (what isDisplayTile checks). */
         Direction facing = Direction.NORTH;      // tileFacing
 
-        /** The face we actually render on (visible “front” of the screen). */
-        Direction screenFace = Direction.SOUTH;  // visible face
+        /** The face we actually render on (visible front of the screen). */
+        Direction screenFace = Direction.NORTH;
 
         int wBlocks = 1, hBlocks = 1;
         int minX, minY, minZ, maxX, maxY, maxZ;
 
         boolean isController = false;
-        BlockPos controllerPos = BlockPos.ORIGIN;
+        BlockPos controllerPos = BlockPos.ZERO;
 
         boolean hasLife = false;
         int life = 0;
@@ -89,7 +91,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         boolean turnActive = false;
         String iconKey = "none";
 
-        public Vec3d camPos = Vec3d.ZERO;
+        public Vec3 camPos = Vec3.ZERO;
 
         // Life animation
         float lifePulse = 0f;     // 0..1 (1 right after change)
@@ -129,32 +131,31 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
     }
 
     @Override
-    public void updateRenderState(
+    public void extractRenderState(
             DisplayBlockEntity be,
             State s,
             float tickProgress,
-            Vec3d cameraPos,
-            @Nullable net.minecraft.client.render.command.ModelCommandRenderer.CrumblingOverlayCommand crumblingOverlay
+            Vec3 cameraPos,
+            @Nullable net.minecraft.client.renderer.feature.ModelFeatureRenderer.CrumblingOverlay crumblingOverlay
     ) {
-        BlockEntityRenderer.super.updateRenderState(be, s, tickProgress, cameraPos, crumblingOverlay);
+        BlockEntityRenderer.super.extractRenderState(be, s, tickProgress, cameraPos, crumblingOverlay);
 
         // --- Consistent facing model ---
-        // tileFacing = what the blocks store
-        // screenFace = where we render (the visible face)
-        s.facing = be.getCachedState().get(DisplayBlock.FACING);
-        s.screenFace = s.facing.getOpposite();
+        // The blockstate-facing is the visible front of the display.
+        s.facing = be.getBlockState().getValue(DisplayBlock.FACING);
+        s.screenFace = s.facing;
         s.camPos = cameraPos;
 
         s.linkedLifePos = be.getLinkedLifePos().orElse(null);
         Identifier linkedDim = be.getLinkedDimId().orElse(null);
         BlockPos linkedPos = s.linkedLifePos;
 
-        World w = be.getWorld();
+        Level w = be.getLevel();
 
-        if (w != null && w.isClient() && linkedDim != null && s.linkedLifePos != null) {
-            BestRect best = computeBestFilledRect(w, be.getPos(), s.facing, s.screenFace, linkedDim, s.linkedLifePos);
+        if (w != null && w.isClientSide() && linkedDim != null && s.linkedLifePos != null) {
+            BestRect best = computeBestFilledRect(w, be.getBlockPos(), s.facing, s.screenFace, linkedDim, s.linkedLifePos);
 
-            BlockPos myPos = be.getPos();
+            BlockPos myPos = be.getBlockPos();
 
             if (best.tiles.contains(myPos)) {
                 // I'm inside the big rectangle
@@ -170,7 +171,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
                 s.hBlocks = 1;
             }
         } else {
-            s.controllerPos = be.getPos();
+            s.controllerPos = be.getBlockPos();
             s.isController = true;
             s.wBlocks = 1;
             s.hBlocks = 1;
@@ -217,13 +218,13 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
                             : null;
 
                     for (int i = 0; i < list.size(); i++) {
-                        if (!(list.get(i) instanceof NbtCompound c)) continue;
+                        if (!(list.get(i) instanceof CompoundTag c)) continue;
 
                         long ap = c.getLong("AttackerPos").orElse(0L);
                         int dmg = c.getInt("Damage").orElse(0);
                         if (dmg <= 0) continue;
 
-                        BlockPos attacker = BlockPos.fromLong(ap);
+                        BlockPos attacker = BlockPos.of(ap);
                         String nm = displayNameForPos(gid, attacker);
                         int col = playerColorForPos(attacker);
 
@@ -234,7 +235,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         });
 
 // ---- Life-change animation (keyed by controller so multiblock behaves as one screen) ----
-        long now = Util.getMeasuringTimeMs();
+        long now = Util.getMillis();
         BlockPos keyPos = s.controllerPos;
 
         Integer prev = lastLifeByController.get(keyPos);
@@ -274,7 +275,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
      * Finds the largest axis-aligned filled rectangle inside the connected component.
      * Rectangle axes are screen-right and screen-down.
      */
-    private static BestRect computeBestFilledRect(World world, BlockPos anyTile,
+    private static BestRect computeBestFilledRect(Level world, BlockPos anyTile,
                                                   Direction tileFacing, Direction screenFace,
                                                   @Nullable Identifier dimId, @Nullable BlockPos lifePos) {
 
@@ -362,15 +363,15 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
 
         // Convert best rect grid coords back to world positions
         // Base controller of the whole grid at (minU, minV) in world:
-        BlockPos gridTopLeft = anchor.offset(right, minU).withY(maxY - minV);
+        BlockPos gridTopLeft = anchor.relative(right, minU).atY(maxY - minV);
 
-        BlockPos rectController = gridTopLeft.offset(right, bestLeft).down(bestTop);
+        BlockPos rectController = gridTopLeft.relative(right, bestLeft).below(bestTop);
 
         HashSet<BlockPos> rectTiles = new HashSet<>();
         for (int dv = 0; dv < bestH; dv++) {
-            BlockPos rowStart = rectController.down(dv);
+            BlockPos rowStart = rectController.below(dv);
             for (int du = 0; du < bestW; du++) {
-                rectTiles.add(rowStart.offset(right, du));
+                rectTiles.add(rowStart.relative(right, du));
             }
         }
 
@@ -404,7 +405,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         }
     }
 
-    private static Set<BlockPos> collectConnectedScreen(World world, BlockPos start,
+    private static Set<BlockPos> collectConnectedScreen(Level world, BlockPos start,
                                                         Direction tileFacing, Direction screenFace,
                                                         @Nullable Identifier dimId, @Nullable BlockPos lifePos) {
         // no link = treat standalone
@@ -427,7 +428,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
 
             // 4-neighborhood on the screen plane
             for (Direction d : new Direction[]{ right, left, up, down }) {
-                BlockPos n = p.offset(d);
+                BlockPos n = p.relative(d);
                 if (out.contains(n)) continue;
                 if (!isDisplayTileSameLink(world, n, tileFacing, dimId, lifePos)) continue;
 
@@ -439,7 +440,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         return out;
     }
 
-    private static RectInfo computeRectInfo(World world, BlockPos anyTile,
+    private static RectInfo computeRectInfo(Level world, BlockPos anyTile,
                                             Direction tileFacing, Direction screenFace,
                                             @Nullable Identifier dimId, @Nullable BlockPos lifePos) {
 
@@ -468,16 +469,16 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         int h = (maxV - minV) + 1;
 
         // Controller is top-left: (minU, minV)
-        BlockPos controller = anchor.offset(right, minU).down(minV);
+        BlockPos controller = anchor.relative(right, minU).below(minV);
 
         boolean isRect = (tiles.size() == w * h);
 
         // Optional: extra safety — ensure every cell exists (catches weird cases)
         if (isRect) {
             for (int dv = 0; dv < h; dv++) {
-                BlockPos rowStart = controller.down(dv);
+                BlockPos rowStart = controller.below(dv);
                 for (int du = 0; du < w; du++) {
-                    BlockPos cell = rowStart.offset(right, du);
+                    BlockPos cell = rowStart.relative(right, du);
                     if (!tiles.contains(cell)) { isRect = false; break; }
                 }
                 if (!isRect) break;
@@ -506,7 +507,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
             String nm = LifePointClientState.groupMemberName(groupId, pos);
             if (nm != null && !nm.isBlank()) return nm;
         }
-        NbtCompound st = LifePointClientState.get(pos);
+        CompoundTag st = LifePointClientState.get(pos);
         if (st != null) {
             String n = st.getString("DisplayName").orElse("");
             if (n != null && !n.isBlank()) return n;
@@ -515,7 +516,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
     }
 
     private static int playerColorForPos(BlockPos pos) {
-        NbtCompound st = LifePointClientState.get(pos);
+        CompoundTag st = LifePointClientState.get(pos);
         if (st == null) return 0xFFE8E8E8;
         int rgb = st.getInt("PlayerColor").orElse(0xE8E8E8);
         return 0xFF000000 | (rgb & 0x00FFFFFF);
@@ -527,19 +528,19 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
      */
     private static Direction screenRight(Direction screenFace) {
         return switch (screenFace) {
-            case NORTH -> Direction.EAST;
-            case SOUTH -> Direction.WEST;
-            case EAST  -> Direction.SOUTH;
-            case WEST  -> Direction.NORTH;
+            case NORTH -> Direction.WEST;
+            case SOUTH -> Direction.EAST;
+            case EAST  -> Direction.NORTH;
+            case WEST  -> Direction.SOUTH;
             default    -> Direction.EAST;
         };
     }
 
-    private static boolean isDisplayTileSameLink(World world, BlockPos pos, Direction tileFacing,
+    private static boolean isDisplayTileSameLink(Level world, BlockPos pos, Direction tileFacing,
                                                  @Nullable Identifier dimId, @Nullable BlockPos lifePos) {
         var st = world.getBlockState(pos);
         if (!(st.getBlock() instanceof DisplayBlock)) return false;
-        if (st.get(DisplayBlock.FACING) != tileFacing) return false;
+        if (st.getValue(DisplayBlock.FACING) != tileFacing) return false;
 
         BlockEntity be = world.getBlockEntity(pos);
         if (!(be instanceof DisplayBlockEntity dbe)) return false;
@@ -558,7 +559,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
      * tileFacing is for "is this tile part of the screen" checks,
      * screenFace is for "which direction is right".
      */
-    private static int[] computeSolidRect(World world, BlockPos controllerPos,
+    private static int[] computeSolidRect(Level world, BlockPos controllerPos,
                                           Direction tileFacing, Direction screenFace,
                                           @Nullable Identifier dimId, @Nullable BlockPos lifePos) {
         Direction right = screenRight(screenFace);
@@ -570,12 +571,12 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         int rectH = 0;
 
         for (int y = 0; y < maxH; y++) {
-            BlockPos rowStart = controllerPos.down(y);
+            BlockPos rowStart = controllerPos.below(y);
             if (!isDisplayTileSameLink(world, rowStart, tileFacing, dimId, lifePos)) break;
 
             int rowW = 0;
             for (int x = 0; x < maxW; x++) {
-                BlockPos p = rowStart.offset(right, x);
+                BlockPos p = rowStart.relative(right, x);
                 if (!isDisplayTileSameLink(world, p, tileFacing, dimId, lifePos)) break;
                 rowW++;
             }
@@ -592,10 +593,10 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
     }
 
     @Override
-    public void render(State s, MatrixStack matrices, OrderedRenderCommandQueue queue, CameraRenderState cameraState) {
+    public void submit(State s, PoseStack matrices, SubmitNodeCollector queue, CameraRenderState cameraState) {
         if (!s.isController) return;
 
-        matrices.push();
+        matrices.pushPose();
 
         // center of controller block
         matrices.translate(0.5f, 0.5f, 0.5f);
@@ -622,34 +623,34 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         final int br = 18, bG = 18, bb = 18;
 
         // Fill (OPAQUE)
-        queue.submitCustom(
+        queue.submitCustomGeometry(
                 matrices,
-                RenderLayers.entityCutoutNoCull(WHITE),
+                RenderTypes.entityCutoutCull(WHITE),
                 (entry, vc) -> {
-                    Matrix4f mat = entry.getPositionMatrix();
+                    Matrix4f mat = entry.pose();
                     drawPanelQuad(mat, vc,
                             fx0, fyBottom, Z_BG_FILL,
                             fx1, fyTop,    Z_BG_FILL,
                             0f, 0f, 1f, 1f,
-                            LightmapTextureManager.MAX_LIGHT_COORDINATE,
-                            OverlayTexture.DEFAULT_UV,
+                            FULL_BRIGHT,
+                            OverlayTexture.NO_OVERLAY,
                             bgR, bgG, bgB, 255
                     );
                 }
         );
 
         // Border (also OPAQUE)
-        queue.submitCustom(
+        queue.submitCustomGeometry(
                 matrices,
-                RenderLayers.entityCutoutNoCull(WHITE),
+                RenderTypes.entityCutoutCull(WHITE),
                 (entry, vc) -> {
-                    Matrix4f mat = entry.getPositionMatrix();
+                    Matrix4f mat = entry.pose();
                     drawPanelQuad(mat, vc,
                             fx0 + fInset, fyBottom + fInset, Z_BG_BORDER,
                             fx1 - fInset, fyTop - fInset,    Z_BG_BORDER,
                             0f, 0f, 1f, 1f,
-                            LightmapTextureManager.MAX_LIGHT_COORDINATE,
-                            OverlayTexture.DEFAULT_UV,
+                            FULL_BRIGHT,
+                            OverlayTexture.NO_OVERLAY,
                             br, bG, bb, 255
                     );
                 }
@@ -665,17 +666,17 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
 
             int pr = chanR(s.lifeColor), pg = chanG(s.lifeColor), pb = chanB(s.lifeColor);
 
-            queue.submitCustom(
+            queue.submitCustomGeometry(
                     matrices,
-                    RenderLayers.entityCutoutNoCull(WHITE),
+                    RenderTypes.entityCutoutCull(WHITE),
                     (entry, vc) -> {
-                        Matrix4f mat = entry.getPositionMatrix();
+                        Matrix4f mat = entry.pose();
                         drawPanelQuad(mat, vc,
                                 px0, py0, Z_PIP,
                                 px1, py1, Z_PIP,
                                 0f, 0f, 1f, 1f,
-                                LightmapTextureManager.MAX_LIGHT_COORDINATE,
-                                OverlayTexture.DEFAULT_UV,
+                                FULL_BRIGHT,
+                                OverlayTexture.NO_OVERLAY,
                                 pr, pg, pb, 255
                         );
                     }
@@ -698,23 +699,23 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         }
 
         // --- BACKPLATE: hides the front UI when looking from behind ---
-        queue.submitCustom(
+        queue.submitCustomGeometry(
                 matrices,
-                RenderLayers.entityCutoutNoCull(WHITE),
+                RenderTypes.entityCutoutCull(WHITE),
                 (entry, vc) -> {
-                    Matrix4f mat = entry.getPositionMatrix();
+                    Matrix4f mat = entry.pose();
                     // push slightly behind the front plane (negative z in our oriented screen space)
-                    drawPanelQuad(mat, vc,
+                    drawBackQuad(mat, vc,
                             fx0, fyBottom, -0.0020f,
                             fx1, fyTop,    -0.0020f,
                             0f, 0f, 1f, 1f,
-                            LightmapTextureManager.MAX_LIGHT_COORDINATE,
-                            OverlayTexture.DEFAULT_UV,
+                            FULL_BRIGHT,
+                            OverlayTexture.NO_OVERLAY,
                             0, 0, 0, 255
                     );
                 }
         );
-        matrices.pop();
+        matrices.popPose();
     }
 
     private Identifier resolveIconIdRecolored(String key, int rgb) {
@@ -726,13 +727,13 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
 
         // Find the *base* icon (same logic you already have)
         Identifier base = null;
-        var rm = MinecraftClient.getInstance().getResourceManager();
+        var rm = Minecraft.getInstance().getResourceManager();
 
-        Identifier a = Identifier.of("mtgcard", "textures/gui/counters/" + key + ".png");
+        Identifier a = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/" + key + ".png");
         if (rm.getResource(a).isPresent()) base = a;
 
         if (base == null) {
-            Identifier b = Identifier.of("mtgcard", "textures/gui/set_icons/" + key + ".png");
+            Identifier b = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/set_icons/" + key + ".png");
             if (rm.getResource(b).isPresent()) base = b;
         }
 
@@ -748,15 +749,15 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         Identifier cached = recolorIdCache.get(cacheKey);
         if (cached != null) return cached;
 
-        try (var res = rm.getResource(base).orElseThrow().getInputStream()) {
-            net.minecraft.client.texture.NativeImage img = net.minecraft.client.texture.NativeImage.read(res);
+        try (var res = rm.getResource(base).orElseThrow().open()) {
+            com.mojang.blaze3d.platform.NativeImage img = com.mojang.blaze3d.platform.NativeImage.read(res);
 
             final int SRC = 0x00FF0000;          // #FF0000 (RGB)
             final int TOL = 12;                  // tolerance for anti-alias edges (tweak 0..25)
 
             for (int y = 0; y < img.getHeight(); y++) {
                 for (int x = 0; x < img.getWidth(); x++) {
-                    int argb = img.getColorArgb(x, y);
+                    int argb = img.getPixel(x, y);
                     int aCh = (argb >>> 24) & 0xFF;
                     if (aCh == 0) continue;
 
@@ -764,21 +765,21 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
 
                     // Only swap "red" pixels (keeps white icons, etc.)
                     if (isNear(px, SRC, TOL)) {
-                        img.setColorArgb(x, y, (aCh << 24) | (rgb & 0x00FFFFFF));
+                        img.setPixel(x, y, (aCh << 24) | (rgb & 0x00FFFFFF));
                     }
                 }
             }
 
-            var tex = new net.minecraft.client.texture.NativeImageBackedTexture(
+            var tex = new net.minecraft.client.renderer.texture.DynamicTexture(
                     () -> "mtgcard_dyn_icon",
                     img
             );
 
             // Make a deterministic id path (must be lowercase + safe chars)
             String safe = Integer.toHexString(cacheKey.hashCode());
-            Identifier dynId = Identifier.of("mtgcard", "dyn/icon_" + safe);
+            Identifier dynId = Identifier.fromNamespaceAndPath("mtgcard", "dyn/icon_" + safe);
 
-            MinecraftClient.getInstance().getTextureManager().registerTexture(dynId, tex);
+            Minecraft.getInstance().getTextureManager().register(dynId, tex);
 
             recolorIdCache.put(cacheKey, dynId);
             recolorTexCache.put(cacheKey, tex);
@@ -796,15 +797,15 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         return Math.abs(r - tr) <= tol && Math.abs(g - tg) <= tol && Math.abs(b - tb) <= tol;
     }
 
-    private static void orientQuadToFace(MatrixStack matrices, Direction facing) {
+    private static void orientQuadToFace(PoseStack matrices, Direction facing) {
         // Quad starts facing +Z (SOUTH) in local space
         switch (facing) {
-            case SOUTH -> matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180f));
-            case NORTH -> { /* no rotation */ }
-            case WEST  -> matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(90f));
-            case EAST  -> matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-90f));
-            case UP    -> matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(-90f));
-            case DOWN  -> matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(90f));
+            case SOUTH -> { /* no rotation */ }
+            case NORTH -> matrices.mulPose(Axis.YP.rotationDegrees(180f));
+            case EAST  -> matrices.mulPose(Axis.YP.rotationDegrees(90f));
+            case WEST  -> matrices.mulPose(Axis.YP.rotationDegrees(-90f));
+            case UP    -> matrices.mulPose(Axis.XP.rotationDegrees(-90f));
+            case DOWN  -> matrices.mulPose(Axis.XP.rotationDegrees(90f));
         }
     }
 
@@ -817,15 +818,15 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
 
     private static final boolean DEBUG_TEXT = false;
 
-    private void drawLifeNumber(State s, MatrixStack matrices, OrderedRenderCommandQueue queue,
+    private void drawLifeNumber(State s, PoseStack matrices, SubmitNodeCollector queue,
                                 float x0, float x1, float yBottom, float yTop) {
 
-        TextRenderer tr = MinecraftClient.getInstance().textRenderer;
+        Font tr = Minecraft.getInstance().font;
 
         float cx = (x0 + x1) * 0.5f;
         float cy = (yBottom + yTop) * 0.5f;
 
-        matrices.push();
+        matrices.pushPose();
         matrices.translate(cx, cy, Z_LIFE_TEXT);
 
         // Base scale tuned for 1x1
@@ -839,7 +840,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         matrices.scale(sc, -sc, sc);
 
         String txt = s.hasLife ? String.valueOf(s.life) : "--";
-        int w = tr.getWidth(txt);
+        int w = tr.width(txt);
 
         int lifeARGB = 0xFF000000 | (s.lifeColor & 0x00FFFFFF);
 
@@ -849,11 +850,11 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
             queue.submitText(
                     matrices,
                     (-w / 2f) + 1f,
-                    (-tr.fontHeight / 2f) + 1f,
-                    Text.literal(txt).asOrderedText(),
+                    (-tr.lineHeight / 2f) + 1f,
+                    Component.literal(txt).getVisualOrderText(),
                     false,
-                    TextRenderer.TextLayerType.NORMAL,
-                    LightmapTextureManager.MAX_LIGHT_COORDINATE,
+                    Font.DisplayMode.NORMAL,
+                    FULL_BRIGHT,
                     shadow,
                     0,
                     0
@@ -863,11 +864,11 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         queue.submitText(
                 matrices,
                 -w / 2f,
-                -tr.fontHeight / 2f,
-                Text.literal(txt).asOrderedText(),
+                -tr.lineHeight / 2f,
+                Component.literal(txt).getVisualOrderText(),
                 false,
-                TextRenderer.TextLayerType.NORMAL,
-                LightmapTextureManager.MAX_LIGHT_COORDINATE,
+                Font.DisplayMode.NORMAL,
+                FULL_BRIGHT,
                 lifeARGB,
                 0,
                 0
@@ -875,7 +876,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
 
 
 
-        matrices.pop();
+        matrices.popPose();
     }
 
     // --- Animation cache (client only) ---
@@ -888,13 +889,13 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
 
     // Dead skull (vanilla texture so you don't need an asset yet)
     private static final Identifier SKULL_TEX =
-            Identifier.of("mtgcard", "textures/gui/dead.png"); // example
+            Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/dead.png"); // example
 
 
-    private void drawLifeName(State s, MatrixStack matrices, OrderedRenderCommandQueue queue,
+    private void drawLifeName(State s, PoseStack matrices, SubmitNodeCollector queue,
                               float x0, float x1, float yBottom, float yTop) {
 
-        TextRenderer tr = MinecraftClient.getInstance().textRenderer;
+        Font tr = Minecraft.getInstance().font;
 
         // If no link/name, either skip or show placeholder
         String name = (s.hasLife && s.name != null) ? s.name.trim() : "";
@@ -905,7 +906,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         float padding = 0.14f; // tweak if you want it closer/further from the edge
         float cy = yBottom + padding;
 
-        matrices.push();
+        matrices.pushPose();
         matrices.translate(cx, cy, Z_NAME_TEXT);
 
         // Smaller than the life number and scales gently with size
@@ -922,35 +923,35 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         float availableWorldW = (x1 - x0) - 0.18f; // leave some side padding
         int maxPx = Math.max(10, (int)(availableWorldW / sc));
 
-        String shown = tr.trimToWidth(name, maxPx);
+        String shown = tr.plainSubstrByWidth(name, maxPx);
 
         // If it got trimmed, add ellipsis (optional)
         if (!shown.equals(name) && shown.length() >= 2) {
             // try to make space for "..."
             String dots = "...";
-            int dotsW = tr.getWidth(dots);
-            String cut = tr.trimToWidth(name, Math.max(2, maxPx - dotsW));
+            int dotsW = tr.width(dots);
+            String cut = tr.plainSubstrByWidth(name, Math.max(2, maxPx - dotsW));
             shown = cut + dots;
         }
 
-        int w = tr.getWidth(shown);
+        int w = tr.width(shown);
 
         int nameARGB = 0xFF000000 | (s.playerColor & 0x00FFFFFF);
 
         queue.submitText(
                 matrices,
                 -w / 2f,
-                -tr.fontHeight / 2f,
-                Text.literal(shown).asOrderedText(),
+                -tr.lineHeight / 2f,
+                Component.literal(shown).getVisualOrderText(),
                 false,
-                TextRenderer.TextLayerType.NORMAL,
-                LightmapTextureManager.MAX_LIGHT_COORDINATE,
+                Font.DisplayMode.NORMAL,
+                FULL_BRIGHT,
                 nameARGB,
                 0,
                 0
         );
 
-        matrices.pop();
+        matrices.popPose();
     }
 
     private Identifier resolveIconId(String key) {
@@ -964,22 +965,22 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         Identifier cached = iconIdCache.get(key);
         if (cached != null) return cached;
 
-        var rm = MinecraftClient.getInstance().getResourceManager();
+        var rm = Minecraft.getInstance().getResourceManager();
 
-        Identifier a = Identifier.of("mtgcard", "textures/gui/counters/" + key + ".png");
+        Identifier a = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/" + key + ".png");
         if (rm.getResource(a).isPresent()) { iconIdCache.put(key, a); return a; }
 
-        Identifier b = Identifier.of("mtgcard", "textures/gui/set_icons/" + key + ".png");
+        Identifier b = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/set_icons/" + key + ".png");
         if (rm.getResource(b).isPresent()) { iconIdCache.put(key, b); return b; }
 
-        Identifier none = Identifier.of("mtgcard", "textures/gui/counters/none.png");
+        Identifier none = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/none.png");
         iconIdCache.put(key, none);
         return none;
     }
 
     private static final float BEZEL = 0.06f;
 
-    private void drawLifeIcon(State s, MatrixStack matrices, OrderedRenderCommandQueue queue, float x0, float x1, float yBottom, float yTop) {
+    private void drawLifeIcon(State s, PoseStack matrices, SubmitNodeCollector queue, float x0, float x1, float yBottom, float yTop) {
 
         if (!s.hasLife) return;
 
@@ -1018,37 +1019,37 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         float iy0 = cy - iconSize * 0.5f;
         float iy1 = cy + iconSize * 0.5f;
 
-        matrices.push();
+        matrices.pushPose();
         // tiny push toward camera in screen-local space
         matrices.translate(0f, 0f, 0.0010f);
 
         // Draw the icon quad
-        queue.submitCustom(
+        queue.submitCustomGeometry(
                 matrices,
-                RenderLayers.entityCutoutNoCull(tex),
+                RenderTypes.entityCutoutCull(tex),
                 (entry, vc) -> {
-                    Matrix4f mat = entry.getPositionMatrix();
+                    Matrix4f mat = entry.pose();
                     drawPanelQuad(mat, vc,
                             ix0, iy0, Z_ICON,
                             ix1, iy1, Z_ICON,
                             0f, 0f, 1f, 1f,
-                            LightmapTextureManager.MAX_LIGHT_COORDINATE,
-                            OverlayTexture.DEFAULT_UV,
+                            FULL_BRIGHT,
+                            OverlayTexture.NO_OVERLAY,
                             255, 255, 255, 255
                     );
                 }
         );
 
-        matrices.pop();
+        matrices.popPose();
 
     }
 
-    private void drawCommanderDamage(State s, MatrixStack matrices, OrderedRenderCommandQueue queue,
+    private void drawCommanderDamage(State s, PoseStack matrices, SubmitNodeCollector queue,
                                      float x0, float x1, float yBottom, float yTop) {
 
         if (s.cmd == null || s.cmd.isEmpty()) return;
 
-        TextRenderer tr = MinecraftClient.getInstance().textRenderer;
+        Font tr = Minecraft.getInstance().font;
 
         // Layout: top-left, with padding.
         float pad = 0.10f;
@@ -1091,11 +1092,11 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
             final float outline = fr * 1.18f;
             final int outlineCol = 0xCC000000;
 
-            queue.submitCustom(
+            queue.submitCustomGeometry(
                     matrices,
-                    RenderLayers.entityCutoutNoCull(WHITE),
+                    RenderTypes.entityCutoutCull(WHITE),
                     (entry, vc) -> {
-                        Matrix4f mat = entry.getPositionMatrix();
+                        Matrix4f mat = entry.pose();
                         // Outline
                         drawFilledCircle(mat, vc, cx, cy, Z_CMD_CIRCLES, outline, outlineCol);
                         // Fill
@@ -1106,7 +1107,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
             // Damage number centered on top
             String txt = Integer.toString(e.dmg);
 
-            matrices.push();
+            matrices.pushPose();
             matrices.translate(cx, cy, Z_CMD_TEXT);
 
             // Small text scale tuned to circle size
@@ -1114,18 +1115,18 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
             sc = Math.min(sc, 0.018f);
             matrices.scale(sc, -sc, sc);
 
-            int w = tr.getWidth(txt);
+            int w = tr.width(txt);
             int color = 0xFFFFFFFF;
 
             // Shadow for readability
             queue.submitText(
                     matrices,
                     (-w / 2f) + 1f,
-                    (-tr.fontHeight / 2f) + 1f,
-                    Text.literal(txt).asOrderedText(),
+                    (-tr.lineHeight / 2f) + 1f,
+                    Component.literal(txt).getVisualOrderText(),
                     false,
-                    TextRenderer.TextLayerType.NORMAL,
-                    LightmapTextureManager.MAX_LIGHT_COORDINATE,
+                    Font.DisplayMode.NORMAL,
+                    FULL_BRIGHT,
                     0xA0000000,
                     0,
                     0
@@ -1134,21 +1135,21 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
             queue.submitText(
                     matrices,
                     -w / 2f,
-                    -tr.fontHeight / 2f,
-                    Text.literal(txt).asOrderedText(),
+                    -tr.lineHeight / 2f,
+                    Component.literal(txt).getVisualOrderText(),
                     false,
-                    TextRenderer.TextLayerType.NORMAL,
-                    LightmapTextureManager.MAX_LIGHT_COORDINATE,
+                    Font.DisplayMode.NORMAL,
+                    FULL_BRIGHT,
                     color,
                     0,
                     0
             );
 
-            matrices.pop();
+            matrices.popPose();
         }
     }
 
-    private void drawDeadSkull(State s, MatrixStack matrices, OrderedRenderCommandQueue queue,
+    private void drawDeadSkull(State s, PoseStack matrices, SubmitNodeCollector queue,
                                float x0, float x1, float yBottom, float yTop) {
         float cx = (x0 + x1) * 0.5f;
         float cy = (yBottom + yTop) * 0.5f;
@@ -1163,28 +1164,28 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         float iy0 = cy - size * 0.5f;
         float iy1 = cy + size * 0.5f;
 
-        matrices.push();
+        matrices.pushPose();
         // tiny push toward camera in screen-local space
         matrices.translate(0f, 0f, 0.0010f);
 
         // Draw the icon quad
-        queue.submitCustom(
+        queue.submitCustomGeometry(
                 matrices,
-                RenderLayers.entityCutoutNoCull(SKULL_TEX),
+                RenderTypes.entityCutoutCull(SKULL_TEX),
                 (entry, vc) -> {
-                    Matrix4f mat = entry.getPositionMatrix();
+                    Matrix4f mat = entry.pose();
                     drawPanelQuad(mat, vc,
                             ix0, iy0, Z_ICON,
                             ix1, iy1, Z_ICON,
                             0f, 0f, 1f, 1f,
-                            LightmapTextureManager.MAX_LIGHT_COORDINATE,
-                            OverlayTexture.DEFAULT_UV,
+                            FULL_BRIGHT,
+                            OverlayTexture.NO_OVERLAY,
                             255, 255, 255, 255
                     );
                 }
         );
 
-        matrices.pop();
+        matrices.popPose();
 
     }
 
@@ -1200,12 +1201,12 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         final int segments = 18; // smooth enough, still cheap
 
         // Center
-        vc.vertex(mat, cx, cy, z)
-                .color(rr, g, b, a)
-                .texture(0.5f, 0.5f)
-                .overlay(OverlayTexture.DEFAULT_UV)
-                .light(LightmapTextureManager.MAX_LIGHT_COORDINATE)
-                .normal(0f, 0f, 1f);
+        vc.addVertex(mat, cx, cy, z)
+                .setColor(rr, g, b, a)
+                .setUv(0.5f, 0.5f)
+                .setOverlay(OverlayTexture.NO_OVERLAY)
+                .setLight(FULL_BRIGHT)
+                .setNormal(0f, 0f, 1f);
 
         for (int i = 0; i <= segments; i++) {
             double ang = (Math.PI * 2.0) * (i / (double) segments);
@@ -1216,12 +1217,12 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
             float u = 0.5f + (x - cx) / (r * 2f);
             float v = 0.5f + (y - cy) / (r * 2f);
 
-            vc.vertex(mat, x, y, z)
-                    .color(rr, g, b, a)
-                    .texture(u, v)
-                    .overlay(OverlayTexture.DEFAULT_UV)
-                    .light(LightmapTextureManager.MAX_LIGHT_COORDINATE)
-                    .normal(0f, 0f, 1f);
+            vc.addVertex(mat, x, y, z)
+                    .setColor(rr, g, b, a)
+                    .setUv(u, v)
+                    .setOverlay(OverlayTexture.NO_OVERLAY)
+                    .setLight(FULL_BRIGHT)
+                    .setNormal(0f, 0f, 1f);
         }
     }
 
@@ -1236,13 +1237,28 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
             int overlay,
             int r, int g, int b, int a
     ) {
-        // BL
+        // Front-facing winding for a quad that starts facing +Z in local space.
         put(vc, mat, x0, y0, z0, u0, v1, light, overlay, r, g, b, a);
-        // TL
-        put(vc, mat, x0, y1, z0, u0, v0, light, overlay, r, g, b, a);
-        // TR
+        put(vc, mat, x1, y0, z1, u1, v1, light, overlay, r, g, b, a);
         put(vc, mat, x1, y1, z1, u1, v0, light, overlay, r, g, b, a);
-        // BR
+        put(vc, mat, x0, y1, z0, u0, v0, light, overlay, r, g, b, a);
+    }
+
+    private static void drawBackQuad(
+            Matrix4f mat,
+            VertexConsumer vc,
+            float x0, float y0, float z0,
+            float x1, float y1, float z1,
+            float u0, float v0,
+            float u1, float v1,
+            int light,
+            int overlay,
+            int r, int g, int b, int a
+    ) {
+        // Back-facing winding for the black backplate so the rear stays opaque.
+        put(vc, mat, x0, y0, z0, u0, v1, light, overlay, r, g, b, a);
+        put(vc, mat, x0, y1, z0, u0, v0, light, overlay, r, g, b, a);
+        put(vc, mat, x1, y1, z1, u1, v0, light, overlay, r, g, b, a);
         put(vc, mat, x1, y0, z1, u1, v1, light, overlay, r, g, b, a);
     }
 
@@ -1255,11 +1271,11 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
             int overlay,
             int r, int g, int b, int a
     ) {
-        vc.vertex(mat, x, y, z)
-                .color(r, g, b, a)
-                .texture(u, v)
-                .overlay(overlay)
-                .light(light)
-                .normal(0f, 0f, 1f);
+        vc.addVertex(mat, x, y, z)
+                .setColor(r, g, b, a)
+                .setUv(u, v)
+                .setOverlay(overlay)
+                .setLight(light)
+                .setNormal(0f, 0f, 1f);
     }
 }

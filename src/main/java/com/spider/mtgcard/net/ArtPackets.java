@@ -1,49 +1,50 @@
 package com.spider.mtgcard.net;
 
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload.Type;
+import net.minecraft.resources.Identifier;
 
 public final class ArtPackets {
-    public static final Identifier REQ_ID = Identifier.of("mtgcard", "art_req");
-    public static final Identifier CHUNK_ID = Identifier.of("mtgcard", "art_chunk");
+    public static final Identifier REQ_ID = Identifier.fromNamespaceAndPath("mtgcard", "art_req");
+    public static final Identifier CHUNK_ID = Identifier.fromNamespaceAndPath("mtgcard", "art_chunk");
 
-    public record ArtRequest(String artKey, String url) implements CustomPayload {
-        public static final Id<ArtRequest> ID = new Id<>(REQ_ID);
+    public record ArtRequest(String artKey, String url) implements CustomPacketPayload {
+        public static final Type<ArtRequest> ID = new Type<>(REQ_ID);
 
-        public static final PacketCodec<RegistryByteBuf, ArtRequest> CODEC =
-                PacketCodec.tuple(
-                        PacketCodecs.STRING, ArtRequest::artKey,
-                        PacketCodecs.STRING, ArtRequest::url,
+        public static final StreamCodec<RegistryFriendlyByteBuf, ArtRequest> CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.STRING_UTF8, ArtRequest::artKey,
+                        ByteBufCodecs.STRING_UTF8, ArtRequest::url,
                         ArtRequest::new
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     /** Server -> Client chunk */
-    public record ArtChunk(String artKey, int index, int total, byte[] data) implements CustomPayload {
-        public static final Id<ArtChunk> ID = new Id<>(CHUNK_ID);
+    public record ArtChunk(String artKey, int index, int total, byte[] data) implements CustomPacketPayload {
+        public static final Type<ArtChunk> ID = new Type<>(CHUNK_ID);
 
-        public static final PacketCodec<RegistryByteBuf, ArtChunk> CODEC =
-                PacketCodec.tuple(
-                        PacketCodecs.STRING, ArtChunk::artKey,
-                        PacketCodecs.VAR_INT, ArtChunk::index,
-                        PacketCodecs.VAR_INT, ArtChunk::total,
-                        PacketCodecs.BYTE_ARRAY, ArtChunk::data,
+        public static final StreamCodec<RegistryFriendlyByteBuf, ArtChunk> CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.STRING_UTF8, ArtChunk::artKey,
+                        ByteBufCodecs.VAR_INT, ArtChunk::index,
+                        ByteBufCodecs.VAR_INT, ArtChunk::total,
+                        ByteBufCodecs.BYTE_ARRAY, ArtChunk::data,
                         ArtChunk::new
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     /** Call during init on BOTH sides before registering receivers/sending. */
     public static void registerTypes() {
-        PayloadTypeRegistry.playC2S().register(ArtRequest.ID, ArtRequest.CODEC);
-        PayloadTypeRegistry.playS2C().register(ArtChunk.ID, ArtChunk.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ArtRequest.ID, ArtRequest.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(ArtChunk.ID, ArtChunk.CODEC);
     }
 
     private ArtPackets() {}

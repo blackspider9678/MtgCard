@@ -1,8 +1,7 @@
-
 package com.spider.mtgcard.content.pack.cache;
 
 import com.spider.mtgcard.config.MtgcardConfig;
-import net.minecraft.server.world.ServerWorld;
+import net.minecraft.server.level.ServerLevel;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -24,7 +23,7 @@ public final class ScryfallCardSearchFetch {
     public record Hit(String name, String set, String collectorNumber) {}
     public record Page(List<Hit> hits, int totalCards, boolean hasMore) {}
 
-    public static CompletableFuture<Page> fetchCardsSliceAsync(ServerWorld world, String userQuery, int page, int pageSize) {
+    public static CompletableFuture<Page> fetchCardsSliceAsync(ServerLevel world, String userQuery, int page, int pageSize) {
         int p = Math.max(1, page);
 
         String q = buildQuery(userQuery);

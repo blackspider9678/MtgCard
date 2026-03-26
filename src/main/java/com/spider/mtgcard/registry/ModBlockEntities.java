@@ -9,10 +9,10 @@ import com.spider.mtgcard.displayblock.DisplayBlockEntity;
 import com.spider.mtgcard.graveyard.GraveyardBlockEntity;
 import com.spider.mtgcard.life.LifePointRegistry;
 import net.fabricmc.fabric.api.object.builder.v1.block.entity.FabricBlockEntityTypeBuilder;
-import net.minecraft.block.entity.BlockEntityType;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
-import net.minecraft.util.Identifier;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.Registry;
+import net.minecraft.resources.Identifier;
 
 public final class ModBlockEntities {
 
@@ -31,7 +31,7 @@ public final class ModBlockEntities {
     private ModBlockEntities() {}
 
     private static Identifier id(String path) {
-        return Identifier.of(Mtgcard.MOD_ID, path);
+        return Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, path);
     }
 
     public static void init() {
@@ -42,13 +42,13 @@ public final class ModBlockEntities {
         // (so call ModBlocks.init() BEFORE ModBlockEntities.init())
 
         DECKBOX = Registry.register(
-                Registries.BLOCK_ENTITY_TYPE,
+                BuiltInRegistries.BLOCK_ENTITY_TYPE,
                 id("deckbox"),
                 FabricBlockEntityTypeBuilder.create(DeckboxBlockEntity::new, ModBlocks.DECKBOX).build()
         );
 
         DECK_CONTROL = Registry.register(
-                Registries.BLOCK_ENTITY_TYPE,
+                BuiltInRegistries.BLOCK_ENTITY_TYPE,
                 id("deck_control"),
                 FabricBlockEntityTypeBuilder.create(
                         DeckControlBlockEntity::new,
@@ -64,25 +64,25 @@ public final class ModBlockEntities {
         );
 
         CARD_STORE = Registry.register(
-                Registries.BLOCK_ENTITY_TYPE,
+                BuiltInRegistries.BLOCK_ENTITY_TYPE,
                 id("card_store"),
                 FabricBlockEntityTypeBuilder.create(CardStoreBlockEntity::new, ModBlocks.CARD_STORE).build()
         );
 
         GRAVEYARD = Registry.register(
-                Registries.BLOCK_ENTITY_TYPE,
+                BuiltInRegistries.BLOCK_ENTITY_TYPE,
                 id("graveyard_be"),
                 FabricBlockEntityTypeBuilder.create(GraveyardBlockEntity::new, ModBlocks.GRAVEYARD).build()
         );
 
         DISPLAY_BLOCK = Registry.register(
-                Registries.BLOCK_ENTITY_TYPE,
+                BuiltInRegistries.BLOCK_ENTITY_TYPE,
                 id("display_block"),
                 FabricBlockEntityTypeBuilder.create(DisplayBlockEntity::new, ModBlocks.DISPLAY_BLOCK).build()
         );
 
         CARD_DB = Registry.register(
-                Registries.BLOCK_ENTITY_TYPE,
+                BuiltInRegistries.BLOCK_ENTITY_TYPE,
                 id("card_database_be"),
                 FabricBlockEntityTypeBuilder.create(CardDatabaseBlockEntity::new, ModBlocks.CARD_DB).build()
         );

@@ -1,6 +1,6 @@
 package com.spider.mtgcard.util;
 
-import net.minecraft.text.TextColor;
+import net.minecraft.network.chat.TextColor;
 
 import java.util.Locale;
 

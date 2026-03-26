@@ -2,22 +2,22 @@ package com.spider.mtgcard.deckbox;
 
 import com.spider.mtgcard.item.ModItems;
 import com.spider.mtgcard.screen.ModScreenHandlers;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.inventory.SimpleInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.ArrayPropertyDelegate;
-import net.minecraft.screen.PropertyDelegate;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.ShulkerBoxSlot;
-import net.minecraft.screen.slot.Slot;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.Container;
+import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.inventory.SimpleContainerData;
+import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ShulkerBoxSlot;
+import net.minecraft.world.inventory.Slot;
 
 import static com.spider.mtgcard.deckbox.DeckboxBlockEntity.*;
 
-public class DeckboxScreenHandler extends ScreenHandler {
+public class DeckboxScreenHandler extends AbstractContainerMenu {
     private static final int INVENTORY_SIZE = DeckboxBlockEntity.INVENTORY_SIZE; // 102
-    private final Inventory inventory;
+    private final Container inventory;
 
     // ---- slot index helpers (container side) ----
     private static final int GRID_START = 0;
@@ -31,30 +31,30 @@ public class DeckboxScreenHandler extends ScreenHandler {
     private static final int SIDE_CARD_START = DeckboxBlockEntity.SECOND_SIDE_SLOT;      // 100
     private static final int SIDE_CARD_END_EXCL = DeckboxBlockEntity.THIRD_SIDE_SLOT+1;  // 102
 
-    private final PropertyDelegate props;
+    private final ContainerData props;
 
     public int getRgbTint() {
         return this.props.get(0);
     }
 
 
-    public DeckboxScreenHandler(int syncId, PlayerInventory playerInventory) {
-        this(syncId, playerInventory, new SimpleInventory(INVENTORY_SIZE), new ArrayPropertyDelegate(1));
+    public DeckboxScreenHandler(int syncId, Inventory playerInventory) {
+        this(syncId, playerInventory, new SimpleContainer(INVENTORY_SIZE), new SimpleContainerData(1));
     }
 
-    public DeckboxScreenHandler(int syncId, PlayerInventory playerInventory, Inventory inventory) {
-        this(syncId, playerInventory, inventory, new ArrayPropertyDelegate(1));
+    public DeckboxScreenHandler(int syncId, Inventory playerInventory, Container inventory) {
+        this(syncId, playerInventory, inventory, new SimpleContainerData(1));
     }
 
-    public DeckboxScreenHandler(int syncId, PlayerInventory playerInventory, Inventory inventory, PropertyDelegate props) {
+    public DeckboxScreenHandler(int syncId, Inventory playerInventory, Container inventory, ContainerData props) {
         super(ModScreenHandlers.DECKBOX, syncId);
-        checkSize(inventory, INVENTORY_SIZE);
+        checkContainerSize(inventory, INVENTORY_SIZE);
         this.inventory = inventory;
 
         this.props = props;
-        this.addProperties(props);
+        this.addDataSlots(props);
 
-        inventory.onOpen(playerInventory.player);
+        inventory.startOpen(playerInventory.player);
 
         if (inventory instanceof DeckboxBlockEntity dbe) {
             dbe.onViewerOpen();
@@ -88,7 +88,7 @@ public class DeckboxScreenHandler extends ScreenHandler {
         addPlayerSlots(playerInventory, PLAYER_X, PLAYER_Y);
     }
 
-    private void addPlayerSlots(PlayerInventory playerInv, int left, int top) {
+    private void addPlayerSlots(Inventory playerInv, int left, int top) {
         // main inventory (3 rows)
         for (int row = 0; row < 3; ++row) {
             for (int col = 0; col < 9; ++col) {
@@ -103,24 +103,24 @@ public class DeckboxScreenHandler extends ScreenHandler {
     }
 
     private static boolean isBundle(ItemStack stack) {
-        return stack.getItem() == net.minecraft.item.Items.BUNDLE;
+        return stack.getItem() == net.minecraft.world.item.Items.BUNDLE;
     }
 
     @Override
-    public boolean canUse(PlayerEntity player) {
-        return this.inventory.canPlayerUse(player);
+    public boolean stillValid(Player player) {
+        return this.inventory.stillValid(player);
     }
 
     @Override
-    public ItemStack quickMove(PlayerEntity player, int slotIndex) {
+    public ItemStack quickMoveStack(Player player, int slotIndex) {
         ItemStack result = ItemStack.EMPTY;
         Slot clicked = this.slots.get(slotIndex);
-        if (clicked == null || !clicked.hasStack()) return ItemStack.EMPTY;
+        if (clicked == null || !clicked.hasItem()) return ItemStack.EMPTY;
 
-        ItemStack stack = clicked.getStack();
+        ItemStack stack = clicked.getItem();
         result = stack.copy();
 
-        int containerSlots = this.inventory.size();         // 102
+        int containerSlots = this.inventory.getContainerSize();         // 102
         int playerStart = containerSlots;                    // first player slot
         int playerEndExcl = this.slots.size();               // after hotbar
 
@@ -128,19 +128,19 @@ public class DeckboxScreenHandler extends ScreenHandler {
 
         if (isFromContainer) {
             // container -> player
-            if (!this.insertItem(stack, playerStart, playerEndExcl, true)) {
+            if (!this.moveItemStackTo(stack, playerStart, playerEndExcl, true)) {
                 return ItemStack.EMPTY;
             }
         } else {
             // player -> container
             if (isBundle(stack)) {
-                if (!this.insertItem(stack, BUNDLE_SLOT, BUNDLE_SLOT + 1, false)) {
+                if (!this.moveItemStackTo(stack, BUNDLE_SLOT, BUNDLE_SLOT + 1, false)) {
                     return ItemStack.EMPTY;
                 }
             } else if (isCard(stack)) {
                 // grid then the two card-only side slots
-                if (!this.insertItem(stack, GRID_START, GRID_END_EXCL, false) &&
-                        !this.insertItem(stack, SECOND_SIDE_SLOT, THIRD_SIDE_SLOT + 1, false)) {
+                if (!this.moveItemStackTo(stack, GRID_START, GRID_END_EXCL, false) &&
+                        !this.moveItemStackTo(stack, SECOND_SIDE_SLOT, THIRD_SIDE_SLOT + 1, false)) {
                     return ItemStack.EMPTY;
                 }
             } else {
@@ -149,8 +149,8 @@ public class DeckboxScreenHandler extends ScreenHandler {
             }
         }
 
-        if (stack.isEmpty()) clicked.setStack(ItemStack.EMPTY);
-        else clicked.markDirty();
+        if (stack.isEmpty()) clicked.setByPlayer(ItemStack.EMPTY);
+        else clicked.setChanged();
 
         return result;
     }
@@ -165,25 +165,25 @@ public class DeckboxScreenHandler extends ScreenHandler {
     }
 
     private static class CardOnlySlot extends Slot {
-        public CardOnlySlot(Inventory inventory, int index, int x, int y) {
+        public CardOnlySlot(Container inventory, int index, int x, int y) {
             super(inventory, index, x, y);
         }
-        @Override public boolean canInsert(ItemStack stack) { return isCard(stack); }
-        @Override public int getMaxItemCount() { return 64; } // or whatever your card stacks use
+        @Override public boolean mayPlace(ItemStack stack) { return isCard(stack); }
+        @Override public int getMaxStackSize() { return 64; } // or whatever your card stacks use
     }
 
     private static class BundleOnlySlot extends Slot {
-        public BundleOnlySlot(Inventory inventory, int index, int x, int y) {
+        public BundleOnlySlot(Container inventory, int index, int x, int y) {
             super(inventory, index, x, y);
         }
-        @Override public boolean canInsert(ItemStack stack) { return isBundle(stack); }
-        @Override public int getMaxItemCount() { return 1; }
+        @Override public boolean mayPlace(ItemStack stack) { return isBundle(stack); }
+        @Override public int getMaxStackSize() { return 1; }
     }
 
     @Override
-    public void onClosed(PlayerEntity player) {
-        super.onClosed(player);
-        this.inventory.onClose(player);
+    public void removed(Player player) {
+        super.removed(player);
+        this.inventory.stopOpen(player);
 
         if (this.inventory instanceof DeckboxBlockEntity dbe) {
             dbe.onViewerClose();

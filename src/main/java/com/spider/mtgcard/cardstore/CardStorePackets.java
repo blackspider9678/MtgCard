@@ -5,41 +5,46 @@ import com.spider.mtgcard.registry.ModRegistry;
 import com.spider.mtgcard.util.CardStackBuilders;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload.Type;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.core.BlockPos;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class CardStorePackets {
 
     // ---------- C2S: Confirm purchase ----------
-    public record ConfirmPurchaseC2S(BlockPos pos, int lineCount, List<Line> lines) implements CustomPayload {
-        public static final Id<ConfirmPurchaseC2S> ID = new Id<>(ModRegistry.id("cardstore_confirm"));
+    public record ConfirmPurchaseC2S(BlockPos pos, int lineCount, List<Line> lines) implements CustomPacketPayload {
+        public static final Type<ConfirmPurchaseC2S> ID = new Type<>(ModRegistry.id("cardstore_confirm"));
         public record Line(String setCode, String collectorNumber, int qty) {}
 
-        public static final PacketCodec<RegistryByteBuf, ConfirmPurchaseC2S> CODEC =
-                PacketCodec.ofStatic(
+        public static final StreamCodec<RegistryFriendlyByteBuf, ConfirmPurchaseC2S> CODEC =
+                StreamCodec.of(
                         (buf, p) -> {
                             buf.writeBlockPos(p.pos());
                             buf.writeVarInt(p.lines().size());
                             for (Line l : p.lines()) {
-                                buf.writeString(l.setCode());
-                                buf.writeString(l.collectorNumber(), 32);
+                                buf.writeUtf(l.setCode());
+                                buf.writeUtf(l.collectorNumber(), 32);
                                 buf.writeVarInt(l.qty());
                             }
                         },
@@ -48,8 +53,8 @@ public final class CardStorePackets {
                             int n = buf.readVarInt();
                             var lines = new ArrayList<Line>(n);
                             for (int i = 0; i < n; i++) {
-                                String set = buf.readString();
-                                String cn  = buf.readString(32);
+                                String set = buf.readUtf();
+                                String cn  = buf.readUtf(32);
                                 int qty    = buf.readVarInt();
                                 lines.add(new Line(set, cn, qty));
                             }
@@ -57,20 +62,20 @@ public final class CardStorePackets {
                         }
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // ---------- C2S: Search (single resolve) ----------
-    public record SearchC2S(BlockPos storePos, String query) implements CustomPayload {
-        public static final Id<SearchC2S> ID = new Id<>(Identifier.of("mtgcard", "card_store_search"));
+    public record SearchC2S(BlockPos storePos, String query) implements CustomPacketPayload {
+        public static final Type<SearchC2S> ID = new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "card_store_search"));
 
-        public static final PacketCodec<RegistryByteBuf, SearchC2S> CODEC = PacketCodec.tuple(
-                BlockPos.PACKET_CODEC, SearchC2S::storePos,
-                PacketCodecs.STRING, SearchC2S::query,
+        public static final StreamCodec<RegistryFriendlyByteBuf, SearchC2S> CODEC = StreamCodec.composite(
+                BlockPos.STREAM_CODEC, SearchC2S::storePos,
+                ByteBufCodecs.STRING_UTF8, SearchC2S::query,
                 SearchC2S::new
         );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // ---------- S2C: Search result (single) ----------
@@ -83,67 +88,67 @@ public final class CardStorePackets {
             String message,
             boolean hasPreview,
             ItemStack preview
-    ) implements CustomPayload {
+    ) implements CustomPacketPayload {
 
-        public static final Id<SearchS2C> ID = new Id<>(Identifier.of("mtgcard", "card_store_search_result"));
+        public static final Type<SearchS2C> ID = new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "card_store_search_result"));
 
-        public static final PacketCodec<RegistryByteBuf, SearchS2C> CODEC =
-                PacketCodec.ofStatic(
+        public static final StreamCodec<RegistryFriendlyByteBuf, SearchS2C> CODEC =
+                StreamCodec.of(
                         (buf, p) -> {
                             buf.writeBlockPos(p.storePos());
                             buf.writeBoolean(p.ok());
-                            buf.writeString(p.name());
-                            buf.writeString(p.setCode());
-                            buf.writeString(p.collectorNumber());
-                            buf.writeString(p.message());
+                            buf.writeUtf(p.name());
+                            buf.writeUtf(p.setCode());
+                            buf.writeUtf(p.collectorNumber());
+                            buf.writeUtf(p.message());
 
                             buf.writeBoolean(p.hasPreview());
                             if (p.hasPreview()) {
-                                ItemStack.PACKET_CODEC.encode(buf, p.preview());
+                                ItemStack.STREAM_CODEC.encode(buf, p.preview());
                             }
                         },
                         (buf) -> {
                             BlockPos pos = buf.readBlockPos();
                             boolean ok = buf.readBoolean();
-                            String name = buf.readString();
-                            String set = buf.readString();
-                            String cn = buf.readString();
-                            String msg = buf.readString();
+                            String name = buf.readUtf();
+                            String set = buf.readUtf();
+                            String cn = buf.readUtf();
+                            String msg = buf.readUtf();
 
                             boolean has = buf.readBoolean();
-                            ItemStack st = has ? ItemStack.PACKET_CODEC.decode(buf) : ItemStack.EMPTY;
+                            ItemStack st = has ? ItemStack.STREAM_CODEC.decode(buf) : ItemStack.EMPTY;
 
                             return new SearchS2C(pos, ok, name, set, cn, msg, has, st);
                         }
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // ---------- C2S: Search prints (paged + streamed) ----------
-    public record SearchPrintsC2S(BlockPos storePos, String query, int page, int pageSize, UUID requestId) implements CustomPayload {
-        public static final Id<SearchPrintsC2S> ID = new Id<>(Identifier.of("mtgcard", "card_store_search_prints"));
+    public record SearchPrintsC2S(BlockPos storePos, String query, int page, int pageSize, UUID requestId) implements CustomPacketPayload {
+        public static final Type<SearchPrintsC2S> ID = new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "card_store_search_prints"));
 
-        public static final PacketCodec<RegistryByteBuf, SearchPrintsC2S> CODEC =
-                PacketCodec.ofStatic(
+        public static final StreamCodec<RegistryFriendlyByteBuf, SearchPrintsC2S> CODEC =
+                StreamCodec.of(
                         (buf, p) -> {
                             buf.writeBlockPos(p.storePos());
-                            buf.writeString(p.query());
+                            buf.writeUtf(p.query());
                             buf.writeVarInt(p.page());
                             buf.writeVarInt(p.pageSize());
-                            buf.writeUuid(p.requestId());
+                            buf.writeUUID(p.requestId());
                         },
                         (buf) -> {
                             BlockPos pos = buf.readBlockPos();
-                            String q = buf.readString();
+                            String q = buf.readUtf();
                             int page = buf.readVarInt();
                             int pageSize = buf.readVarInt();
-                            UUID req = buf.readUuid();
+                            UUID req = buf.readUUID();
                             return new SearchPrintsC2S(pos, q, page, pageSize, req);
                         }
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // ---------- S2C: prints start ----------
@@ -157,60 +162,60 @@ public final class CardStorePackets {
             boolean hasMore,
             String priceItemId,
             String priceBasis
-    ) implements CustomPayload {
-        public static final Id<SearchPrintsStartS2C> ID =
-                new Id<>(Identifier.of("mtgcard", "card_store_search_prints_start"));
+    ) implements CustomPacketPayload {
+        public static final Type<SearchPrintsStartS2C> ID =
+                new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "card_store_search_prints_start"));
 
-        public static final PacketCodec<RegistryByteBuf, SearchPrintsStartS2C> CODEC =
-                PacketCodec.ofStatic(
+        public static final StreamCodec<RegistryFriendlyByteBuf, SearchPrintsStartS2C> CODEC =
+                StreamCodec.of(
                         (buf, p) -> {
                             buf.writeBlockPos(p.storePos());
-                            buf.writeUuid(p.requestId());
+                            buf.writeUUID(p.requestId());
                             buf.writeBoolean(p.ok());
-                            buf.writeString(p.message() == null ? "" : p.message());
+                            buf.writeUtf(p.message() == null ? "" : p.message());
                             buf.writeVarInt(p.page());
                             buf.writeVarInt(p.total());
                             buf.writeBoolean(p.hasMore());
-                            buf.writeString(p.priceItemId() == null ? "" : p.priceItemId());
-                            buf.writeString(p.priceBasis() == null ? "" : p.priceBasis());
+                            buf.writeUtf(p.priceItemId() == null ? "" : p.priceItemId());
+                            buf.writeUtf(p.priceBasis() == null ? "" : p.priceBasis());
                         },
                         (buf) -> new SearchPrintsStartS2C(
                                 buf.readBlockPos(),
-                                buf.readUuid(),
+                                buf.readUUID(),
                                 buf.readBoolean(),
-                                buf.readString(),
+                                buf.readUtf(),
                                 buf.readVarInt(),
                                 buf.readVarInt(),
                                 buf.readBoolean(),
-                                buf.readString(),
-                                buf.readString()
+                                buf.readUtf(),
+                                buf.readUtf()
                         )
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // ---------- S2C: prints add entry ----------
-    public record SearchPrintsAddS2C(BlockPos storePos, UUID requestId, SearchPrintsS2C.Entry entry) implements CustomPayload {
-        public static final Id<SearchPrintsAddS2C> ID =
-                new Id<>(Identifier.of("mtgcard", "card_store_search_prints_add"));
+    public record SearchPrintsAddS2C(BlockPos storePos, UUID requestId, SearchPrintsS2C.Entry entry) implements CustomPacketPayload {
+        public static final Type<SearchPrintsAddS2C> ID =
+                new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "card_store_search_prints_add"));
 
-        public static final PacketCodec<RegistryByteBuf, SearchPrintsAddS2C> CODEC =
-                PacketCodec.ofStatic(
+        public static final StreamCodec<RegistryFriendlyByteBuf, SearchPrintsAddS2C> CODEC =
+                StreamCodec.of(
                         (buf, p) -> {
                             buf.writeBlockPos(p.storePos());
-                            buf.writeUuid(p.requestId());
+                            buf.writeUUID(p.requestId());
                             SearchPrintsS2C.Entry.CODEC.encode(buf, p.entry());
                         },
                         (buf) -> {
                             BlockPos pos = buf.readBlockPos();
-                            UUID req = buf.readUuid();
+                            UUID req = buf.readUUID();
                             var entry = SearchPrintsS2C.Entry.CODEC.decode(buf);
                             return new SearchPrintsAddS2C(pos, req, entry);
                         }
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // ---------- S2C: prints done ----------
@@ -222,33 +227,33 @@ public final class CardStorePackets {
             int page,
             int total,
             boolean hasMore
-    ) implements CustomPayload {
-        public static final Id<SearchPrintsDoneS2C> ID =
-                new Id<>(Identifier.of("mtgcard", "card_store_search_prints_done"));
+    ) implements CustomPacketPayload {
+        public static final Type<SearchPrintsDoneS2C> ID =
+                new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "card_store_search_prints_done"));
 
-        public static final PacketCodec<RegistryByteBuf, SearchPrintsDoneS2C> CODEC =
-                PacketCodec.ofStatic(
+        public static final StreamCodec<RegistryFriendlyByteBuf, SearchPrintsDoneS2C> CODEC =
+                StreamCodec.of(
                         (buf, p) -> {
                             buf.writeBlockPos(p.storePos());
-                            buf.writeUuid(p.requestId());
+                            buf.writeUUID(p.requestId());
                             buf.writeBoolean(p.ok());
-                            buf.writeString(p.message() == null ? "" : p.message());
+                            buf.writeUtf(p.message() == null ? "" : p.message());
                             buf.writeVarInt(p.page());
                             buf.writeVarInt(p.total());
                             buf.writeBoolean(p.hasMore());
                         },
                         (buf) -> new SearchPrintsDoneS2C(
                                 buf.readBlockPos(),
-                                buf.readUuid(),
+                                buf.readUUID(),
                                 buf.readBoolean(),
-                                buf.readString(),
+                                buf.readUtf(),
                                 buf.readVarInt(),
                                 buf.readVarInt(),
                                 buf.readBoolean()
                         )
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // ---------- S2C: Search prints results (GRID) ----------
@@ -263,43 +268,43 @@ public final class CardStorePackets {
             String priceItemId,
             String priceBasis,
             List<Entry> entries
-    ) implements CustomPayload {
+    ) implements CustomPacketPayload {
 
-        public static final Id<SearchPrintsS2C> ID =
-                new Id<>(Identifier.of("mtgcard", "card_store_search_prints_result"));
+        public static final Type<SearchPrintsS2C> ID =
+                new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "card_store_search_prints_result"));
 
         public record Entry(String setCode, String collectorNumber, ItemStack stack, long priceItems) {
-            public static final PacketCodec<RegistryByteBuf, Entry> CODEC =
-                    PacketCodec.ofStatic(
+            public static final StreamCodec<RegistryFriendlyByteBuf, Entry> CODEC =
+                    StreamCodec.of(
                             (buf, e) -> {
-                                buf.writeString(e.setCode());
-                                buf.writeString(e.collectorNumber(), 32);
-                                ItemStack.PACKET_CODEC.encode(buf, e.stack());
+                                buf.writeUtf(e.setCode());
+                                buf.writeUtf(e.collectorNumber(), 32);
+                                ItemStack.STREAM_CODEC.encode(buf, e.stack());
                                 buf.writeVarLong(e.priceItems());
                             },
                             (buf) -> {
-                                String set = buf.readString();
-                                String cn  = buf.readString(32);
-                                ItemStack st = ItemStack.PACKET_CODEC.decode(buf);
+                                String set = buf.readUtf();
+                                String cn  = buf.readUtf(32);
+                                ItemStack st = ItemStack.STREAM_CODEC.decode(buf);
                                 long price = buf.readVarLong();
                                 return new Entry(set, cn, st, price);
                             }
                     );
         }
 
-        public static final PacketCodec<RegistryByteBuf, SearchPrintsS2C> CODEC =
-                PacketCodec.ofStatic(
+        public static final StreamCodec<RegistryFriendlyByteBuf, SearchPrintsS2C> CODEC =
+                StreamCodec.of(
                         (buf, p) -> {
                             buf.writeBlockPos(p.storePos());
                             buf.writeBoolean(p.ok());
-                            buf.writeString(p.message());
-                            buf.writeString(p.canonicalName());
+                            buf.writeUtf(p.message());
+                            buf.writeUtf(p.canonicalName());
                             buf.writeVarInt(p.page());
                             buf.writeVarInt(p.total());
                             buf.writeBoolean(p.hasMore());
 
-                            buf.writeString(p.priceItemId() == null ? "" : p.priceItemId());
-                            buf.writeString(p.priceBasis() == null ? "" : p.priceBasis());
+                            buf.writeUtf(p.priceItemId() == null ? "" : p.priceItemId());
+                            buf.writeUtf(p.priceBasis() == null ? "" : p.priceBasis());
 
                             buf.writeVarInt(p.entries().size());
                             for (Entry e : p.entries()) Entry.CODEC.encode(buf, e);
@@ -307,14 +312,14 @@ public final class CardStorePackets {
                         (buf) -> {
                             BlockPos pos = buf.readBlockPos();
                             boolean ok = buf.readBoolean();
-                            String msg = buf.readString();
-                            String name = buf.readString();
+                            String msg = buf.readUtf();
+                            String name = buf.readUtf();
                             int page = buf.readVarInt();
                             int total = buf.readVarInt();
                             boolean hasMore = buf.readBoolean();
 
-                            String priceItemId = buf.readString();
-                            String priceBasis  = buf.readString();
+                            String priceItemId = buf.readUtf();
+                            String priceBasis  = buf.readUtf();
 
                             int n = buf.readVarInt();
                             var list = new ArrayList<Entry>(n);
@@ -324,87 +329,66 @@ public final class CardStorePackets {
                         }
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // ---------- C2S: Import Deck ----------
-    public record ImportDeckC2S(BlockPos pos, int lineCount, List<Line> lines) implements CustomPayload {
-        public static final Id<ImportDeckC2S> ID = new Id<>(Identifier.of("mtgcard", "cardstore_import_deck"));
+    public record ImportDeckC2S(BlockPos pos, int lineCount, List<Line> lines) implements CustomPacketPayload {
+        public static final Type<ImportDeckC2S> ID = new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "cardstore_import_deck"));
 
         public record Line(String set, String cn, int qty) {}
 
-        public static final PacketCodec<RegistryByteBuf, ImportDeckC2S> CODEC =
-                PacketCodec.tuple(
-                        BlockPos.PACKET_CODEC, ImportDeckC2S::pos,
-                        PacketCodecs.VAR_INT, ImportDeckC2S::lineCount,
-                        PacketCodec.tuple(
-                                PacketCodecs.STRING, Line::set,
-                                PacketCodecs.STRING, Line::cn,
-                                PacketCodecs.VAR_INT, Line::qty,
+        public static final StreamCodec<RegistryFriendlyByteBuf, ImportDeckC2S> CODEC =
+                StreamCodec.composite(
+                        BlockPos.STREAM_CODEC, ImportDeckC2S::pos,
+                        ByteBufCodecs.VAR_INT, ImportDeckC2S::lineCount,
+                        StreamCodec.composite(
+                                ByteBufCodecs.STRING_UTF8, Line::set,
+                                ByteBufCodecs.STRING_UTF8, Line::cn,
+                                ByteBufCodecs.VAR_INT, Line::qty,
                                 Line::new
-                        ).collect(PacketCodecs.toList()),
+                        ).apply(ByteBufCodecs.list()),
                         ImportDeckC2S::lines,
                         ImportDeckC2S::new
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
-    }
-
-    private static CompletableFuture<ScryfallModels.Card> fetchExactWithTokenFallback(ServerWorld world, String set, String cn) {
-        String set0 = (set == null) ? "" : set.trim().toLowerCase(Locale.ROOT);
-        String cn0  = (cn == null) ? "" : cn.trim();
-
-        CompletableFuture<ScryfallModels.Card> primary =
-                ScryfallExactFetch.fetchBySetCollectorAsync(world, set0, cn0)
-                        .exceptionally(err -> null);
-
-        if (set0.isBlank()) return primary;
-
-        return primary.thenCompose(card -> {
-            if (card != null) return CompletableFuture.completedFuture(card);
-
-            String alt = set0.startsWith("t") ? set0.substring(1) : ("t" + set0);
-            if (alt.isBlank() || alt.equals(set0)) return CompletableFuture.completedFuture(null);
-
-            return ScryfallExactFetch.fetchBySetCollectorAsync(world, alt, cn0)
-                    .exceptionally(err -> null);
-        });
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // ---------- S2C: Import Deck result ----------
-    public record ImportDeckS2C(BlockPos pos, boolean ok, String message, List<Entry> entries) implements CustomPayload {
-        public static final Id<ImportDeckS2C> ID = new Id<>(Identifier.of("mtgcard", "cardstore_import_deck_result"));
+    public record ImportDeckS2C(BlockPos pos, boolean ok, String message, List<Entry> entries) implements CustomPacketPayload {
+        public static final Type<ImportDeckS2C> ID = new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "cardstore_import_deck_result"));
 
         public record Entry(String set, String cn, int qty, ItemStack stack, long priceItems) {}
 
-        public static final PacketCodec<RegistryByteBuf, ImportDeckS2C> CODEC =
-                PacketCodec.ofStatic(
+        public static final StreamCodec<RegistryFriendlyByteBuf, ImportDeckS2C> CODEC =
+                StreamCodec.of(
                         (buf, p) -> {
                             buf.writeBlockPos(p.pos());
                             buf.writeBoolean(p.ok());
-                            buf.writeString(p.message() == null ? "" : p.message());
+                            buf.writeUtf(p.message() == null ? "" : p.message());
 
                             buf.writeVarInt(p.entries().size());
                             for (Entry e : p.entries()) {
-                                buf.writeString(e.set());
-                                buf.writeString(e.cn(), 32);
+                                buf.writeUtf(e.set());
+                                buf.writeUtf(e.cn(), 32);
                                 buf.writeVarInt(e.qty());
-                                ItemStack.PACKET_CODEC.encode(buf, e.stack());
+                                ItemStack.STREAM_CODEC.encode(buf, e.stack());
                                 buf.writeVarLong(e.priceItems());
                             }
                         },
                         (buf) -> {
                             BlockPos pos = buf.readBlockPos();
                             boolean ok = buf.readBoolean();
-                            String msg = buf.readString();
+                            String msg = buf.readUtf();
 
                             int n = buf.readVarInt();
                             var entries = new ArrayList<Entry>(n);
                             for (int i = 0; i < n; i++) {
-                                String set = buf.readString();
-                                String cn  = buf.readString(32);
+                                String set = buf.readUtf();
+                                String cn  = buf.readUtf(32);
                                 int qty    = buf.readVarInt();
-                                ItemStack st = ItemStack.PACKET_CODEC.decode(buf);
+                                ItemStack st = ItemStack.STREAM_CODEC.decode(buf);
                                 long price = buf.readVarLong();
                                 entries.add(new Entry(set, cn, qty, st, price));
                             }
@@ -413,24 +397,24 @@ public final class CardStorePackets {
                         }
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // ---------- CODEC registration ----------
     public static void registerTypes() {
-        PayloadTypeRegistry.playC2S().register(ConfirmPurchaseC2S.ID, ConfirmPurchaseC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(SearchC2S.ID, SearchC2S.CODEC);
-        PayloadTypeRegistry.playS2C().register(SearchS2C.ID, SearchS2C.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ConfirmPurchaseC2S.ID, ConfirmPurchaseC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SearchC2S.ID, SearchC2S.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(SearchS2C.ID, SearchS2C.CODEC);
 
-        PayloadTypeRegistry.playC2S().register(SearchPrintsC2S.ID, SearchPrintsC2S.CODEC);
-        PayloadTypeRegistry.playS2C().register(SearchPrintsS2C.ID, SearchPrintsS2C.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SearchPrintsC2S.ID, SearchPrintsC2S.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(SearchPrintsS2C.ID, SearchPrintsS2C.CODEC);
 
-        PayloadTypeRegistry.playS2C().register(SearchPrintsStartS2C.ID, SearchPrintsStartS2C.CODEC);
-        PayloadTypeRegistry.playS2C().register(SearchPrintsAddS2C.ID,   SearchPrintsAddS2C.CODEC);
-        PayloadTypeRegistry.playS2C().register(SearchPrintsDoneS2C.ID,  SearchPrintsDoneS2C.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(SearchPrintsStartS2C.ID, SearchPrintsStartS2C.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(SearchPrintsAddS2C.ID,   SearchPrintsAddS2C.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(SearchPrintsDoneS2C.ID,  SearchPrintsDoneS2C.CODEC);
 
-        PayloadTypeRegistry.playC2S().register(ImportDeckC2S.ID, ImportDeckC2S.CODEC);
-        PayloadTypeRegistry.playS2C().register(ImportDeckS2C.ID, ImportDeckS2C.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ImportDeckC2S.ID, ImportDeckC2S.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(ImportDeckS2C.ID, ImportDeckS2C.CODEC);
     }
 
     // ---------- Server receivers ----------
@@ -442,8 +426,8 @@ public final class CardStorePackets {
 
         ServerPlayNetworking.registerGlobalReceiver(ConfirmPurchaseC2S.ID, (payload, ctx) ->
                 ctx.server().execute(() -> {
-                    if (!(ctx.player() instanceof ServerPlayerEntity sp)) return;
-                    ServerWorld world = (ServerWorld) sp.getEntityWorld();
+                    if (!(ctx.player() instanceof ServerPlayer sp)) return;
+                    ServerLevel world = (ServerLevel) sp.level();
 
                     var be = world.getBlockEntity(payload.pos());
                     if (!(be instanceof CardStoreBlockEntity store)) return;
@@ -455,8 +439,8 @@ public final class CardStorePackets {
         ServerPlayNetworking.registerGlobalReceiver(ImportDeckC2S.ID, (payload, ctx) -> {
             var server = ctx.server();
             server.execute(() -> {
-                ServerPlayerEntity player = ctx.player();
-                ServerWorld world = player.getEntityWorld();
+                ServerPlayer player = ctx.player();
+                ServerLevel world = player.level();
 
                 BlockEntity be = world.getBlockEntity(payload.pos());
                 if (!(be instanceof CardStoreBlockEntity store)) {
@@ -563,7 +547,7 @@ public final class CardStorePackets {
         // ---------------------------------------------------------------------
         ServerPlayNetworking.registerGlobalReceiver(SearchC2S.ID, (payload, ctx) -> {
             var server = ctx.server();
-            ServerPlayerEntity player = ctx.player();
+            ServerPlayer player = ctx.player();
 
             String q = payload.query();
             if (q == null || q.trim().isEmpty()) {
@@ -613,7 +597,7 @@ public final class CardStorePackets {
                     return;
                 }
 
-                ServerWorld world = (ServerWorld) player.getEntityWorld();
+                ServerLevel world = (ServerLevel) player.level();
 
                 ScryfallExactFetch.fetchBySetCollectorAsync(world, hit.set(), hit.collectorNumber())
                         .whenComplete((card, ex2) -> server.execute(() -> {
@@ -648,7 +632,7 @@ public final class CardStorePackets {
         // ---------------------------------------------------------------------
         ServerPlayNetworking.registerGlobalReceiver(SearchPrintsC2S.ID, (payload, ctx) -> {
             var server = ctx.server();
-            ServerPlayerEntity player = ctx.player();
+            ServerPlayer player = ctx.player();
 
             String q = payload.query();
             int page = Math.max(1, payload.page());
@@ -663,74 +647,76 @@ public final class CardStorePackets {
                 return;
             }
 
-            ServerWorld world = (ServerWorld) player.getEntityWorld();
             String qTrim = q.trim();
             String qLower = qTrim.toLowerCase(Locale.ROOT);
             String scryQ = qLower.contains("include:") ? qTrim : (qTrim + " include:extras");
+            int offset = (page - 1) * pageSize;
 
-            ScryfallPrintSearchFetch.fetchSearchSliceAsync(scryQ, page, pageSize)
+            List<com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta> customMatches =
+                    findCustomMatches(server, qTrim);
+            int customTotal = customMatches.size();
+            int customStart = Math.min(offset, customTotal);
+            int customSendCount = Math.min(pageSize, Math.max(0, customTotal - offset));
+            List<com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta> customPage =
+                    customSendCount <= 0
+                            ? List.of()
+                            : customMatches.subList(customStart, customStart + customSendCount);
+
+            int officialOffset = Math.max(0, offset - customTotal);
+            int officialLimit = Math.max(0, pageSize - customPage.size());
+
+            CompletableFuture<ScryfallPrintSearchFetch.Page> officialFuture =
+                    (officialLimit <= 0)
+                            ? CompletableFuture.completedFuture(new ScryfallPrintSearchFetch.Page(List.of(), 0, false))
+                            : ScryfallPrintSearchFetch.fetchSearchOffsetSliceAsync(scryQ, officialOffset, officialLimit);
+
+            officialFuture
                     .whenComplete((pg, ex2) -> {
                         boolean scryOk = (ex2 == null && pg != null && pg.hits() != null);
 
-                        int total = (scryOk ? pg.totalCards() : 0);
-                        boolean hasMore = (scryOk && pg.hasMore());
+                        int officialTotal = (scryOk ? pg.totalCards() : 0);
+                        int total = customTotal + officialTotal;
+                        boolean hasMore = total > (offset + pageSize);
 
                         server.execute(() -> ServerPlayNetworking.send(player,
                                 new SearchPrintsStartS2C(payload.storePos(), reqId, true, "Searching…", page, total, hasMore, priceItemId, priceBasis)));
 
-                        final int[] sent = {0};
-                        sent[0] += streamCustomMatchesCounted(server, player, payload.storePos(), reqId, qTrim, pageSize);
+                        ArrayList<SearchPrintsS2C.Entry> customEntries = buildCustomEntries(customPage);
+                        server.execute(() -> {
+                            for (var entry : customEntries) {
+                                ServerPlayNetworking.send(player, new SearchPrintsAddS2C(payload.storePos(), reqId, entry));
+                            }
+                        });
+
+                        int sent = customEntries.size();
 
                         if (!scryOk || pg.hits().isEmpty()) {
-                            String doneMsg = (sent[0] > 0) ? ("Loaded " + sent[0] + " results.") : "No results.";
+                            String doneMsg = (sent > 0) ? ("Loaded " + sent + " results.") : "No results.";
                             server.execute(() -> ServerPlayNetworking.send(player,
-                                    new SearchPrintsDoneS2C(payload.storePos(), reqId, sent[0] > 0, doneMsg, page, total, false)));
+                                    new SearchPrintsDoneS2C(payload.storePos(), reqId, sent > 0, doneMsg, page, total, hasMore)));
                             return;
                         }
 
-                        var hits = pg.hits();
-                        final int remaining = Math.max(0, pageSize - sent[0]);
-                        final int limit = Math.min(remaining, hits.size());
+                        ArrayList<ScryfallPrintSearchFetch.PrintHit> pageHits = new ArrayList<>(pg.hits());
+                        ScryfallExactFetch.fetchCollectionByPrintHitsAsync(pageHits)
+                                .exceptionally(err -> List.of())
+                                .whenComplete((models, ex3) -> {
+                                    ArrayList<SearchPrintsS2C.Entry> entries = buildSearchEntries(pageHits, models);
 
-                        CompletableFuture<Void> chain = CompletableFuture.completedFuture(null);
+                                    server.execute(() -> {
+                                        for (var entry : entries) {
+                                            ServerPlayNetworking.send(player,
+                                                    new SearchPrintsAddS2C(payload.storePos(), reqId, entry));
+                                        }
 
-                        for (int i = 0; i < limit; i++) {
-                            var h = hits.get(i);
-
-                            chain = chain.thenCompose(ignored ->
-                                    fetchExactWithTokenFallback(world, h.set(), h.collectorNumber())
-                                            .thenApply(model -> {
-                                                if (model == null) return null;
-
-                                                ItemStack stack = CardStackBuilders.buildScryfallStackFromModel(model, false);
-                                                if (stack == null || stack.isEmpty()) return null;
-
-                                                long priceItems = CardStorePrice.toCurrencyItemsFromStrings(
-                                                        false,
-                                                        model.price.usd, model.price.usdFoil, model.price.usdEtched,
-                                                        model.price.eur, model.price.eurFoil,
-                                                        model.price.tix
-                                                );
-
-                                                return new SearchPrintsS2C.Entry(model.set, model.collectorNumber, stack, priceItems);
-                                            })
-                                            .exceptionally(err -> null)
-                                            .thenAccept(entry -> {
-                                                if (entry == null) return;
-                                                if (sent[0] >= pageSize) return;
-
-                                                sent[0]++;
-                                                server.execute(() -> ServerPlayNetworking.send(player,
-                                                        new SearchPrintsAddS2C(payload.storePos(), reqId, entry)));
-                                            })
-                            );
-                        }
-
-                        chain.whenComplete((v, ex) -> {
-                            String doneMsg = "Loaded " + sent[0] + " results.";
-                            server.execute(() -> ServerPlayNetworking.send(player,
-                                    new SearchPrintsDoneS2C(payload.storePos(), reqId, sent[0] > 0, doneMsg, page, total, hasMore)));
-                        });
+                                        int totalSent = sent + entries.size();
+                                        String doneMsg = (totalSent > 0)
+                                                ? ("Loaded " + totalSent + " results.")
+                                                : "No results.";
+                                        ServerPlayNetworking.send(player,
+                                                new SearchPrintsDoneS2C(payload.storePos(), reqId, totalSent > 0, doneMsg, page, total, hasMore));
+                                    });
+                                });
                     });
         });
     }
@@ -743,12 +729,12 @@ public final class CardStorePackets {
         if (name == null || name.isBlank()) return;
 
         // Don’t overwrite if something already set it
-        if (!st.contains(DataComponentTypes.ITEM_NAME)) {
-            st.set(DataComponentTypes.ITEM_NAME, Text.literal(name));
+        if (!st.has(DataComponents.ITEM_NAME)) {
+            st.set(DataComponents.ITEM_NAME, Component.literal(name));
         }
         // Keep your CardStackBuilders rarity-colored custom name; only set if absent.
-        if (!st.contains(DataComponentTypes.CUSTOM_NAME)) {
-            st.set(DataComponentTypes.CUSTOM_NAME, Text.literal(name));
+        if (!st.has(DataComponents.CUSTOM_NAME)) {
+            st.set(DataComponents.CUSTOM_NAME, Component.literal(name));
         }
     }
 
@@ -765,44 +751,143 @@ public final class CardStorePackets {
         return t;
     }
 
-    private static int streamCustomMatchesCounted(MinecraftServer server, ServerPlayerEntity player, BlockPos pos, UUID reqId, String queryRaw, int maxToSend) {
-        if (maxToSend <= 0) return 0;
+    private static final Pattern CUSTOM_FIELD_QUERY =
+            Pattern.compile("\\b([a-zA-Z_]+):(?:\"([^\"]+)\"|(\\S+))");
+
+    private static List<com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta> findCustomMatches(
+            MinecraftServer server,
+            String queryRaw
+    ) {
         try {
             var store = com.spider.mtgcard.content.pack.custom.CustomCardStores.get(server);
-            int sent = 0;
-
-            String q = norm(queryRaw);
-
-            for (var m : store.all()) {
-                if (sent >= maxToSend) break;
-                if (m == null || m.name == null) continue;
-                if (!norm(m.name).contains(q)) continue;
-
-                ItemStack st = CardStackBuilders.buildCustomStackFromMeta(m, false);
-                if (st == null || st.isEmpty()) continue;
-
-                applyItemNameIfPresent(st, m.name);
-
-                long price = com.spider.mtgcard.util.CustomCardPricing.priceItemsForRarity(m.rarity);
-                String setCode = (m.set == null || m.set.isBlank()) ? "CSTM" : m.set;
-
-                var entry = new SearchPrintsS2C.Entry(setCode, m.id, st, price);
-                sent++;
-
-                server.execute(() -> ServerPlayNetworking.send(player, new SearchPrintsAddS2C(pos, reqId, entry)));
+            ArrayList<com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta> matches = new ArrayList<>();
+            for (var meta : store.all()) {
+                if (!matchesCustomSearch(meta, queryRaw)) continue;
+                matches.add(meta);
             }
-            return sent;
+            matches.sort((a, b) -> {
+                String an = a != null && a.name != null ? a.name : "";
+                String bn = b != null && b.name != null ? b.name : "";
+                int byName = String.CASE_INSENSITIVE_ORDER.compare(an, bn);
+                if (byName != 0) return byName;
+                String aid = a != null && a.id != null ? a.id : "";
+                String bid = b != null && b.id != null ? b.id : "";
+                return String.CASE_INSENSITIVE_ORDER.compare(aid, bid);
+            });
+            return matches;
         } catch (Throwable ignored) {
-            return 0;
+            return List.of();
         }
     }
 
-    private static void applyDisplayName(ItemStack st, String name) {
-        if (st == null || st.isEmpty()) return;
-        if (name == null || name.isBlank()) return;
+    private static boolean matchesCustomSearch(com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta meta, String queryRaw) {
+        if (meta == null) return false;
 
-        // Only set the real display name
-        st.set(DataComponentTypes.ITEM_NAME, Text.literal(name));
+        String query = (queryRaw == null) ? "" : queryRaw.trim();
+        if (query.isBlank()) return false;
+
+        Matcher matcher = CUSTOM_FIELD_QUERY.matcher(query);
+        boolean sawFieldQuery = false;
+
+        while (matcher.find()) {
+            sawFieldQuery = true;
+
+            String field = matcher.group(1);
+            String value = matcher.group(2) != null ? matcher.group(2) : matcher.group(3);
+            if (value == null || value.isBlank()) continue;
+
+            if (!customFieldValue(meta, field).contains(norm(value))) {
+                return false;
+            }
+        }
+
+        if (sawFieldQuery) return true;
+
+        String haystack = String.join(" ",
+                norm(meta.name),
+                norm(meta.typeLine),
+                norm(meta.oracleText),
+                norm(meta.set),
+                norm(meta.id),
+                norm(meta.backName),
+                norm(meta.backTypeLine),
+                norm(meta.backOracleText)
+        ).trim();
+
+        return !haystack.isEmpty() && haystack.contains(norm(query));
+    }
+
+    private static String customFieldValue(com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta meta, String rawField) {
+        String field = rawField == null ? "" : rawField.trim().toLowerCase(Locale.ROOT);
+        return switch (field) {
+            case "name", "n" -> norm(meta.name) + " " + norm(meta.backName);
+            case "type", "type_line", "t" -> norm(meta.typeLine) + " " + norm(meta.backTypeLine);
+            case "oracle", "oracle_text", "o" -> norm(meta.oracleText) + " " + norm(meta.backOracleText);
+            case "set", "s", "e" -> norm(meta.set);
+            case "id", "cn", "collector", "collector_number" -> norm(meta.id);
+            default -> "";
+        };
+    }
+
+    private static ArrayList<SearchPrintsS2C.Entry> buildSearchEntries(
+            List<ScryfallPrintSearchFetch.PrintHit> requestedHits,
+            List<ScryfallModels.Card> models
+    ) {
+        ArrayList<SearchPrintsS2C.Entry> entries = new ArrayList<>();
+        if (requestedHits == null || requestedHits.isEmpty() || models == null || models.isEmpty()) return entries;
+
+        Map<String, ScryfallModels.Card> byPrinting = new HashMap<>();
+        for (var model : models) {
+            if (model == null || model.set == null || model.collectorNumber == null) continue;
+            byPrinting.put(printingKey(model.set, model.collectorNumber), model);
+        }
+
+        for (var hit : requestedHits) {
+            if (hit == null) continue;
+
+            ScryfallModels.Card model = byPrinting.get(printingKey(hit.set(), hit.collectorNumber()));
+            if (model == null) continue;
+
+            ItemStack stack = CardStackBuilders.buildScryfallStackFromModel(model, false);
+            if (stack == null || stack.isEmpty()) continue;
+
+            long priceItems = CardStorePrice.toCurrencyItemsFromStrings(
+                    false,
+                    model.price.usd, model.price.usdFoil, model.price.usdEtched,
+                    model.price.eur, model.price.eurFoil,
+                    model.price.tix
+            );
+
+            entries.add(new SearchPrintsS2C.Entry(model.set, model.collectorNumber, stack, priceItems));
+        }
+
+        return entries;
+    }
+
+    private static ArrayList<SearchPrintsS2C.Entry> buildCustomEntries(
+            List<com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta> metas
+    ) {
+        ArrayList<SearchPrintsS2C.Entry> entries = new ArrayList<>();
+        if (metas == null || metas.isEmpty()) return entries;
+
+        for (var meta : metas) {
+            if (meta == null) continue;
+
+            ItemStack st = CardStackBuilders.buildCustomStackFromMeta(meta, false);
+            if (st == null || st.isEmpty()) continue;
+
+            applyItemNameIfPresent(st, meta.name);
+
+            long price = com.spider.mtgcard.util.CustomCardPricing.priceItemsForRarity(meta.rarity);
+            String setCode = (meta.set == null || meta.set.isBlank()) ? "CSTM" : meta.set;
+            entries.add(new SearchPrintsS2C.Entry(setCode, meta.id, st, price));
+        }
+
+        return entries;
+    }
+
+    private static String printingKey(String set, String collectorNumber) {
+        return norm(set) + "\u0000" + norm(collectorNumber);
     }
 
     private CardStorePackets() {}

@@ -1,7 +1,7 @@
 // src/main/java/com/spider/mtgcard/guidebook/GuideSection.java
 package com.spider.mtgcard.guidebook;
 
-import net.minecraft.text.Text;
+import net.minecraft.network.chat.Component;
 
 import java.util.List;
 
@@ -10,7 +10,7 @@ public sealed interface GuideSection permits
         GuideSection.Paragraph,
         GuideSection.Bullets {
 
-    record Heading(Text text) implements GuideSection {}
-    record Paragraph(Text text) implements GuideSection {}
-    record Bullets(List<Text> bullets) implements GuideSection {}
+    record Heading(Component text) implements GuideSection {}
+    record Paragraph(Component text) implements GuideSection {}
+    record Bullets(List<Component> bullets) implements GuideSection {}
 }

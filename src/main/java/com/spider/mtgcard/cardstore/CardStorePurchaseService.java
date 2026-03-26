@@ -4,17 +4,17 @@ import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.content.pack.cache.ScryfallExactFetch;
 import com.spider.mtgcard.content.pack.cache.ScryfallModels;
 import com.spider.mtgcard.util.CardStackBuilders;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.NbtComponent;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.registry.Registries;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -48,17 +48,17 @@ public final class CardStorePurchaseService {
     private static void ensureUniqueCardUid(ItemStack st) {
         if (st == null || st.isEmpty()) return;
 
-        NbtComponent comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
+        CustomData comp = st.get(DataComponents.CUSTOM_DATA);
+        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
 
         // Your schema: root["mtg_meta"] holds everything
-        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
 
         // Overwrite each time so copies can never share the same uid
         meta.putString("mtg_uid", UUID.randomUUID().toString());
 
         root.put("mtg_meta", meta);
-        st.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
     }
 
     private static void queueNoStack(CardStoreBlockEntity store, UUID buyer, ItemStack template, int qty) {
@@ -76,22 +76,22 @@ public final class CardStorePurchaseService {
 
     public static void handleConfirm(
             MinecraftServer server,
-            ServerPlayerEntity player,
+            ServerPlayer player,
             CardStoreBlockEntity store,
             List<CardStorePackets.ConfirmPurchaseC2S.Line> lines
     ) {
         if (lines == null || lines.isEmpty()) {
-            player.sendMessage(Text.literal("Cart is empty."), true);
+            player.sendSystemMessage(Component.literal("Cart is empty."), true);
             return;
         }
 
         if (store.isDelivering()) {
-            player.sendMessage(Text.literal("This store is already printing."), true);
+            player.sendSystemMessage(Component.literal("This store is already printing."), true);
             return;
         }
 
         boolean creative = player.isCreative();
-        ServerWorld world = (ServerWorld) player.getEntityWorld();
+        ServerLevel world = (ServerLevel) player.level();
 
         // ---- custom meta lookup (for routing + pricing) ----
         var customStore = com.spider.mtgcard.content.pack.custom.CustomCardStores.get(server);
@@ -128,7 +128,7 @@ public final class CardStorePurchaseService {
         }
 
         if (customLines.isEmpty() && scryLines.isEmpty()) {
-            player.sendMessage(Text.literal("Cart is empty."), true);
+            player.sendSystemMessage(Component.literal("Cart is empty."), true);
             return;
         }
 
@@ -153,7 +153,7 @@ public final class CardStorePurchaseService {
                 if (!creative) {
                     int have = countInInv(player, currency);
                     if (have < costItems) {
-                        player.sendMessage(Text.literal("Not enough currency. Need " + costItems + " " + currency.getName().getString()
+                        player.sendSystemMessage(Component.literal("Not enough currency. Need " + costItems + " " + currency.getName(new ItemStack(currency)).getString()
                                 + " (have " + have + ")."), true);
                         return;
                     }
@@ -169,10 +169,10 @@ public final class CardStorePurchaseService {
                             : CardStackBuilders.buildCustomStackFromId(l.collectorNumber(), false);
 
                     if (template == null || template.isEmpty()) continue;
-                    queueNoStack(store, player.getUuid(), template, l.qty());
+                    queueNoStack(store, player.getUUID(), template, l.qty());
                 }
 
-                player.sendMessage(Text.literal(creative
+                player.sendSystemMessage(Component.literal(creative
                         ? "Printing cards (creative)."
                         : "Purchase confirmed. Printing cards..."), true);
             });
@@ -187,7 +187,7 @@ public final class CardStorePurchaseService {
 
         CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).whenComplete((v, ex) -> {
             if (ex != null) {
-                server.execute(() -> player.sendMessage(Text.literal("Failed fetching cards from Scryfall."), true));
+                server.execute(() -> player.sendSystemMessage(Component.literal("Failed fetching cards from Scryfall."), true));
                 return;
             }
 
@@ -226,7 +226,7 @@ public final class CardStorePurchaseService {
                 if (!creative) {
                     int have = countInInv(player, currency);
                     if (have < costItems) {
-                        player.sendMessage(Text.literal("Not enough currency. Need " + costItems + " " + currency.getName().getString()
+                        player.sendSystemMessage(Component.literal("Not enough currency. Need " + costItems + " " + currency.getName(new ItemStack(currency)).getString()
                                 + " (have " + have + ")."), true);
                         return;
                     }
@@ -242,17 +242,17 @@ public final class CardStorePurchaseService {
                     ItemStack template = CardStackBuilders.buildScryfallStackFromModel(c, false);
                     if (template == null || template.isEmpty()) continue;
 
-                    queueNoStack(store, player.getUuid(), template, line.qty());
+                    queueNoStack(store, player.getUUID(), template, line.qty());
                 }
 
                 // ✅ Print custom NON-STACKING
                 for (var l : customLines) {
                     ItemStack template = CardStackBuilders.buildCustomStackFromId(l.collectorNumber(), false);
                     if (template == null || template.isEmpty()) continue;
-                    queueNoStack(store, player.getUuid(), template, l.qty());
+                    queueNoStack(store, player.getUUID(), template, l.qty());
                 }
 
-                player.sendMessage(Text.literal(creative
+                player.sendSystemMessage(Component.literal(creative
                         ? "Printing cards (creative)."
                         : "Purchase confirmed. Printing cards..."), true);
             });
@@ -286,13 +286,13 @@ public final class CardStorePurchaseService {
 
         Identifier ident;
         try {
-            ident = Identifier.of(id);
+            ident = Identifier.parse(id);
         } catch (Throwable t) {
-            ident = Identifier.of("minecraft", "diamond");
+            ident = Identifier.fromNamespaceAndPath("minecraft", "diamond");
         }
 
-        Item item = Registries.ITEM.get(ident);
-        if (item == null) item = Registries.ITEM.get(Identifier.of("minecraft", "diamond"));
+        Item item = BuiltInRegistries.ITEM.getValue(ident);
+        if (item == null) item = BuiltInRegistries.ITEM.getValue(Identifier.fromNamespaceAndPath("minecraft", "diamond"));
         return item;
     }
 
@@ -374,26 +374,26 @@ public final class CardStorePurchaseService {
 
     // -------- Inventory helpers --------
 
-    private static int countInInv(ServerPlayerEntity player, Item item) {
+    private static int countInInv(ServerPlayer player, Item item) {
         int total = 0;
         var inv = player.getInventory();
-        for (int i = 0; i < inv.size(); i++) {
-            ItemStack st = inv.getStack(i);
-            if (!st.isEmpty() && st.isOf(item)) total += st.getCount();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack st = inv.getItem(i);
+            if (!st.isEmpty() && st.is(item)) total += st.getCount();
         }
         return total;
     }
 
-    private static void removeFromInv(ServerPlayerEntity player, Item item, int count) {
+    private static void removeFromInv(ServerPlayer player, Item item, int count) {
         int remaining = count;
         var inv = player.getInventory();
-        for (int i = 0; i < inv.size(); i++) {
+        for (int i = 0; i < inv.getContainerSize(); i++) {
             if (remaining <= 0) break;
-            ItemStack st = inv.getStack(i);
-            if (st.isEmpty() || !st.isOf(item)) continue;
+            ItemStack st = inv.getItem(i);
+            if (st.isEmpty() || !st.is(item)) continue;
 
             int take = Math.min(remaining, st.getCount());
-            st.decrement(take);
+            st.shrink(take);
             remaining -= take;
         }
     }

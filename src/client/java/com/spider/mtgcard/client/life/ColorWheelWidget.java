@@ -1,24 +1,24 @@
 package com.spider.mtgcard.client.life;
 
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.widget.ClickableWidget;
-import net.minecraft.client.util.math.Rect2i;
-import net.minecraft.text.Text;
-import net.minecraft.client.gui.screen.narration.NarrationMessageBuilder;
+import com.spider.mtgcard.client.compat.LegacyWidget;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.renderer.Rect2i;
+import net.minecraft.network.chat.Component;
+import net.minecraft.client.gui.narration.NarrationElementOutput;
 
 import java.util.function.IntConsumer;
 
-public final class ColorWheelWidget extends ClickableWidget {
+public final class ColorWheelWidget extends LegacyWidget {
     private final IntConsumer onPick;
     private boolean dragging = false;
 
     public ColorWheelWidget(int x, int y, int w, int h, IntConsumer onPick) {
-        super(x, y, w, h, Text.empty());
+        super(x, y, w, h, Component.empty());
         this.onPick = onPick;
     }
 
     @Override
-    protected void renderWidget(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    protected void renderWidget(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
         int x = getX();
         int y = getY();
         int w = getWidth();
@@ -26,14 +26,14 @@ public final class ColorWheelWidget extends ClickableWidget {
 
         // simple panel
         ctx.fill(x, y, x + w, y + h, 0xAA000000);
-        ctx.drawHorizontalLine(x, x + w - 1, y, 0xFF404040);
-        ctx.drawHorizontalLine(x, x + w - 1, y + h - 1, 0xFF404040);
-        ctx.drawVerticalLine(x, y, y + h - 1, 0xFF404040);
-        ctx.drawVerticalLine(x + w - 1, y, y + h - 1, 0xFF404040);
+        ctx.hLine(x, x + w - 1, y, 0xFF404040);
+        ctx.hLine(x, x + w - 1, y + h - 1, 0xFF404040);
+        ctx.vLine(x, y, y + h - 1, 0xFF404040);
+        ctx.vLine(x + w - 1, y, y + h - 1, 0xFF404040);
 
         // label
-        ctx.drawTextWithShadow(
-                net.minecraft.client.MinecraftClient.getInstance().textRenderer,
+        ctx.drawString(
+                net.minecraft.client.Minecraft.getInstance().font,
                 "Color",
                 x + 4, y + 4,
                 0xFFFFFFFF
@@ -41,8 +41,8 @@ public final class ColorWheelWidget extends ClickableWidget {
 
         // preview crosshair when hovering
         if (isMouseOver(mouseX, mouseY)) {
-            ctx.drawHorizontalLine(mouseX - 2, mouseX + 2, mouseY, 0xFFFFFFFF);
-            ctx.drawVerticalLine(mouseX, mouseY - 2, mouseY + 2, 0xFFFFFFFF);
+            ctx.hLine(mouseX - 2, mouseX + 2, mouseY, 0xFFFFFFFF);
+            ctx.vLine(mouseX, mouseY - 2, mouseY + 2, 0xFFFFFFFF);
         }
     }
 
@@ -106,8 +106,8 @@ public final class ColorWheelWidget extends ClickableWidget {
     }
 
     @Override
-    protected void appendClickableNarrations(NarrationMessageBuilder builder) {
+    protected void updateWidgetNarration(NarrationElementOutput builder) {
         // Keep narration minimal (prevents the abstract-method error)
-        builder.put(net.minecraft.client.gui.screen.narration.NarrationPart.TITLE, Text.literal("Color picker"));
+        builder.add(net.minecraft.client.gui.narration.NarratedElementType.TITLE, Component.literal("Color picker"));
     }
 }

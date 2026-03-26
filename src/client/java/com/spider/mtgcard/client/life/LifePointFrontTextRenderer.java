@@ -1,19 +1,19 @@
 package com.spider.mtgcard.client.life;
 
 import com.spider.mtgcard.life.LifePointBlockEntity;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.render.block.entity.BlockEntityRenderer;
-import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
-import net.minecraft.client.render.block.entity.state.BlockEntityRenderState;
-import net.minecraft.client.render.command.OrderedRenderCommandQueue;
-import net.minecraft.client.render.state.CameraRenderState;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.state.property.Properties;
-import net.minecraft.text.OrderedText;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.Direction;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
+import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.util.FormattedCharSequence;
+import net.minecraft.network.chat.Component;
+import net.minecraft.core.Direction;
 import org.joml.Quaternionf;
 
 public final class LifePointFrontTextRenderer
@@ -26,11 +26,11 @@ public final class LifePointFrontTextRenderer
         public Direction facing; // front face
     }
 
-    private final TextRenderer textRenderer;
+    private final Font textRenderer;
 
-    public LifePointFrontTextRenderer(BlockEntityRendererFactory.Context ctx) {
+    public LifePointFrontTextRenderer(BlockEntityRendererProvider.Context ctx) {
         // ctx.getTextRenderer() wasn't available in your mapping errors, so use MC directly (stable).
-        this.textRenderer = MinecraftClient.getInstance().textRenderer;
+        this.textRenderer = Minecraft.getInstance().font;
     }
 
     @Override
@@ -45,15 +45,15 @@ public final class LifePointFrontTextRenderer
         st.life = be.getLife();
         st.rgb = be.getLifeColor() & 0xFFFFFF;
 
-        BlockState bs = be.getCachedState();
+        BlockState bs = be.getBlockState();
         Direction f = Direction.NORTH;
 
         // Prefer horizontal facing if present
         if (bs != null) {
-            if (bs.contains(Properties.HORIZONTAL_FACING)) {
-                f = bs.get(Properties.HORIZONTAL_FACING);
-            } else if (bs.contains(Properties.FACING)) {
-                f = bs.get(Properties.FACING);
+            if (bs.hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
+                f = bs.getValue(BlockStateProperties.HORIZONTAL_FACING);
+            } else if (bs.hasProperty(BlockStateProperties.FACING)) {
+                f = bs.getValue(BlockStateProperties.FACING);
             }
         }
 
@@ -61,23 +61,23 @@ public final class LifePointFrontTextRenderer
     }
 
     @Override
-    public void render(State st, MatrixStack matrices, OrderedRenderCommandQueue queue, CameraRenderState camera) {
+    public void submit(State st, PoseStack matrices, SubmitNodeCollector queue, CameraRenderState camera) {
         if (!st.render) return;
 
         // Text to render
-        Text t = Text.literal(Integer.toString(st.life));
-        OrderedText ot = t.asOrderedText();
+        Component t = Component.literal(Integer.toString(st.life));
+        FormattedCharSequence ot = t.getVisualOrderText();
 
-        int textW = this.textRenderer.getWidth(ot);
+        int textW = this.textRenderer.width(ot);
 
-        matrices.push();
+        matrices.pushPose();
 
         // Center of block
         matrices.translate(0.5, 0.5, 0.5);
 
         // Rotate to face the block "front"
         float yawDeg = yawForFacing(st.facing);
-        matrices.multiply(new Quaternionf().rotationY((float) Math.toRadians(yawDeg)));
+        matrices.mulPose(new Quaternionf().rotationY((float) Math.toRadians(yawDeg)));
 
         // Push slightly out in front of the face
         matrices.translate(0.0, 0.0, 0.501);
@@ -100,14 +100,14 @@ public final class LifePointFrontTextRenderer
                 x, y,
                 ot,
                 false,
-                TextRenderer.TextLayerType.NORMAL,
+                Font.DisplayMode.NORMAL,
                 argb,
                 bg,
                 light,
                 overlay
         );
 
-        matrices.pop();
+        matrices.popPose();
     }
 
     private static float yawForFacing(Direction f) {

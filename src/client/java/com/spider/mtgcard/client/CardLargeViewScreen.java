@@ -1,5 +1,6 @@
 package com.spider.mtgcard.client;
 
+import com.spider.mtgcard.client.compat.LegacyScreen;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.net.payload.SetCounterMetaPayload;
@@ -8,35 +9,34 @@ import com.spider.mtgcard.net.payload.SetFacePayload;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.input.CharInput;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.NbtComponent;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtList;
-import net.minecraft.registry.Registries;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.core.BlockPos;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.*;
 
 @Environment(EnvType.CLIENT)
-public class CardLargeViewScreen extends Screen {
+public class CardLargeViewScreen extends LegacyScreen {
 
     private final ItemStack stack; // copy so we don't mutate held item client-side
     private int faceIndex;
@@ -69,7 +69,7 @@ public class CardLargeViewScreen extends Screen {
     private static final int REFRESH_CHECK_EVERY_TICKS = 20; // ~1s
 
     @SuppressWarnings("unused")
-    private static final Identifier FLIP_ICON = Identifier.ofVanilla("widget/turn_back");
+    private static final Identifier FLIP_ICON = Identifier.withDefaultNamespace("widget/turn_back");
 
     // ------------------------------------------------------------
     // Flip animation state
@@ -128,11 +128,11 @@ public class CardLargeViewScreen extends Screen {
     // ------------------------------------------------------------
     // Counters editor (widgets/state)
     // ------------------------------------------------------------
-    private TextFieldWidget counterNameField;
-    private ButtonWidget createCounterBtn;
-    private ButtonWidget saveCounterBtn;
-    private ButtonWidget deleteCounterBtn;
-    private ButtonWidget iconCycleBtn;
+    private EditBox counterNameField;
+    private Button createCounterBtn;
+    private Button saveCounterBtn;
+    private Button deleteCounterBtn;
+    private Button iconCycleBtn;
 
     private boolean counterEditorOpen = false;
     private String editingCounterKey = null; // null = creating new
@@ -198,7 +198,7 @@ public class CardLargeViewScreen extends Screen {
 
 
     public CardLargeViewScreen(ItemStack original, int handSlot, int displayEntityId) {
-        super(Text.literal("Card"));
+        super(Component.literal("Card"));
         this.stack = original.copy();
         this.handSlot = handSlot;
         this.displayEntityId = displayEntityId; // ✅ IMPORTANT
@@ -214,12 +214,12 @@ public class CardLargeViewScreen extends Screen {
     }
 
     private static final Identifier CARD_BACK_TEX =
-            Identifier.of("mtgcard", "textures/gui/card.png");
+            Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/card.png");
 
     private boolean hidden;
 
     private static boolean readHidden(ItemStack st) {
-        NbtCompound meta = getMeta(st);
+        CompoundTag meta = getMeta(st);
         return meta.getBoolean("mtg_hidden").orElse(false);
     }
 
@@ -231,14 +231,14 @@ public class CardLargeViewScreen extends Screen {
         TexSize cached = ICON_SIZE_CACHE.get(texId);
         if (cached != null) return cached;
 
-        var client = MinecraftClient.getInstance();
+        var client = Minecraft.getInstance();
         if (client == null) return new TexSize(16, 16);
 
         try {
             // Resource path is already "textures/..../file.png" in your Identifier
             var opt = client.getResourceManager().getResource(texId);
             if (opt.isPresent()) {
-                try (var in = opt.get().getInputStream()) {
+                try (var in = opt.get().open()) {
                     NativeImage img = NativeImage.read(in);
                     TexSize sz = new TexSize(img.getWidth(), img.getHeight());
                     img.close();
@@ -256,7 +256,7 @@ public class CardLargeViewScreen extends Screen {
 
     /** Draw icon scaled to DEST size, with correct UVs based on actual PNG dimensions. */
     /** Draw icon "contain" (fit inside box, preserve aspect ratio, no cropping). */
-    private void drawIconFit(DrawContext ctx, Identifier tex, int x, int y, int w, int h) {
+    private void drawIconFit(GuiGraphics ctx, Identifier tex, int x, int y, int w, int h) {
         TexSize sz = getTextureSize(tex);
         int tw = Math.max(1, sz.w());
         int th = Math.max(1, sz.h());
@@ -273,7 +273,7 @@ public class CardLargeViewScreen extends Screen {
         // destW/destH = dw/dh
         // regionW/regionH = tw/th (sample the whole image)
         // texW/texH = tw/th (actual texture size)
-        ctx.drawTexture(
+        ctx.blit(
                 RenderPipelines.GUI_TEXTURED,
                 tex,
                 dx, dy,
@@ -287,7 +287,7 @@ public class CardLargeViewScreen extends Screen {
     @Override
     protected void init() {
         super.init();
-        this.clearChildren();
+        this.clearWidgets();
 
         if (!infoOpen) return;
 
@@ -297,11 +297,11 @@ public class CardLargeViewScreen extends Screen {
         tabX = panelX + 10;
         tabY = panelY + 10;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Info"), b -> { tab = Tab.INFO; init(); })
-                .dimensions(tabX, tabY, 70, TAB_H).build());
+        addRenderableWidget(Button.builder(Component.literal("Info"), b -> { tab = Tab.INFO; init(); })
+                .bounds(tabX, tabY, 70, TAB_H).build());
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Counters"), b -> { tab = Tab.COUNTERS; init(); })
-                .dimensions(tabX + 70 + TAB_GAP, tabY, 90, TAB_H).build());
+        addRenderableWidget(Button.builder(Component.literal("Counters"), b -> { tab = Tab.COUNTERS; init(); })
+                .bounds(tabX + 70 + TAB_GAP, tabY, 90, TAB_H).build());
 
         if (tab == Tab.COUNTERS) {
             initCountersEditorWidgets(panelX, panelY);
@@ -316,7 +316,7 @@ public class CardLargeViewScreen extends Screen {
 
 
     @Override
-    public boolean shouldPause() {
+    public boolean isPauseScreen() {
         return false;
     }
 
@@ -349,13 +349,13 @@ public class CardLargeViewScreen extends Screen {
 
     /** Try to get the scryfall id for the currently shown face. */
     private String readScryfallIdForFace(ItemStack st, int faceIdx) {
-        NbtCompound meta = getMeta(st);
+        CompoundTag meta = getMeta(st);
 
         // 1) per-face in card_faces list
-        NbtElement el = meta.get("card_faces");
-        if (el instanceof NbtList list && faceIdx >= 0 && faceIdx < list.size()) {
-            NbtElement faceEl = list.get(faceIdx);
-            if (faceEl instanceof NbtCompound fc) {
+        Tag el = meta.get("card_faces");
+        if (el instanceof ListTag list && faceIdx >= 0 && faceIdx < list.size()) {
+            Tag faceEl = list.get(faceIdx);
+            if (faceEl instanceof CompoundTag fc) {
                 String s = fc.getString("id").orElse("");
                 if (!s.isBlank()) return s;
 
@@ -448,27 +448,27 @@ public class CardLargeViewScreen extends Screen {
         }
     }
 
-    private static NbtCompound getOrCreateCounterIcons(ItemStack st) {
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
-        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+    private static CompoundTag getOrCreateCounterIcons(ItemStack st) {
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
+        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
 
-        NbtCompound icons = meta.getCompound("counter_icons").orElseGet(NbtCompound::new);
+        CompoundTag icons = meta.getCompound("counter_icons").orElseGet(CompoundTag::new);
         meta.put("counter_icons", icons);
         root.put("mtg_meta", meta);
-        st.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
         return icons;
     }
 
-    private static NbtCompound getOrCreateCounterNames(ItemStack st) {
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
-        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+    private static CompoundTag getOrCreateCounterNames(ItemStack st) {
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
+        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
 
-        NbtCompound names = meta.getCompound("counter_names").orElseGet(NbtCompound::new);
+        CompoundTag names = meta.getCompound("counter_names").orElseGet(CompoundTag::new);
         meta.put("counter_names", names);
         root.put("mtg_meta", meta);
-        st.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
         return names;
     }
 
@@ -482,26 +482,26 @@ public class CardLargeViewScreen extends Screen {
         // Put editor near bottom of panel
         int editorY = panelY + panelH - 58;
 
-        counterNameField = new TextFieldWidget(this.textRenderer, x, editorY, editorW, 18, Text.literal("Counter name"));
+        counterNameField = new EditBox(this.font, x, editorY, editorW, 18, Component.literal("Counter name"));
         counterNameField.setMaxLength(32);
-        counterNameField.setPlaceholder(Text.literal("Counter name..."));
-        addDrawableChild(counterNameField);
+        counterNameField.setHint(Component.literal("Counter name..."));
+        addRenderableWidget(counterNameField);
 
         int btnY = editorY + 22;
 
-        createCounterBtn = addDrawableChild(
-                ButtonWidget.builder(Text.literal("Create"), b -> createCounterNow())
-                        .dimensions(x, btnY, 54, 18).build()
+        createCounterBtn = addRenderableWidget(
+                Button.builder(Component.literal("Create"), b -> createCounterNow())
+                        .bounds(x, btnY, 54, 18).build()
         );
 
-        saveCounterBtn = addDrawableChild(
-                ButtonWidget.builder(Text.literal("Save"), b -> saveEditedCounter())
-                        .dimensions(x + 58, btnY, 54, 18).build()
+        saveCounterBtn = addRenderableWidget(
+                Button.builder(Component.literal("Save"), b -> saveEditedCounter())
+                        .bounds(x + 58, btnY, 54, 18).build()
         );
 
-        deleteCounterBtn = addDrawableChild(
-                ButtonWidget.builder(Text.literal("Del"), b -> deleteEditedCounter())
-                        .dimensions(x + 116, btnY, 54, 18).build()
+        deleteCounterBtn = addRenderableWidget(
+                Button.builder(Component.literal("Del"), b -> deleteEditedCounter())
+                        .bounds(x + 116, btnY, 54, 18).build()
         );
         if (!counterEditorOpen) beginCreateCounter();
 
@@ -514,17 +514,17 @@ public class CardLargeViewScreen extends Screen {
 
         editMeta(st, meta -> {
             // counters
-            NbtCompound counters = meta.getCompound("counters").orElseGet(NbtCompound::new);
+            CompoundTag counters = meta.getCompound("counters").orElseGet(CompoundTag::new);
             counters.remove(k);
             meta.put("counters", counters);
 
             // icons
-            NbtCompound icons = meta.getCompound("counter_icons").orElseGet(NbtCompound::new);
+            CompoundTag icons = meta.getCompound("counter_icons").orElseGet(CompoundTag::new);
             icons.remove(k);
             meta.put("counter_icons", icons);
 
             // display names
-            NbtCompound names = meta.getCompound("counter_names").orElseGet(NbtCompound::new);
+            CompoundTag names = meta.getCompound("counter_names").orElseGet(CompoundTag::new);
             names.remove(k);
             meta.put("counter_names", names);
         });
@@ -535,7 +535,7 @@ public class CardLargeViewScreen extends Screen {
         final String ic = normalizeIconKey(icon);
 
         editMeta(st, meta -> {
-            NbtCompound icons = meta.getCompound("counter_icons").orElseGet(NbtCompound::new);
+            CompoundTag icons = meta.getCompound("counter_icons").orElseGet(CompoundTag::new);
             icons.putString(k, ic);
             meta.put("counter_icons", icons);
         });
@@ -544,8 +544,8 @@ public class CardLargeViewScreen extends Screen {
     private static String getCounterIcon(ItemStack st, String key) {
         key = normalizeCounterKey(key);
 
-        NbtCompound meta = getMeta(st);
-        NbtCompound icons = meta.getCompound("counter_icons").orElse(null);
+        CompoundTag meta = getMeta(st);
+        CompoundTag icons = meta.getCompound("counter_icons").orElse(null);
         if (icons == null) return "none";
         return icons.getString(key).orElse("none");
     }
@@ -554,7 +554,7 @@ public class CardLargeViewScreen extends Screen {
         final String k = normalizeCounterKey(key);
 
         editMeta(st, meta -> {
-            NbtCompound icons = meta.getCompound("counter_icons").orElseGet(NbtCompound::new);
+            CompoundTag icons = meta.getCompound("counter_icons").orElseGet(CompoundTag::new);
             icons.remove(k);
             meta.put("counter_icons", icons);
         });
@@ -565,7 +565,7 @@ public class CardLargeViewScreen extends Screen {
         final String cleaned = (name == null) ? "" : name.trim();
 
         editMeta(st, meta -> {
-            NbtCompound names = meta.getCompound("counter_names").orElseGet(NbtCompound::new);
+            CompoundTag names = meta.getCompound("counter_names").orElseGet(CompoundTag::new);
             if (cleaned.isBlank()) names.remove(k);
             else names.putString(k, cleaned);
             meta.put("counter_names", names);
@@ -575,8 +575,8 @@ public class CardLargeViewScreen extends Screen {
     private static String getCounterDisplayName(ItemStack st, String key) {
         key = normalizeCounterKey(key);
 
-        NbtCompound meta = getMeta(st);
-        NbtCompound names = meta.getCompound("counter_names").orElse(null);
+        CompoundTag meta = getMeta(st);
+        CompoundTag names = meta.getCompound("counter_names").orElse(null);
         if (names == null) return "";
         return names.getString(key).orElse("");
     }
@@ -585,7 +585,7 @@ public class CardLargeViewScreen extends Screen {
         final String k = normalizeCounterKey(key);
 
         editMeta(st, meta -> {
-            NbtCompound names = meta.getCompound("counter_names").orElseGet(NbtCompound::new);
+            CompoundTag names = meta.getCompound("counter_names").orElseGet(CompoundTag::new);
             names.remove(k);
             meta.put("counter_names", names);
         });
@@ -600,7 +600,7 @@ public class CardLargeViewScreen extends Screen {
         iconBarDragOffset = 0;
 
         if (counterNameField != null) {
-            counterNameField.setText("");
+            counterNameField.setValue("");
             this.setFocused(counterNameField);
             counterNameField.setFocused(true);
         }
@@ -619,7 +619,7 @@ public class CardLargeViewScreen extends Screen {
         String display = getCounterDisplayName(stack, editingCounterKey);
         if (display.isBlank()) display = toTitle(editingCounterKey.replace('_', ' '));
         if (counterNameField != null) {
-            counterNameField.setText(display);
+            counterNameField.setValue(display);
             this.setFocused(counterNameField);
             counterNameField.setFocused(true);
         }
@@ -632,7 +632,7 @@ public class CardLargeViewScreen extends Screen {
         if (!counterEditorOpen || counterNameField == null) return;
         if (editingCounterKey == null) return; // <-- only edit existing now
 
-        String name = counterNameField.getText().trim();
+        String name = counterNameField.getValue().trim();
         if (name.isBlank()) return;
 
         String key = editingCounterKey;
@@ -663,7 +663,7 @@ public class CardLargeViewScreen extends Screen {
         editingCounterKey = null;
         editingIconKey = "none";
         selectedCounterKey = null;
-        if (counterNameField != null) counterNameField.setText("");
+        if (counterNameField != null) counterNameField.setValue("");
 
         updateEditorButtons();
         refreshIconButton();
@@ -671,7 +671,7 @@ public class CardLargeViewScreen extends Screen {
 
     private void refreshIconButton() {
         if (iconCycleBtn != null) {
-            iconCycleBtn.setMessage(Text.literal("Icon: " + editingIconKey));
+            iconCycleBtn.setMessage(Component.literal("Icon: " + editingIconKey));
         }
     }
 
@@ -688,12 +688,12 @@ public class CardLargeViewScreen extends Screen {
         if (deleteCounterBtn != null) deleteCounterBtn.active = canDelete;
     }
 
-    private void drawCountersHud(DrawContext ctx, int mouseX, int mouseY) {
-        NbtCompound counters = getOrCreateCounters(stack);
-        if (counters.getKeys().isEmpty()) return;
+    private void drawCountersHud(GuiGraphics ctx, int mouseX, int mouseY) {
+        CompoundTag counters = getOrCreateCounters(stack);
+        if (counters.keySet().isEmpty()) return;
 
         // sorted stable display
-        List<String> keys = new ArrayList<>(counters.getKeys());
+        List<String> keys = new ArrayList<>(counters.keySet());
         keys.sort(String::compareToIgnoreCase);
 
         hudMinusRects.clear();
@@ -703,7 +703,7 @@ public class CardLargeViewScreen extends Screen {
         int valueMaxW = 0;
         for (String k : keys) {
             int v = counters.getInt(k).orElse(0);
-            valueMaxW = Math.max(valueMaxW, this.textRenderer.getWidth(String.valueOf(v)));
+            valueMaxW = Math.max(valueMaxW, this.font.width(String.valueOf(v)));
         }
 
         int innerW = HUD_ICON + 4 + ADJ_BTN + ADJ_GAP + valueMaxW + ADJ_GAP + ADJ_BTN; // icon + gap + number
@@ -742,16 +742,16 @@ public class CardLargeViewScreen extends Screen {
             int iy = ry + (HUD_ROW_H - HUD_ICON) / 2;
 
             if (iconKey == null || iconKey.equals("none")) {
-                ctx.drawText(this.textRenderer, "—", ix + 2, ry + 3, 0xFF777777, false);
+                ctx.text(this.font, "—", ix + 2, ry + 3, 0xFF777777, false);
             } else {
-                Identifier tex = Identifier.of("mtgcard", "textures/gui/counters/" + iconKey + ".png");
+                Identifier tex = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/" + iconKey + ".png");
                 drawIconFit(ctx, tex, ix, iy, HUD_ICON, HUD_ICON);
             }
 
             // number only
             // Layout: [icon] [ - ] [ value ] [ + ]
             String val = String.valueOf(v);
-            int valW = this.textRenderer.getWidth(val);
+            int valW = this.font.width(val);
 
             int byBtn   = ry + (HUD_ROW_H - ADJ_BTN) / 2;
 
@@ -760,7 +760,7 @@ public class CardLargeViewScreen extends Screen {
 
             // value starts after minus button
             int txVal   = bxMinus + ADJ_BTN + ADJ_GAP;
-            int tyVal   = ry + (HUD_ROW_H - this.textRenderer.fontHeight) / 2;
+            int tyVal   = ry + (HUD_ROW_H - this.font.lineHeight) / 2;
 
             // plus button after the value
             int bxPlus  = txVal + valW + ADJ_GAP;
@@ -770,7 +770,7 @@ public class CardLargeViewScreen extends Screen {
             boolean hoverPlus  = (mouseX >= bxPlus  && mouseX < bxPlus  + ADJ_BTN && mouseY >= byBtn && mouseY < byBtn + ADJ_BTN);
 
             drawMiniButton(ctx, bxMinus, byBtn, ADJ_BTN, "-", hoverMinus);
-            ctx.drawText(this.textRenderer, val, txVal, tyVal, 0xFFFFFFFF, false);
+            ctx.text(this.font, val, txVal, tyVal, 0xFFFFFFFF, false);
             drawMiniButton(ctx, bxPlus,  byBtn, ADJ_BTN, "+", hoverPlus);
 
             // store click rects
@@ -782,7 +782,7 @@ public class CardLargeViewScreen extends Screen {
             if (hover) {
                 String display = getCounterDisplayName(stack, k);
                 if (display == null || display.isBlank()) display = toTitle(k.replace('_', ' '));
-                ctx.drawTooltip(this.textRenderer, Text.literal(display), mouseX, mouseY);
+                ctx.setTooltipForNextFrame(this.font, Component.literal(display), mouseX, mouseY);
             }
         }
     }
@@ -792,7 +792,7 @@ public class CardLargeViewScreen extends Screen {
     // ------------------------------------------------------------
 
     @Override
-    public boolean mouseClicked(Click click, boolean bl) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean bl) {
         double mx = click.x();
         double my = click.y();
         int btn = click.button();
@@ -893,8 +893,8 @@ public class CardLargeViewScreen extends Screen {
                 // do nothing here (fall through)
             } else {
                 if (mx >= listX && mx <= listX + listW && my >= listY && my <= listY + listH) {
-                    NbtCompound counters = getOrCreateCounters(stack);
-                    List<String> keys = new ArrayList<>(counters.getKeys());
+                    CompoundTag counters = getOrCreateCounters(stack);
+                    List<String> keys = new ArrayList<>(counters.keySet());
                     keys.sort(String::compareToIgnoreCase);
                     if (!keys.isEmpty()) {
                         int row = (int)((my - listY + countersScroll) / CTR_ROW_H);
@@ -958,14 +958,14 @@ public class CardLargeViewScreen extends Screen {
     private void createCounterNow() {
         if (counterNameField == null) return;
 
-        String name = counterNameField.getText().trim();
+        String name = counterNameField.getValue().trim();
         if (name.isBlank()) return;
 
         // always create a NEW counter from field
         String key = normalizeCounterKey(name);
         if (key.isBlank()) return;
 
-        NbtCompound counters = getOrCreateCounters(stack);
+        CompoundTag counters = getOrCreateCounters(stack);
 
         // ensure unique
         String base = key;
@@ -987,14 +987,14 @@ public class CardLargeViewScreen extends Screen {
     }
 
     @Override
-    public boolean mouseReleased(Click click) {
+    public boolean mouseReleased(MouseButtonEvent click) {
         draggingLegalityBar = false;
         draggingIconBar = false;
         return super.mouseReleased(click);
     }
 
     @Override
-    public boolean mouseDragged(Click click, double dx, double dy) {
+    public boolean mouseDragged(MouseButtonEvent click, double dx, double dy) {
         if (infoOpen && draggingLegalityBar) {
             // move thumb; convert thumb y -> scroll
             int thumbMinY = legAreaY;
@@ -1044,7 +1044,7 @@ public class CardLargeViewScreen extends Screen {
 
             String k = hudHoverCounterKey;
 
-            NbtCompound counters = getOrCreateCounters(stack);
+            CompoundTag counters = getOrCreateCounters(stack);
             int cur = counters.getInt(k).orElse(0);
 
             int step = isShiftDown() ? 5 : 1;
@@ -1092,8 +1092,8 @@ public class CardLargeViewScreen extends Screen {
 
             if (mouseX >= listX && mouseX <= listX + listW && mouseY >= listY && mouseY <= listY + listH) {
                 // determine which row
-                NbtCompound counters = getOrCreateCounters(stack);
-                List<String> keys = new ArrayList<>(counters.getKeys());
+                CompoundTag counters = getOrCreateCounters(stack);
+                List<String> keys = new ArrayList<>(counters.keySet());
                 keys.sort(String::compareToIgnoreCase);
                 if (keys.isEmpty()) return true;
 
@@ -1112,7 +1112,7 @@ public class CardLargeViewScreen extends Screen {
             }
 
             // otherwise scroll the list itself
-            int maxScroll = Math.max(0, (getOrCreateCounters(stack).getSize() * CTR_ROW_H) - listH);
+            int maxScroll = Math.max(0, (getOrCreateCounters(stack).size() * CTR_ROW_H) - listH);
             countersScroll = clampInt(countersScroll + (int)(-verticalAmount * CTR_ROW_H * 3), 0, maxScroll);
             return true;
         }
@@ -1127,8 +1127,8 @@ public class CardLargeViewScreen extends Screen {
     }
 
     private boolean isShiftDown() {
-        var win = net.minecraft.client.MinecraftClient.getInstance().getWindow();
-        long h = win.getHandle();
+        var win = net.minecraft.client.Minecraft.getInstance().getWindow();
+        long h = win.handle();
         return org.lwjgl.glfw.GLFW.glfwGetKey(h, org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT_SHIFT) == org.lwjgl.glfw.GLFW.GLFW_PRESS
                 || org.lwjgl.glfw.GLFW.glfwGetKey(h, org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT_SHIFT) == org.lwjgl.glfw.GLFW.GLFW_PRESS;
     }
@@ -1149,7 +1149,7 @@ public class CardLargeViewScreen extends Screen {
     }
 
     @Override
-    public boolean charTyped(CharInput input) {
+    public boolean charTyped(CharacterEvent input) {
         // If we're typing in the counter name field, swallow everything into the field.
         if (counterNameField != null && counterNameField.isFocused()) {
             if (counterNameField.charTyped(input)) return true;
@@ -1165,11 +1165,11 @@ public class CardLargeViewScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(KeyInput key) {
+    public boolean keyPressed(KeyEvent key) {
         int kc = kiKeyCode(key);
 
         if (kc == GLFW.GLFW_KEY_ESCAPE) {
-            this.close();
+            this.onClose();
             return true;
         }
 
@@ -1269,7 +1269,7 @@ public class CardLargeViewScreen extends Screen {
     // ------------------------------------------------------------
 
     @Override
-    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
         ctx.fill(0, 0, this.width, this.height, 0xB0000000);
 
         int renderFace = getShownFaceIndex();
@@ -1281,16 +1281,16 @@ public class CardLargeViewScreen extends Screen {
         CardArtManager.TextureRef texRef = null;
         texRef = CardArtManager.getOrRequestFace(stack, renderFace);
         if (texRef == null || texRef.id() == null) {
-            ctx.drawCenteredTextWithShadow(this.textRenderer, Text.literal("Loading card art..."),
+            ctx.drawCenteredString(this.font, Component.literal("Loading card art..."),
                     this.width / 2, this.height / 2, 0xFFFFFF);
             super.render(ctx, mouseX, mouseY, delta);
             return;
         }
 
         if (texRef == null || texRef.id() == null) {
-            ctx.drawCenteredTextWithShadow(
-                    this.textRenderer,
-                    Text.literal("Loading card art..."),
+            ctx.drawCenteredString(
+                    this.font,
+                    Component.literal("Loading card art..."),
                     this.width / 2,
                     this.height / 2,
                     0xFFFFFF
@@ -1362,7 +1362,7 @@ public class CardLargeViewScreen extends Screen {
                 shadowColor);
 
         // apply transform
-        var m = ctx.getMatrices();
+        var m = ctx.pose();
         m.pushMatrix();
         m.translate(cx, cy);
 
@@ -1372,7 +1372,7 @@ public class CardLargeViewScreen extends Screen {
         m.scale(sx, sy);
         m.translate(-cx, -cy);
 
-        ctx.drawTexture(
+        ctx.blit(
                 RenderPipelines.GUI_TEXTURED,
                 texRef.id(),
                 x, y,
@@ -1411,7 +1411,7 @@ public class CardLargeViewScreen extends Screen {
         // face indicator
         if (faceCount > 1) {
             String s = (renderFace + 1) + "/" + faceCount;
-            ctx.drawTextWithShadow(this.textRenderer, s, cardX + 4, cardY + 4, 0xFFFFFF);
+            ctx.text(this.font, s, cardX + 4, cardY + 4, 0xFFFFFF);
         }
 
         // buttons
@@ -1445,7 +1445,7 @@ public class CardLargeViewScreen extends Screen {
     private static final int HIDE_H = 18;
 
 
-    private void drawHideButton(DrawContext ctx, int mouseX, int mouseY) {
+    private void drawHideButton(GuiGraphics ctx, int mouseX, int mouseY) {
         int bx = this.width - 8 - HIDE_W;
         int by = 8;
 
@@ -1461,21 +1461,21 @@ public class CardLargeViewScreen extends Screen {
         ctx.fill(hideX, hideY, hideX + hideW, hideY + hideH, bg);
 
         String label = hidden ? "Facedown: ON" : "Facedown: OFF";
-        int tw = this.textRenderer.getWidth(label);
+        int tw = this.font.width(label);
         int tx = hideX + (hideW - tw) / 2;
-        int ty = hideY + (hideH - this.textRenderer.fontHeight) / 2;
+        int ty = hideY + (hideH - this.font.lineHeight) / 2;
 
-        ctx.drawText(this.textRenderer, label, tx, ty, 0xFFFFFFFF, false);
+        ctx.text(this.font, label, tx, ty, 0xFFFFFFFF, false);
 
         if (hover) {
-            ctx.drawTooltip(this.textRenderer,
-                    Text.literal(hidden ? "Reveal card face" : "Hide as facedown"),
+            ctx.setTooltipForNextFrame(this.font,
+                    Component.literal(hidden ? "Reveal card face" : "Hide as facedown"),
                     mouseX, mouseY);
         }
     }
 
 
-    private void drawInfoButton(DrawContext ctx, int mouseX, int mouseY) {
+    private void drawInfoButton(GuiGraphics ctx, int mouseX, int mouseY) {
         infoX = 8;
         infoY = 8;
         infoW = INFO_SIZE;
@@ -1488,14 +1488,14 @@ public class CardLargeViewScreen extends Screen {
         ctx.fill(infoX - 1, infoY - 1, infoX + INFO_SIZE + 1, infoY + INFO_SIZE + 1, border);
         ctx.fill(infoX, infoY, infoX + INFO_SIZE, infoY + INFO_SIZE, bg);
 
-        ctx.drawText(this.textRenderer, "i",
-                infoX + (INFO_SIZE - this.textRenderer.getWidth("i")) / 2,
-                infoY + (INFO_SIZE - this.textRenderer.fontHeight) / 2,
+        ctx.text(this.font, "i",
+                infoX + (INFO_SIZE - this.font.width("i")) / 2,
+                infoY + (INFO_SIZE - this.font.lineHeight) / 2,
                 0xFFFFFFFF, false);
 
         if (infoHover) {
-            ctx.drawTooltip(this.textRenderer,
-                    Text.literal(infoOpen ? "Hide info (Tab)" : "Show info (Tab)"),
+            ctx.setTooltipForNextFrame(this.font,
+                    Component.literal(infoOpen ? "Hide info (Tab)" : "Show info (Tab)"),
                     mouseX, mouseY);
         }
     }
@@ -1504,7 +1504,7 @@ public class CardLargeViewScreen extends Screen {
         return v < 0f ? 0f : (v > 1f ? 1f : v);
     }
 
-    private void drawFlipButton(DrawContext ctx, int mouseX, int mouseY) {
+    private void drawFlipButton(GuiGraphics ctx, int mouseX, int mouseY) {
         int bx = cardX - BTN_PAD - FLIP_SIZE;
         int by = cardY + (cardH - FLIP_SIZE) / 2;
 
@@ -1523,7 +1523,7 @@ public class CardLargeViewScreen extends Screen {
 
         float radians = (float) (rotSteps * (Math.PI / 2.0));
 
-        var m = ctx.getMatrices();
+        var m = ctx.pose();
         m.pushMatrix();
         m.translate(cxx, cyy);
         m.rotate(radians);
@@ -1535,8 +1535,8 @@ public class CardLargeViewScreen extends Screen {
         String glyph = (faceIndex == 0) ? "↻" : "↺";
         float scale = 2.6f;
 
-        int tw = this.textRenderer.getWidth(glyph);
-        int th = this.textRenderer.fontHeight;
+        int tw = this.font.width(glyph);
+        int th = this.font.lineHeight;
 
         float drawX = cxx - (tw * scale) / 2f;
         float drawY = cyy - (th * scale) / 2f;
@@ -1544,17 +1544,17 @@ public class CardLargeViewScreen extends Screen {
         m.pushMatrix();
         m.translate(drawX, drawY);
         m.scale(scale, scale);
-        ctx.drawText(this.textRenderer, glyph, 0, 0, 0xFFFFE070, false);
+        ctx.text(this.font, glyph, 0, 0, 0xFFFFE070, false);
         m.popMatrix();
 
         m.popMatrix();
 
         if (hover) {
-            ctx.drawTooltip(this.textRenderer, Text.literal("Flip card (R)"), mouseX, mouseY);
+            ctx.setTooltipForNextFrame(this.font, Component.literal("Flip card (R)"), mouseX, mouseY);
         }
     }
 
-    private void drawRotateButton(DrawContext ctx, int mouseX, int mouseY) {
+    private void drawRotateButton(GuiGraphics ctx, int mouseX, int mouseY) {
         int bx = cardX - BTN_PAD - FLIP_SIZE;
         int by = cardY + (cardH - FLIP_SIZE) / 2 - (FLIP_SIZE + BTN_GAP);
 
@@ -1574,27 +1574,27 @@ public class CardLargeViewScreen extends Screen {
         String glyph = "⟳";
         float scale = 2.4f;
 
-        int tw = this.textRenderer.getWidth(glyph);
-        int th = this.textRenderer.fontHeight;
+        int tw = this.font.width(glyph);
+        int th = this.font.lineHeight;
 
         float cxx = bx + FLIP_SIZE / 2f;
         float cyy = by + FLIP_SIZE / 2f;
 
-        var m = ctx.getMatrices();
+        var m = ctx.pose();
         m.pushMatrix();
         m.translate(cxx, cyy);
         m.scale(scale, scale);
-        ctx.drawText(this.textRenderer, glyph, -tw / 2, -th / 2, 0xFF70E0FF, false);
+        ctx.text(this.font, glyph, -tw / 2, -th / 2, 0xFF70E0FF, false);
         m.popMatrix();
 
         if (hover) {
-            ctx.drawTooltip(this.textRenderer, Text.literal("Rotate 90° (E)"), mouseX, mouseY);
+            ctx.setTooltipForNextFrame(this.font, Component.literal("Rotate 90° (E)"), mouseX, mouseY);
         }
     }
 
     // ---------------- INFO PANEL ----------------
 
-    private void drawInfoPanel(DrawContext ctx, int mouseX, int mouseY) {
+    private void drawInfoPanel(GuiGraphics ctx, int mouseX, int mouseY) {
             int panelX = 8;
             int panelY = 8 + INFO_SIZE + 6;
             int panelW = 190;
@@ -1616,13 +1616,13 @@ public class CardLargeViewScreen extends Screen {
             }
     }
 
-    private void drawInfoTab(DrawContext ctx, int x, int y, int panelW, int panelY, int panelH, int mouseX, int mouseY) {
+    private void drawInfoTab(GuiGraphics ctx, int x, int y, int panelW, int panelY, int panelH, int mouseX, int mouseY) {
         // Title
-        ctx.drawTextWithShadow(this.textRenderer, Text.literal("Card Info"), x, y, 0xFFFFFFFF);
+        ctx.text(this.font, Component.literal("Card Info"), x, y, 0xFFFFFFFF);
         y += 16;
 
         // NBT card header (name + set line)
-        NbtCompound meta = getMeta(stack);
+        CompoundTag meta = getMeta(stack);
 
         String name = meta.getString("name").orElse("Unknown Card");
         String set = meta.getString("set").orElse("—").toUpperCase();
@@ -1632,17 +1632,17 @@ public class CardLargeViewScreen extends Screen {
 
         // Name (trim if too wide)
         name = trimToWidth(name, panelW - 20);
-        ctx.drawTextWithShadow(this.textRenderer, Text.literal(name), x, y, 0xFFFFFFFF);
+        ctx.text(this.font, Component.literal(name), x, y, 0xFFFFFFFF);
         y += 12;
 
         String sub = set + " • " + rarity + " • #" + collector;
         sub = trimToWidth(sub, panelW - 20);
-        ctx.drawTextWithShadow(this.textRenderer, Text.literal(sub), x, y, 0xFFAAAAAA);
+        ctx.text(this.font, Component.literal(sub), x, y, 0xFFAAAAAA);
         y += 12;
 
         // Type line
         typeLine = trimToWidth(typeLine, panelW - 20);
-        ctx.drawTextWithShadow(this.textRenderer, Text.literal(typeLine), x, y, 0xFFAAAAAA);
+        ctx.text(this.font, Component.literal(typeLine), x, y, 0xFFAAAAAA);
         y += 14;
 
         ScryfallInfoManager.Entry e = (currentScryfallId == null) ? null : ScryfallInfoManager.getCached(currentScryfallId);
@@ -1660,10 +1660,10 @@ public class CardLargeViewScreen extends Screen {
         };
 
         // Current prices header + configured item + rounded value
-        Text header = Text.literal("Current prices");
-        ctx.drawTextWithShadow(this.textRenderer, header, x, y, 0xFF70E0FF);
+        Component header = Component.literal("Current prices");
+        ctx.text(this.font, header, x, y, 0xFF70E0FF);
 
-        int headerW = this.textRenderer.getWidth(header);
+        int headerW = this.font.width(header);
         int iconX = x + headerW + 6;
         int iconY = y - 5;
 
@@ -1672,11 +1672,11 @@ public class CardLargeViewScreen extends Screen {
             PriceResult result = resolvePrice(e);
             int amount = roundPriceToWhole(result.value());
 
-            ctx.drawItem(priceStack, iconX, iconY);
+            ctx.renderItem(priceStack, iconX, iconY);
 
             // Always keep the item amount white; only color the matching currency row(s)
-            ctx.drawTextWithShadow(
-                    this.textRenderer,
+            ctx.text(
+                    this.font,
                     String.valueOf(amount),
                     iconX + 18,
                     y,
@@ -1687,7 +1687,7 @@ public class CardLargeViewScreen extends Screen {
         y += 14;
 
         if (e == null) {
-            ctx.drawTextWithShadow(this.textRenderer, Text.literal("Loading..."), x, y, 0xFFAAAAAA);
+            ctx.text(this.font, Component.literal("Loading..."), x, y, 0xFFAAAAAA);
             y += 12;
         } else {
             int baseKey = 0xFFDDDDDD;
@@ -1719,11 +1719,11 @@ public class CardLargeViewScreen extends Screen {
 
         y += 8;
 
-        ctx.drawTextWithShadow(this.textRenderer, Text.literal("Format legality"), x, y, 0xFF70E0FF);
+        ctx.text(this.font, Component.literal("Format legality"), x, y, 0xFF70E0FF);
         y += 14;
 
         if (e == null) {
-            ctx.drawTextWithShadow(this.textRenderer, Text.literal("Loading..."), x, y, 0xFFAAAAAA);
+            ctx.text(this.font, Component.literal("Loading..."), x, y, 0xFFAAAAAA);
             return;
         }
 
@@ -1767,8 +1767,8 @@ public class CardLargeViewScreen extends Screen {
             String label = prettyFormatName(key);
             label = trimToWidth(label, 84); // keep aligned with value column
 
-            ctx.drawText(this.textRenderer, label + ":", listX, rowY, 0xFFDDDDDD, false);
-            ctx.drawText(this.textRenderer, prettyLegality(status), listX + 88, rowY, legalityColor(status), false);
+            ctx.text(this.font, label + ":", listX, rowY, 0xFFDDDDDD, false);
+            ctx.text(this.font, prettyLegality(status), listX + 88, rowY, legalityColor(status), false);
         }
 
         ctx.disableScissor();
@@ -1777,16 +1777,16 @@ public class CardLargeViewScreen extends Screen {
         drawLegalityScrollbar(ctx, rows.size(), listX + contentW + 4, listY, SCROLLBAR_W, listH);
     }
 
-    private void drawCountersTab(DrawContext ctx, int x, int y, int panelW, int panelY, int panelH, int mouseX, int mouseY) {
+    private void drawCountersTab(GuiGraphics ctx, int x, int y, int panelW, int panelY, int panelH, int mouseX, int mouseY) {
         // Title
-        ctx.drawTextWithShadow(this.textRenderer, Text.literal("Counters"), x, y, 0xFF70E0FF);
+        ctx.text(this.font, Component.literal("Counters"), x, y, 0xFF70E0FF);
         y += 16; // move below title
 
         // Load counters map from NBT
-        NbtCompound counters = getOrCreateCounters(stack);
+        CompoundTag counters = getOrCreateCounters(stack);
 
         // Build sorted list
-        List<String> keys = new ArrayList<>(counters.getKeys());
+        List<String> keys = new ArrayList<>(counters.keySet());
         keys.sort(String::compareToIgnoreCase);
 
         listMinusRects.clear();
@@ -1804,11 +1804,11 @@ public class CardLargeViewScreen extends Screen {
 
         // Empty state (still draw editor below)
         if (keys.isEmpty()) {
-            ctx.drawTextWithShadow(this.textRenderer, Text.literal("No counters yet."), listX, listY, 0xFFAAAAAA);
-            ctx.drawTextWithShadow(this.textRenderer, Text.literal("Type a name, choose an icon, then Create."), listX, listY + 12, 0xFF777777);
+            ctx.text(this.font, Component.literal("No counters yet."), listX, listY, 0xFFAAAAAA);
+            ctx.text(this.font, Component.literal("Type a name, choose an icon, then Create."), listX, listY + 12, 0xFF777777);
 
             drawCountersEditorArea(ctx, panelY, panelH, x, mouseX, mouseY);
-            ctx.drawTextWithShadow(this.textRenderer, Text.literal("Tip: Shift for +/-5"), x, panelY + panelH - 18, 0xFF777777);
+            ctx.text(this.font, Component.literal("Tip: Shift for +/-5"), x, panelY + panelH - 18, 0xFF777777);
             return;
         }
 
@@ -1845,9 +1845,9 @@ public class CardLargeViewScreen extends Screen {
 
             if (iconKey == null || iconKey.equals("none")) {
                 // dash placeholder
-                ctx.drawText(this.textRenderer, "—", iconX + 2, rowY + 2, 0xFF777777, false);
+                ctx.text(this.font, "—", iconX + 2, rowY + 2, 0xFF777777, false);
             } else {
-                Identifier tex = Identifier.of("mtgcard", "textures/gui/counters/" + iconKey + ".png");
+                Identifier tex = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/" + iconKey + ".png");
                 drawIconFit(ctx, tex, iconX, iconY, iconSize, iconSize);
 
             }
@@ -1859,13 +1859,13 @@ public class CardLargeViewScreen extends Screen {
             if (display == null || display.isBlank()) display = toTitle(k.replace('_', ' '));
 
             // leave room for the value on the right
-            int valueW = this.textRenderer.getWidth(val);
+            int valueW = this.font.width(val);
             int reservedRight = (ADJ_BTN + ADJ_GAP) + valueW + (ADJ_GAP + ADJ_BTN); // [-] val [+]
             int maxNameW = Math.max(40, (listW - (iconSize + 4) - reservedRight - 4));
 
             display = trimToWidth(display, maxNameW);
 
-            ctx.drawText(this.textRenderer, display, nameX, rowY + 2, 0xFFDDDDDD, false);
+            ctx.text(this.font, display, nameX, rowY + 2, 0xFFDDDDDD, false);
             int btnY = rowY + (CTR_ROW_H - ADJ_BTN) / 2;
 
             // right edge alignment
@@ -1877,7 +1877,7 @@ public class CardLargeViewScreen extends Screen {
             boolean hoverPlus  = mouseX >= plusX  && mouseX < plusX  + ADJ_BTN && mouseY >= btnY && mouseY < btnY + ADJ_BTN;
 
             drawMiniButton(ctx, minusX, btnY, ADJ_BTN, "-", hoverMinus);
-            ctx.drawText(this.textRenderer, val, valX, rowY + 2, 0xFFFFFFFF, false);
+            ctx.text(this.font, val, valX, rowY + 2, 0xFFFFFFFF, false);
             drawMiniButton(ctx, plusX,  btnY, ADJ_BTN, "+", hoverPlus);
 
             // store click rects for this key
@@ -1886,8 +1886,8 @@ public class CardLargeViewScreen extends Screen {
 
 
             if (hover) {
-                ctx.drawTooltip(this.textRenderer,
-                        Text.literal("Scroll: +/- 1  •  Shift+Scroll: +/- 5  •  Click: select"),
+                ctx.setTooltipForNextFrame(this.font,
+                        Component.literal("Scroll: +/- 1  •  Shift+Scroll: +/- 5  •  Click: select"),
                         mouseX, mouseY);
             }
         }
@@ -1898,22 +1898,22 @@ public class CardLargeViewScreen extends Screen {
         drawCountersEditorArea(ctx, panelY, panelH, x, mouseX, mouseY);
 
         // Tip footer
-        ctx.drawTextWithShadow(this.textRenderer, Text.literal("Tip: Shift for +/-5"), x, panelY + panelH - 18, 0xFF777777);
+        ctx.text(this.font, Component.literal("Tip: Shift for +/-5"), x, panelY + panelH - 18, 0xFF777777);
     }
 
-    private static void editMeta(ItemStack st, java.util.function.Consumer<NbtCompound> mutator) {
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
+    private static void editMeta(ItemStack st, java.util.function.Consumer<CompoundTag> mutator) {
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
 
-        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
         mutator.accept(meta);
 
         root.put("mtg_meta", meta);
-        st.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
     }
 
 
-    private void drawCountersEditorArea(DrawContext ctx, int panelY, int panelH, int x, int mouseX, int mouseY) {
+    private void drawCountersEditorArea(GuiGraphics ctx, int panelY, int panelH, int x, int mouseX, int mouseY) {
         // editor layout (matches initCountersEditorWidgets)
         int panelX = 8;
         int panelW = 190;
@@ -1980,13 +1980,13 @@ public class CardLargeViewScreen extends Screen {
             // draw icon or "—" for none
             if (key.equals("none")) {
                 String dash = "—";
-                int tw = this.textRenderer.getWidth(dash);
-                ctx.drawText(this.textRenderer, dash,
+                int tw = this.font.width(dash);
+                ctx.text(this.font, dash,
                         cx + (cell - tw) / 2,
-                        cy + (cell - this.textRenderer.fontHeight) / 2,
+                        cy + (cell - this.font.lineHeight) / 2,
                         0xFFAAAAAA, false);
             } else {
-                Identifier tex = Identifier.of("mtgcard", "textures/gui/counters/" + key + ".png");
+                Identifier tex = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/" + key + ".png");
                 // Draw the full 16x16 (or whatever) texture into the cell with padding.
                 int ix = cx + ICON_PAD;
                 int iy = cy + ICON_PAD;
@@ -2008,7 +2008,7 @@ public class CardLargeViewScreen extends Screen {
         drawIconScrollbar(ctx, sbX, sbY, sbW, sbH, contentH, areaH, maxScroll);
     }
 
-    private void drawIconScrollbar(DrawContext ctx, int x, int y, int w, int h, int contentH, int viewH, int maxScroll) {
+    private void drawIconScrollbar(GuiGraphics ctx, int x, int y, int w, int h, int contentH, int viewH, int maxScroll) {
         // track
         ctx.fill(x, y, x + w, y + h, 0x55202020);
 
@@ -2038,32 +2038,32 @@ public class CardLargeViewScreen extends Screen {
         iconBarH = thumbH;
     }
 
-    private static NbtCompound getOrCreateCounters(ItemStack st) {
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
-        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+    private static CompoundTag getOrCreateCounters(ItemStack st) {
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
+        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
 
-        NbtCompound counters = meta.getCompound("counters").orElseGet(NbtCompound::new);
+        CompoundTag counters = meta.getCompound("counters").orElseGet(CompoundTag::new);
         meta.put("counters", counters);
         root.put("mtg_meta", meta);
 
         // ensure it exists in stack
-        st.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
         return counters;
     }
 
     private static void setCounter(ItemStack st, String key, int value) {
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
-        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
-        NbtCompound counters = meta.getCompound("counters").orElseGet(NbtCompound::new);
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
+        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
+        CompoundTag counters = meta.getCompound("counters").orElseGet(CompoundTag::new);
 
         // Clamp at 0 instead of deleting
         counters.putInt(key, Math.max(0, value));
 
         meta.put("counters", counters);
         root.put("mtg_meta", meta);
-        st.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
     }
 
     private static List<String> cachedCounterIconKeys;
@@ -2071,7 +2071,7 @@ public class CardLargeViewScreen extends Screen {
     private static List<String> loadCounterIconKeys() {
         if (cachedCounterIconKeys != null) return cachedCounterIconKeys;
 
-        var client = net.minecraft.client.MinecraftClient.getInstance();
+        var client = net.minecraft.client.Minecraft.getInstance();
         if (client == null) return cachedCounterIconKeys = List.of();
 
         var rm = client.getResourceManager();
@@ -2084,23 +2084,23 @@ public class CardLargeViewScreen extends Screen {
         return cachedCounterIconKeys;
     }
 
-    private void drawMiniButton(DrawContext ctx, int x, int y, int size, String glyph, boolean hover) {
+    private void drawMiniButton(GuiGraphics ctx, int x, int y, int size, String glyph, boolean hover) {
         int border = hover ? 0xFF70E0FF : 0xFF404040;
         int bg     = hover ? 0xCC1A1A1A : 0xAA101010;
 
         ctx.fill(x - 1, y - 1, x + size + 1, y + size + 1, border);
         ctx.fill(x, y, x + size, y + size, bg);
 
-        int tw = this.textRenderer.getWidth(glyph);
+        int tw = this.font.width(glyph);
         int tx = x + (size - tw) / 2;
-        int ty = y + (size - this.textRenderer.fontHeight) / 2;
-        ctx.drawText(this.textRenderer, glyph, tx, ty, 0xFFFFFFFF, false);
+        int ty = y + (size - this.font.lineHeight) / 2;
+        ctx.text(this.font, glyph, tx, ty, 0xFFFFFFFF, false);
     }
 
     private void adjustCounterValue(String key, int deltaSteps) {
         if (key == null || key.isBlank()) return;
 
-        NbtCompound counters = getOrCreateCounters(stack);
+        CompoundTag counters = getOrCreateCounters(stack);
         int cur = counters.getInt(key).orElse(0);
 
         int step = isShiftDown() ? 5 : 1;
@@ -2110,11 +2110,11 @@ public class CardLargeViewScreen extends Screen {
         sendCounterValueUpdate(key, next);
     }
 
-    private static Set<String> listPngKeys(net.minecraft.resource.ResourceManager rm, String folder) {
+    private static Set<String> listPngKeys(net.minecraft.server.packs.resources.ResourceManager rm, String folder) {
         Set<String> out = new HashSet<>();
         try {
             // Finds all resources under folder (namespace aware). Filter to your namespace.
-            rm.findResources(folder, id -> id.getNamespace().equals("mtgcard") && id.getPath().endsWith(".png"))
+            rm.listResources(folder, id -> id.getNamespace().equals("mtgcard") && id.getPath().endsWith(".png"))
                     .forEach((id, res) -> {
                         String path = id.getPath(); // e.g. textures/gui/counters/poison.png
                         String name = path.substring(path.lastIndexOf('/') + 1, path.length() - 4); // poison
@@ -2125,7 +2125,7 @@ public class CardLargeViewScreen extends Screen {
     }
 
 
-    private void drawLegalityScrollbar(DrawContext ctx, int rows, int barX, int barY, int barW, int barH) {
+    private void drawLegalityScrollbar(GuiGraphics ctx, int rows, int barX, int barY, int barW, int barH) {
         legBarX = barX;
         legBarY = barY;
         legBarW = barW;
@@ -2164,16 +2164,16 @@ public class CardLargeViewScreen extends Screen {
         legBarH = thumbH;
     }
 
-    private int drawKv(DrawContext ctx, int x, int y, String k, String v, int keyColor, int valueColor) {
+    private int drawKv(GuiGraphics ctx, int x, int y, String k, String v, int keyColor, int valueColor) {
         if (v == null) v = "—";
         if (v.endsWith("—")) v = "—";
-        ctx.drawText(this.textRenderer, k + ":", x, y, keyColor, false);
-        ctx.drawText(this.textRenderer, v, x + 88, y, valueColor, false);
+        ctx.text(this.font, k + ":", x, y, keyColor, false);
+        ctx.text(this.font, v, x + 88, y, valueColor, false);
         return y + 12;
     }
 
     // Convenience overload (old behavior)
-    private int drawKv(DrawContext ctx, int x, int y, String k, String v) {
+    private int drawKv(GuiGraphics ctx, int x, int y, String k, String v) {
         return drawKv(ctx, x, y, k, v, 0xFFDDDDDD, 0xFFFFFFFF);
     }
 
@@ -2183,12 +2183,12 @@ public class CardLargeViewScreen extends Screen {
 
         Identifier id;
         try {
-            id = Identifier.of(raw.trim());
+            id = Identifier.parse(raw.trim());
         } catch (Throwable ignored) {
-            id = Identifier.of("minecraft:diamond");
+            id = Identifier.parse("minecraft:diamond");
         }
 
-        Item item = Registries.ITEM.get(id);
+        Item item = BuiltInRegistries.ITEM.getValue(id);
         if (item == null) item = Items.DIAMOND;
 
         return new ItemStack(item);
@@ -2240,7 +2240,7 @@ public class CardLargeViewScreen extends Screen {
     private PriceResult resolvePrice(ScryfallInfoManager.Entry e) {
         if (e == null) return new PriceResult("0", PriceTier.NORMAL);
 
-        boolean preferFoil = stack.hasGlint();
+        boolean preferFoil = stack.hasFoil();
 
         String basis = MtgcardConfig.get().Price_Basis;
         if (basis == null) basis = "USD";
@@ -2329,21 +2329,21 @@ public class CardLargeViewScreen extends Screen {
 
     private String trimToWidth(String s, int maxPx) {
         if (s == null) return "—";
-        if (this.textRenderer.getWidth(s) <= maxPx) return s;
+        if (this.font.width(s) <= maxPx) return s;
 
         String ell = "...";
-        int ellW = this.textRenderer.getWidth(ell);
+        int ellW = this.font.width(ell);
         String t = s;
-        while (!t.isEmpty() && this.textRenderer.getWidth(t) + ellW > maxPx) {
+        while (!t.isEmpty() && this.font.width(t) + ellW > maxPx) {
             t = t.substring(0, t.length() - 1);
         }
         return t.isEmpty() ? ell : (t + ell);
     }
 
-    private static NbtCompound getMeta(ItemStack st) {
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
-        return root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+    private static CompoundTag getMeta(ItemStack st) {
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
+        return root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
     }
 
     // ------------------------------------------------------------
@@ -2351,46 +2351,46 @@ public class CardLargeViewScreen extends Screen {
     // ------------------------------------------------------------
 
     private static int readFaceIndex(ItemStack st) {
-        NbtCompound meta = getMeta(st);
+        CompoundTag meta = getMeta(st);
         return meta.getInt("mtg_face").orElse(0);
     }
 
     private static int readFaceCount(ItemStack st) {
-        NbtCompound meta = getMeta(st);
+        CompoundTag meta = getMeta(st);
 
-        NbtElement el = meta.get("card_faces");
-        if (el instanceof NbtList list) return Math.max(1, list.size());
+        Tag el = meta.get("card_faces");
+        if (el instanceof ListTag list) return Math.max(1, list.size());
         return 1;
     }
 
     private static void writeFaceIndex(ItemStack st, int idx) {
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
-        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
+        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
 
         meta.putInt("mtg_face", idx);
         root.put("mtg_meta", meta);
 
-        st.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
     }
 
     private static int readRotation(ItemStack st) {
-        NbtCompound meta = getMeta(st);
+        CompoundTag meta = getMeta(st);
         return meta.getInt("mtg_rot").orElse(0) & 3;
     }
 
     private static void writeRotation(ItemStack st, int rot) {
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
-        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
+        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
 
         meta.putInt("mtg_rot", rot & 3);
         root.put("mtg_meta", meta);
 
-        st.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
     }
 
-    private static int kiKeyCode(KeyInput key) {
+    private static int kiKeyCode(KeyEvent key) {
         try { return (int) key.getClass().getMethod("keyCode").invoke(key); } catch (Throwable ignored) {}
         try { return (int) key.getClass().getMethod("key").invoke(key); } catch (Throwable ignored) {}
         try { var f = key.getClass().getDeclaredField("keyCode"); f.setAccessible(true); return f.getInt(key); } catch (Throwable ignored) {}
@@ -2437,3 +2437,4 @@ public class CardLargeViewScreen extends Screen {
     }
 
 }
+

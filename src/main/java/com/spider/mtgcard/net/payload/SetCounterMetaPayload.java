@@ -1,24 +1,25 @@
 package com.spider.mtgcard.net.payload;
 
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload.Type;
+import net.minecraft.resources.Identifier;
 
-public record SetCounterMetaPayload(int hand, String key, String displayName, String iconKey) implements CustomPayload {
-    public static final Id<SetCounterMetaPayload> ID =
-            new Id<>(Identifier.of("mtgcard", "set_counter_meta"));
+public record SetCounterMetaPayload(int hand, String key, String displayName, String iconKey) implements CustomPacketPayload {
+    public static final Type<SetCounterMetaPayload> ID =
+            new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "set_counter_meta"));
 
-    public static final PacketCodec<RegistryByteBuf, SetCounterMetaPayload> CODEC =
-            PacketCodec.tuple(
-                    PacketCodecs.VAR_INT, SetCounterMetaPayload::hand,
-                    PacketCodecs.STRING,  SetCounterMetaPayload::key,
-                    PacketCodecs.STRING,  SetCounterMetaPayload::displayName,
-                    PacketCodecs.STRING,  SetCounterMetaPayload::iconKey,
+    public static final StreamCodec<RegistryFriendlyByteBuf, SetCounterMetaPayload> CODEC =
+            StreamCodec.composite(
+                    ByteBufCodecs.VAR_INT, SetCounterMetaPayload::hand,
+                    ByteBufCodecs.STRING_UTF8,  SetCounterMetaPayload::key,
+                    ByteBufCodecs.STRING_UTF8,  SetCounterMetaPayload::displayName,
+                    ByteBufCodecs.STRING_UTF8,  SetCounterMetaPayload::iconKey,
                     SetCounterMetaPayload::new
             );
 
     @Override
-    public Id<? extends CustomPayload> getId() { return ID; }
+    public Type<? extends CustomPacketPayload> type() { return ID; }
 }

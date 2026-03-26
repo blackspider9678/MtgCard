@@ -3,11 +3,11 @@ package com.spider.mtgcard.net;
 import com.spider.mtgcard.display.CardDisplayEntity;
 import com.spider.mtgcard.net.payload.CardDisplayPayloads;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.NbtComponent;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.server.world.ServerWorld;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerLevel;
 
 public final class CardDisplayServerNetworking {
 
@@ -15,7 +15,7 @@ public final class CardDisplayServerNetworking {
 
         ServerPlayNetworking.registerGlobalReceiver(CardDisplayPayloads.DisplaySetFaceC2S.ID, (payload, ctx) -> {
             ctx.server().execute(() -> {
-                if (!(ctx.player().getEntityWorld() instanceof ServerWorld sw)) return;
+                if (!(ctx.player().level() instanceof ServerLevel sw)) return;
 
                 CardDisplayEntity e = getDisplayEntity(sw, payload.entityId(), ctx.player().getX(), ctx.player().getY(), ctx.player().getZ());
                 if (e == null) return;
@@ -26,7 +26,7 @@ public final class CardDisplayServerNetworking {
 
         ServerPlayNetworking.registerGlobalReceiver(CardDisplayPayloads.DisplaySetCounterValueC2S.ID, (payload, ctx) -> {
             ctx.server().execute(() -> {
-                if (!(ctx.player().getEntityWorld() instanceof ServerWorld sw)) return;
+                if (!(ctx.player().level() instanceof ServerLevel sw)) return;
 
                 CardDisplayEntity e = getDisplayEntity(sw, payload.entityId(), ctx.player().getX(), ctx.player().getY(), ctx.player().getZ());
                 if (e == null) return;
@@ -37,7 +37,7 @@ public final class CardDisplayServerNetworking {
 
         ServerPlayNetworking.registerGlobalReceiver(CardDisplayPayloads.DisplaySetCounterMetaC2S.ID, (payload, ctx) -> {
             ctx.server().execute(() -> {
-                if (!(ctx.player().getEntityWorld() instanceof ServerWorld sw)) return;
+                if (!(ctx.player().level() instanceof ServerLevel sw)) return;
 
                 CardDisplayEntity e = getDisplayEntity(sw, payload.entityId(), ctx.player().getX(), ctx.player().getY(), ctx.player().getZ());
                 if (e == null) return;
@@ -47,8 +47,8 @@ public final class CardDisplayServerNetworking {
         });
     }
 
-    private static CardDisplayEntity getDisplayEntity(ServerWorld sw, int entityId, double px, double py, double pz) {
-        var ent = sw.getEntityById(entityId);
+    private static CardDisplayEntity getDisplayEntity(ServerLevel sw, int entityId, double px, double py, double pz) {
+        var ent = sw.getEntity(entityId);
         if (!(ent instanceof CardDisplayEntity e)) return null;
 
         // Basic anti-spoof: must be nearby (tweak radius as desired)
@@ -71,23 +71,23 @@ public final class CardDisplayServerNetworking {
 
     // ---- your CUSTOM_DATA editing helpers unchanged ----
 
-    private static NbtCompound getOrCreateMeta(ItemStack st) {
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
-        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+    private static CompoundTag getOrCreateMeta(ItemStack st) {
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
+        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
         root.put("mtg_meta", meta);
-        st.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
         return meta;
     }
 
     private static void setFace(ItemStack st, int faceIdx) {
-        NbtCompound meta = getOrCreateMeta(st);
+        CompoundTag meta = getOrCreateMeta(st);
         meta.putInt("mtg_face", Math.max(0, faceIdx));
 
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
         root.put("mtg_meta", meta);
-        st.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
     }
 
     private static void setCounterValue(ItemStack st, String key, int value) {
@@ -95,16 +95,16 @@ public final class CardDisplayServerNetworking {
         String k = key.trim().toLowerCase(java.util.Locale.ROOT).replace(' ', '_');
         if (k.isBlank()) return;
 
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
-        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
-        NbtCompound counters = meta.getCompound("counters").orElseGet(NbtCompound::new);
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
+        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
+        CompoundTag counters = meta.getCompound("counters").orElseGet(CompoundTag::new);
 
         counters.putInt(k, Math.max(0, value));
         meta.put("counters", counters);
         root.put("mtg_meta", meta);
 
-        st.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
     }
 
     private static void setCounterMeta(ItemStack st, String key, String displayName, String iconKey) {
@@ -116,21 +116,21 @@ public final class CardDisplayServerNetworking {
         String icon = (iconKey == null) ? "none" : iconKey.trim().toLowerCase(java.util.Locale.ROOT).replace(' ', '_');
         if (icon.isBlank()) icon = "none";
 
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
-        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
+        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
 
-        NbtCompound names = meta.getCompound("counter_names").orElseGet(NbtCompound::new);
+        CompoundTag names = meta.getCompound("counter_names").orElseGet(CompoundTag::new);
         if (name.isBlank()) names.remove(k);
         else names.putString(k, name);
         meta.put("counter_names", names);
 
-        NbtCompound icons = meta.getCompound("counter_icons").orElseGet(NbtCompound::new);
+        CompoundTag icons = meta.getCompound("counter_icons").orElseGet(CompoundTag::new);
         icons.putString(k, icon);
         meta.put("counter_icons", icons);
 
         root.put("mtg_meta", meta);
-        st.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
     }
 
     private CardDisplayServerNetworking() {}

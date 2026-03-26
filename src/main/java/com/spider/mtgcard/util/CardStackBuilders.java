@@ -2,15 +2,15 @@ package com.spider.mtgcard.util;
 
 import com.spider.mtgcard.content.pack.cache.ScryfallModels;
 import com.spider.mtgcard.item.ModItems;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.NbtComponent;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtList;
-import net.minecraft.nbt.NbtString;
-import net.minecraft.text.Style;
-import net.minecraft.text.Text;
-import net.minecraft.text.TextColor;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.StringTag;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.TextColor;
 
 import java.util.Locale;
 import java.util.Map;
@@ -25,7 +25,7 @@ public final class CardStackBuilders {
 
         ItemStack card = new ItemStack(ModItems.CARD);
 
-        NbtCompound meta = new NbtCompound();
+        CompoundTag meta = new CompoundTag();
         meta.putString("id", customId);
 
         // Mark + identify
@@ -46,15 +46,15 @@ public final class CardStackBuilders {
         meta.putInt("mtg_face", 0);
         meta.putString("mtg_uid", UUID.randomUUID().toString());
 
-        NbtCompound root = new NbtCompound();
+        CompoundTag root = new CompoundTag();
         root.put("mtg_meta", meta);
-        card.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        card.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
 
         // ✅ Give ID-only customs a visible debug name (since no meta.name here)
         applyColoredNameIfUnset(card, "Custom " + customId, "special");
 
         if (foilVisual) {
-            card.set(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, true);
+            card.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
         }
 
         return card;
@@ -64,7 +64,7 @@ public final class CardStackBuilders {
         if (m == null || m.id == null || m.id.isBlank()) return ItemStack.EMPTY;
 
         ItemStack card = new ItemStack(ModItems.CARD);
-        NbtCompound meta = new NbtCompound();
+        CompoundTag meta = new CompoundTag();
 
         meta.putString("id", m.id);
 
@@ -96,14 +96,14 @@ public final class CardStackBuilders {
         meta.putInt("mtg_face", 0);
         meta.putString("mtg_uid", UUID.randomUUID().toString());
 
-        NbtCompound root = new NbtCompound();
+        CompoundTag root = new CompoundTag();
         root.put("mtg_meta", meta);
-        card.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        card.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
 
         // ✅ IMPORTANT: give it a visible name so it’s not just "Card"
         applyColoredNameIfUnset(card, m.name, m.rarity);
 
-        if (foilVisual) card.set(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, true);
+        if (foilVisual) card.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
         return card;
     }
 
@@ -117,7 +117,7 @@ public final class CardStackBuilders {
         ItemStack card = new ItemStack(ModItems.CARD);
         if (c == null) return new ItemStack(ModItems.CARD);
 
-        NbtCompound meta = new NbtCompound();
+        CompoundTag meta = new CompoundTag();
         if (c.id != null) meta.putString("id", c.id);
         if (c.oracleId != null) meta.putString("oracle_id", c.oracleId);
         if (c.name != null) meta.putString("name", c.name);
@@ -127,13 +127,13 @@ public final class CardStackBuilders {
         if (c.layout != null) meta.putString("layout", c.layout);
 
         if (c.colors != null && !c.colors.isEmpty()) {
-            NbtList list = new NbtList();
-            for (String col : c.colors) list.add(NbtString.of(col));
+            ListTag list = new ListTag();
+            for (String col : c.colors) list.add(StringTag.valueOf(col));
             meta.put("colors", list);
         }
         if (c.colorIdentity != null && !c.colorIdentity.isEmpty()) {
-            NbtList list = new NbtList();
-            for (String col : c.colorIdentity) list.add(NbtString.of(col));
+            ListTag list = new ListTag();
+            for (String col : c.colorIdentity) list.add(StringTag.valueOf(col));
             meta.put("color_identity", list);
         }
 
@@ -143,7 +143,7 @@ public final class CardStackBuilders {
         meta.putInt("mana_value", c.manaValue);
 
         if (c.legalities != null && !c.legalities.isEmpty()) {
-            NbtCompound leg = new NbtCompound();
+            CompoundTag leg = new CompoundTag();
             for (var e : c.legalities.entrySet()) {
                 if (e.getKey() != null && e.getValue() != null) leg.putString(e.getKey(), e.getValue());
             }
@@ -151,7 +151,7 @@ public final class CardStackBuilders {
         }
 
         if (c.price != null) {
-            NbtCompound p = new NbtCompound();
+            CompoundTag p = new CompoundTag();
             if (c.price.usd != null)       p.putString("usd", c.price.usd);
             if (c.price.usdFoil != null)   p.putString("usdFoil", c.price.usdFoil);
             if (c.price.usdEtched != null) p.putString("usdEtched", c.price.usdEtched);
@@ -170,11 +170,11 @@ public final class CardStackBuilders {
         }
 
         if (c.faces != null && !c.faces.isEmpty()) {
-            NbtList faces = new NbtList();
+            ListTag faces = new ListTag();
             String firstFacePng = null;
 
             for (var fModel : c.faces) {
-                NbtCompound f = new NbtCompound();
+                CompoundTag f = new CompoundTag();
                 if (fModel.name != null) f.putString("name", fModel.name);
 
                 String fPng = bestImageUrl(fModel.imageUris);
@@ -202,13 +202,13 @@ public final class CardStackBuilders {
         meta.putInt("mtg_face", 0);
         meta.putString("mtg_uid", UUID.randomUUID().toString());
 
-        NbtCompound root = new NbtCompound();
+        CompoundTag root = new CompoundTag();
         root.put("mtg_meta", meta);
-        card.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+        card.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
 
         applyColoredNameIfUnset(card, c.name, c.rarity);
         if (foilVisual) {
-            card.set(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, true);
+            card.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
         }
         return card;
     }
@@ -230,19 +230,19 @@ public final class CardStackBuilders {
         if (name == null || name.isBlank()) return;
 
         // If player/anvil already named it, do not override.
-        if (stack.contains(DataComponentTypes.CUSTOM_NAME)) return;
+        if (stack.has(DataComponents.CUSTOM_NAME)) return;
 
         TextColor c = colorForRarity(rarity);
 
         // Display name (what getName() tends to show)
         stack.set(
-                DataComponentTypes.CUSTOM_NAME,
-                Text.literal(name).setStyle(Style.EMPTY.withColor(c).withItalic(false))
+                DataComponents.CUSTOM_NAME,
+                Component.literal(name).setStyle(Style.EMPTY.withColor(c).withItalic(false))
         );
 
         // Plain fallback name (only if missing)
-        if (!stack.contains(DataComponentTypes.ITEM_NAME)) {
-            stack.set(DataComponentTypes.ITEM_NAME, Text.literal(name));
+        if (!stack.has(DataComponents.ITEM_NAME)) {
+            stack.set(DataComponents.ITEM_NAME, Component.literal(name));
         }
     }
 

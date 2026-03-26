@@ -1,8 +1,8 @@
 package com.spider.mtgcard.deckcontrol;
 
-import net.minecraft.util.StringIdentifiable;
+import net.minecraft.util.StringRepresentable;
 
-public enum DeckControlWindowColor implements StringIdentifiable {
+public enum DeckControlWindowColor implements StringRepresentable {
     DEFAULT("default"),
     SOULFIRE("soulfire"),
     REDSTONE("redstone"),
@@ -11,5 +11,5 @@ public enum DeckControlWindowColor implements StringIdentifiable {
     private final String id;
     DeckControlWindowColor(String id) { this.id = id; }
 
-    @Override public String asString() { return id; }
+    @Override public String getSerializedName() { return id; }
 }

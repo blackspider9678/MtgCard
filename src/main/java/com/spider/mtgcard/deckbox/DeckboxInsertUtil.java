@@ -1,6 +1,6 @@
 package com.spider.mtgcard.deckbox;
 
-import net.minecraft.item.ItemStack;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * Helper for inserting store-printed cards into a Deckbox.
@@ -24,11 +24,11 @@ public final class DeckboxInsertUtil {
         final int firstSide = DeckboxBlockEntity.FIRST_SIDE_SLOT; // 99
         // 1) Merge into existing stacks first
         for (int i = 0; i < firstSide; i++) {
-            ItemStack cur = deck.getStack(i);
+            ItemStack cur = deck.getItem(i);
             if (cur.isEmpty()) continue;
 
-            if (ItemStack.areItemsAndComponentsEqual(cur, one) && cur.getCount() < cur.getMaxCount()) {
-                cur.increment(1);
+            if (ItemStack.isSameItemSameComponents(cur, one) && cur.getCount() < cur.getMaxStackSize()) {
+                cur.grow(1);
                 deck.sync();
                 return true;
             }
@@ -36,9 +36,9 @@ public final class DeckboxInsertUtil {
 
         // 2) Place into an empty slot
         for (int i = 0; i < firstSide; i++) {
-            ItemStack cur = deck.getStack(i);
+            ItemStack cur = deck.getItem(i);
             if (cur.isEmpty()) {
-                deck.setStack(i, one.copyWithCount(1));
+                deck.setItem(i, one.copyWithCount(1));
                 deck.sync();
                 return true;
             }

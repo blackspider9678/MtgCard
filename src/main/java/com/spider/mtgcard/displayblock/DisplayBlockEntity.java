@@ -4,26 +4,26 @@ import com.spider.mtgcard.registry.ModBlockEntities;
 import com.spider.mtgcard.life.LifePointBlockEntity;
 import com.spider.mtgcard.life.LifePointPackets;
 import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.NbtComponent;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.network.listener.ClientPlayPacketListener;
-import net.minecraft.network.packet.Packet;
-import net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket;
-import net.minecraft.registry.RegistryWrapper;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.protocol.game.ClientGamePacketListener;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.storage.ReadView;
-import net.minecraft.storage.WriteView;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.world.World;
-import net.minecraft.world.chunk.ChunkStatus;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.resources.Identifier;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayDeque;
@@ -58,20 +58,20 @@ public class DisplayBlockEntity extends BlockEntity {
 
     private void updateReverseLink(@Nullable Identifier oldDim, @Nullable BlockPos oldLife,
                                    @Nullable Identifier newDim, @Nullable BlockPos newLife) {
-        if (world == null || world.isClient()) return;
-        if (!(world instanceof ServerWorld sw)) return;
+        if (level == null || level.isClientSide()) return;
+        if (!(level instanceof ServerLevel sw)) return;
 
         // During shutdown/unload, do NOT touch other chunks/dimensions.
         if (isServerStopping(sw)) return;
 
         // unregister old (NO-LOAD)
         if (oldDim != null && oldLife != null) {
-            getLifeNoLoad(sw, oldDim, oldLife).ifPresent(lp -> lp.removeLinkedDisplay(this.pos));
+            getLifeNoLoad(sw, oldDim, oldLife).ifPresent(lp -> lp.removeLinkedDisplay(this.worldPosition));
         }
 
         // register new (NO-LOAD)
         if (newDim != null && newLife != null) {
-            getLifeNoLoad(sw, newDim, newLife).ifPresent(lp -> lp.addLinkedDisplay(this.pos));
+            getLifeNoLoad(sw, newDim, newLife).ifPresent(lp -> lp.addLinkedDisplay(this.worldPosition));
         }
     }
 
@@ -84,7 +84,7 @@ public class DisplayBlockEntity extends BlockEntity {
 
         updateReverseLink(oldDim, oldPos, dimId, lifePos);
 
-        markDirty();
+        setChanged();
         syncToClient();
     }
 
@@ -97,13 +97,13 @@ public class DisplayBlockEntity extends BlockEntity {
 
         updateReverseLink(oldDim, oldPos, null, null);
 
-        markDirty();
+        setChanged();
         syncToClient();
     }
 
     @Override
-    public void markRemoved() {
-        if (world instanceof ServerWorld sw) {
+    public void setRemoved() {
+        if (level instanceof ServerLevel sw) {
             // Don’t do cross-world/chunk touching during shutdown
             if (!isServerStopping(sw)) {
                 Identifier oldDim = this.linkedDimId;
@@ -111,28 +111,28 @@ public class DisplayBlockEntity extends BlockEntity {
                 updateReverseLink(oldDim, oldPos, null, null);
             }
         }
-        super.markRemoved();
+        super.setRemoved();
     }
 
     public void setControllerPos(BlockPos p) {
         controllerPos = p;
-        markDirty();
+        setChanged();
         syncToClient();
     }
 
     // DisplayBlockEntity.java
 
     public void propagateLinkToUnlinkedComponent() {
-        if (world == null || world.isClient()) return;
+        if (level == null || level.isClientSide()) return;
         if (!hasLink()) return;
 
-        Direction facing = getCachedState().get(DisplayBlock.FACING);
+        Direction facing = getBlockState().getValue(DisplayBlock.FACING);
 
         ArrayDeque<BlockPos> q = new ArrayDeque<>();
         HashSet<BlockPos> visited = new HashSet<>();
 
-        q.add(this.pos);
-        visited.add(this.pos);
+        q.add(this.worldPosition);
+        visited.add(this.worldPosition);
 
         while (!q.isEmpty()) {
             BlockPos cur = q.removeFirst();
@@ -140,14 +140,14 @@ public class DisplayBlockEntity extends BlockEntity {
             for (Direction d : new Direction[]{
                     Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST, Direction.UP, Direction.DOWN
             }) {
-                BlockPos np = cur.offset(d);
+                BlockPos np = cur.relative(d);
                 if (visited.contains(np)) continue;
 
-                BlockEntity nbe = world.getBlockEntity(np);
+                BlockEntity nbe = level.getBlockEntity(np);
                 if (!(nbe instanceof DisplayBlockEntity other)) continue;
 
                 // must be same facing/orientation
-                if (other.getCachedState().get(DisplayBlock.FACING) != facing) continue;
+                if (other.getBlockState().getValue(DisplayBlock.FACING) != facing) continue;
 
                 // If neighbor is linked to a DIFFERENT life, it's a hard boundary
                 if (other.hasLink() && !this.sameLinkAs(other)) continue;
@@ -169,11 +169,11 @@ public class DisplayBlockEntity extends BlockEntity {
     private boolean cacheValid = false;
 
     public boolean isController() {
-        return controllerPos == null || controllerPos.equals(pos);
+        return controllerPos == null || controllerPos.equals(worldPosition);
     }
 
     public BlockPos getControllerPos() {
-        return controllerPos == null ? pos : controllerPos;
+        return controllerPos == null ? worldPosition : controllerPos;
     }
 
     public boolean sameLinkAs(DisplayBlockEntity other) {
@@ -185,10 +185,10 @@ public class DisplayBlockEntity extends BlockEntity {
     public void applyLinkFromItem(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return;
 
-        NbtComponent custom = stack.get(DataComponentTypes.CUSTOM_DATA);
+        CustomData custom = stack.get(DataComponents.CUSTOM_DATA);
         if (custom == null) return;
 
-        NbtCompound nbt = custom.copyNbt(); // safe mutable copy
+        CompoundTag nbt = custom.copyTag(); // safe mutable copy
         if (nbt == null) return;
 
         String dim = nbt.getString(NBT_LINK_DIM).orElse("");
@@ -197,17 +197,17 @@ public class DisplayBlockEntity extends BlockEntity {
         long packed = nbt.getLong(NBT_LINK_POS).orElse(0L);
         if (packed == 0L) return;
 
-        setLink(Identifier.of(dim), BlockPos.fromLong(packed));
+        setLink(Identifier.parse(dim), BlockPos.of(packed));
     }
 
     public Optional<LifePointBlockEntity> resolveLinkedLifeClient() {
-        if (world == null || !world.isClient()) return Optional.empty();
+        if (level == null || !level.isClientSide()) return Optional.empty();
         if (!hasLink()) return Optional.empty();
 
         // Only render if the linked LifeBlock is in the same dimension the client is currently in
-        if (!world.getRegistryKey().getValue().equals(linkedDimId)) return Optional.empty();
+        if (!level.dimension().identifier().equals(linkedDimId)) return Optional.empty();
 
-        var be = world.getBlockEntity(linkedLifePos);
+        var be = level.getBlockEntity(linkedLifePos);
         return (be instanceof LifePointBlockEntity lp) ? Optional.of(lp) : Optional.empty();
     }
 
@@ -227,16 +227,16 @@ public class DisplayBlockEntity extends BlockEntity {
      * - have same facing/orientation
      */
     public void tryInheritLinkFromNeighbors() {
-        if (world == null || world.isClient()) return;
+        if (level == null || level.isClientSide()) return;
 
-        Direction facing = getCachedState().get(DisplayBlock.FACING);
+        Direction facing = getBlockState().getValue(DisplayBlock.FACING);
 
         for (Direction d : new Direction[]{Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST}) {
-            BlockPos np = pos.offset(d);
-            BlockEntity be = world.getBlockEntity(np);
+            BlockPos np = worldPosition.relative(d);
+            BlockEntity be = level.getBlockEntity(np);
             if (!(be instanceof DisplayBlockEntity other)) continue;
 
-            if (other.getCachedState().get(DisplayBlock.FACING) != facing) continue;
+            if (other.getBlockState().getValue(DisplayBlock.FACING) != facing) continue;
             if (!other.hasLink()) continue;
 
             Identifier dim = other.linkedDimId;
@@ -249,12 +249,12 @@ public class DisplayBlockEntity extends BlockEntity {
     }
 
     public void requestRebuild() {
-        if (world == null || world.isClient()) return;
+        if (level == null || level.isClientSide()) return;
 
         // Always rebuild from a nearby controller candidate:
         // if we already know controllerPos, ask it to rebuild; otherwise rebuild self.
         BlockPos cpos = getControllerPos();
-        BlockEntity be = world.getBlockEntity(cpos);
+        BlockEntity be = level.getBlockEntity(cpos);
         if (be instanceof DisplayBlockEntity ctrl) {
             ctrl.rebuildScreenFromController();
         } else {
@@ -263,29 +263,29 @@ public class DisplayBlockEntity extends BlockEntity {
     }
 
     private void rebuildScreenFromController() {
-        if (world == null || world.isClient()) return;
+        if (level == null || level.isClientSide()) return;
 
         // Controller must be a real member of the screen
-        Direction facing = getCachedState().get(DisplayBlock.FACING);
+        Direction facing = getBlockState().getValue(DisplayBlock.FACING);
 
         // Flood-fill set of connected display blocks
         Set<BlockPos> visited = new HashSet<>();
         ArrayDeque<BlockPos> q = new ArrayDeque<>();
-        q.add(pos);
-        visited.add(pos);
+        q.add(worldPosition);
+        visited.add(worldPosition);
 
         while (!q.isEmpty()) {
             BlockPos cur = q.removeFirst();
 
             for (Direction d : new Direction[]{Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST, Direction.UP, Direction.DOWN}) {
-                BlockPos np = cur.offset(d);
+                BlockPos np = cur.relative(d);
                 if (visited.contains(np)) continue;
 
-                BlockEntity nbe = world.getBlockEntity(np);
+                BlockEntity nbe = level.getBlockEntity(np);
                 if (!(nbe instanceof DisplayBlockEntity other)) continue;
 
                 // Must share same facing/orientation to merge
-                if (other.getCachedState().get(DisplayBlock.FACING) != facing) continue;
+                if (other.getBlockState().getValue(DisplayBlock.FACING) != facing) continue;
 
                 // Must be same link to merge (unlinked blocks should have inherited by now)
                 // If either has no link, we DO NOT merge (prevents ambiguity)
@@ -305,7 +305,7 @@ public class DisplayBlockEntity extends BlockEntity {
                     if (a.getZ() != b.getZ()) return Integer.compare(a.getZ(), b.getZ());
                     return Integer.compare(a.getX(), b.getX());
                 })
-                .orElse(pos);
+                .orElse(worldPosition);
 
         // Compute bounds (we'll use for UV mapping later)
         int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
@@ -322,24 +322,24 @@ public class DisplayBlockEntity extends BlockEntity {
 
         // Apply controller + cache to all members
         for (BlockPos p : visited) {
-            BlockEntity mbe = world.getBlockEntity(p);
+            BlockEntity mbe = level.getBlockEntity(p);
             if (!(mbe instanceof DisplayBlockEntity member)) continue;
 
             member.controllerPos = elected; // direct set (avoid extra rebuild ping)
-            member.markDirty();
+            member.setChanged();
         }
 
         // Clear cache on all members (only controller will re-set it)
         for (BlockPos p : visited) {
-            BlockEntity mbe = world.getBlockEntity(p);
+            BlockEntity mbe = level.getBlockEntity(p);
             if (mbe instanceof DisplayBlockEntity member) {
                 member.cacheValid = false;
-                member.markDirty();
+                member.setChanged();
             }
         }
 
         // Store bounds cache only on elected controller
-        BlockEntity ebe = world.getBlockEntity(elected);
+        BlockEntity ebe = level.getBlockEntity(elected);
         if (ebe instanceof DisplayBlockEntity ctrl) {
             ctrl.cachedMinX = minX;
             ctrl.cachedMinY = minY;
@@ -348,13 +348,13 @@ public class DisplayBlockEntity extends BlockEntity {
             ctrl.cachedMaxY = maxY;
             ctrl.cachedMaxZ = maxZ;
             ctrl.cacheValid = true;
-            ctrl.markDirty();
+            ctrl.setChanged();
         }
     }
 
     @Override
-    protected void writeData(WriteView view) {
-        super.writeData(view);
+    protected void saveAdditional(ValueOutput view) {
+        super.saveAdditional(view);
 
         view.putString(NBT_LINK_DIM, linkedDimId == null ? "" : linkedDimId.toString());
         view.putLong(NBT_LINK_POS, linkedLifePos == null ? 0L : linkedLifePos.asLong());
@@ -362,31 +362,31 @@ public class DisplayBlockEntity extends BlockEntity {
     }
 
     @Override
-    protected void readData(ReadView view) {
-        super.readData(view);
+    protected void loadAdditional(ValueInput view) {
+        super.loadAdditional(view);
 
-        String dim = view.getString(NBT_LINK_DIM, "");
-        linkedDimId = (dim == null || dim.isBlank()) ? null : Identifier.of(dim);
+        String dim = view.getStringOr(NBT_LINK_DIM, "");
+        linkedDimId = (dim == null || dim.isBlank()) ? null : Identifier.parse(dim);
 
-        long packed = view.getLong(NBT_LINK_POS, 0L);
-        linkedLifePos = (packed == 0L) ? null : BlockPos.fromLong(packed);
+        long packed = view.getLongOr(NBT_LINK_POS, 0L);
+        linkedLifePos = (packed == 0L) ? null : BlockPos.of(packed);
 
-        long c = view.getLong("ControllerPos", 0L);
-        controllerPos = (c == 0L) ? null : BlockPos.fromLong(c);
+        long c = view.getLongOr("ControllerPos", 0L);
+        controllerPos = (c == 0L) ? null : BlockPos.of(c);
     }
 
     private void syncToClient() {
-        if (world == null || world.isClient()) return;
+        if (level == null || level.isClientSide()) return;
 
         // marks BE for update packet to tracking clients
-        if (world instanceof ServerWorld sw) {
-            sw.getChunkManager().markForUpdate(pos);
+        if (level instanceof ServerLevel sw) {
+            sw.getChunkSource().blockChanged(worldPosition);
         }
     }
 
-    public static void tick(World world, BlockPos pos, BlockState state, DisplayBlockEntity be) {
-        if (world.isClient()) return;
-        if (!(world instanceof ServerWorld sw)) return;
+    public static void tick(Level world, BlockPos pos, BlockState state, DisplayBlockEntity be) {
+        if (world.isClientSide()) return;
+        if (!(world instanceof ServerLevel sw)) return;
 
         // One-time reverse-link registration after load (Yarn has no onLoad())
         if (!be.reverseLinkRegistered) {
@@ -394,7 +394,7 @@ public class DisplayBlockEntity extends BlockEntity {
 
             if (be.hasLink()) {
                 be.updateReverseLink(null, null, be.linkedDimId, be.linkedLifePos);
-                be.markDirty();
+                be.setChanged();
             }
         }
 
@@ -409,7 +409,7 @@ public class DisplayBlockEntity extends BlockEntity {
         if (!be.isController()) return;
         if (!be.hasLink()) return;
 
-        long t = sw.getTime();
+        long t = sw.getGameTime();
         if ((t % 10L) != 0L) return;
 
         be.resolveLinkedLife(sw).ifPresent(lp -> {
@@ -420,17 +420,17 @@ public class DisplayBlockEntity extends BlockEntity {
     }
 
     @Override
-    public NbtCompound toInitialChunkDataNbt(RegistryWrapper.WrapperLookup registries) {
-        return createNbt(registries);
+    public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
+        return saveWithoutMetadata(registries);
     }
 
     @Override
-    public @Nullable Packet<ClientPlayPacketListener> toUpdatePacket() {
-        return BlockEntityUpdateS2CPacket.create(this);
+    public @Nullable Packet<ClientGamePacketListener> getUpdatePacket() {
+        return ClientboundBlockEntityDataPacket.create(this);
     }
 
     /** Resolve linked LifePoint BE on server (uses linked dimension). */
-    public Optional<LifePointBlockEntity> resolveLinkedLife(ServerWorld anyServerWorld) {
+    public Optional<LifePointBlockEntity> resolveLinkedLife(ServerLevel anyServerWorld) {
         if (anyServerWorld == null) return Optional.empty();
         if (!hasLink()) return Optional.empty();
         if (linkedDimId == null || linkedLifePos == null) return Optional.empty();
@@ -438,27 +438,27 @@ public class DisplayBlockEntity extends BlockEntity {
         return getLifeNoLoad(anyServerWorld, linkedDimId, linkedLifePos);
     }
 
-    private boolean isServerStopping(ServerWorld sw) {
+    private boolean isServerStopping(ServerLevel sw) {
         MinecraftServer s = sw.getServer();
-        return s != null && s.isStopping();
+        return s != null && s.isShutdown();
     }
 
     /** No-load lookup for the LifePointBlockEntity in a possibly different dimension. */
-    private Optional<LifePointBlockEntity> getLifeNoLoad(ServerWorld contextWorld, Identifier dimId, BlockPos lifePos) {
+    private Optional<LifePointBlockEntity> getLifeNoLoad(ServerLevel contextWorld, Identifier dimId, BlockPos lifePos) {
         if (contextWorld == null || dimId == null || lifePos == null) return Optional.empty();
 
         MinecraftServer server = contextWorld.getServer();
         if (server == null) return Optional.empty();
 
-        var key = net.minecraft.registry.RegistryKey.of(net.minecraft.registry.RegistryKeys.WORLD, dimId);
-        ServerWorld target = server.getWorld(key);
+        var key = net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, dimId);
+        ServerLevel target = server.getLevel(key);
         if (target == null) return Optional.empty();
 
         // IMPORTANT: do not load chunks here
-        ChunkPos cp = new ChunkPos(lifePos);
-        if (!target.getChunkManager().isChunkLoaded(cp.x, cp.z)) return Optional.empty();
+        ChunkPos cp = new ChunkPos(lifePos.getX() >> 4, lifePos.getZ() >> 4);
+        if (!target.getChunkSource().hasChunk(cp.x(), cp.z())) return Optional.empty();
 
-        var chunk = target.getChunk(cp.x, cp.z, ChunkStatus.FULL, false);
+        var chunk = target.getChunk(cp.x(), cp.z(), ChunkStatus.FULL, false);
         if (chunk == null) return Optional.empty();
 
         BlockEntity be = chunk.getBlockEntity(lifePos);

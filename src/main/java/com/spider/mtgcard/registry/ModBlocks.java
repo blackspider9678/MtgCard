@@ -10,17 +10,17 @@ import com.spider.mtgcard.displayblock.DisplayBlock;
 import com.spider.mtgcard.displayblock.DisplayBlockItem;
 import com.spider.mtgcard.graveyard.GraveyardBlock;
 import com.spider.mtgcard.life.LifePointRegistry;
-import net.minecraft.block.AbstractBlock;
-import net.minecraft.block.Block;
-import net.minecraft.block.MapColor;
-import net.minecraft.block.piston.PistonBehavior;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.Item;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.util.Identifier;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.material.MapColor;
+import net.minecraft.world.level.material.PushReaction;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.Registry;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
 
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -54,7 +54,7 @@ public final class ModBlocks {
     private ModBlocks() {}
 
     public static Identifier id(String path) {
-        return Identifier.of(Mtgcard.MOD_ID, path);
+        return Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, path);
     }
 
     public static void init() {
@@ -64,30 +64,30 @@ public final class ModBlocks {
         // ---- Deckbox ----
         var deckbox = registerBlockWithItem(
                 "deckbox",
-                AbstractBlock.Settings.create()
-                        .mapColor(MapColor.OAK_TAN)
+                BlockBehaviour.Properties.of()
+                        .mapColor(MapColor.WOOD)
                         .strength(2.5f)
-                        .nonOpaque()
-                        .solidBlock((s, w, p) -> false)
-                        .pistonBehavior(PistonBehavior.DESTROY),
+                        .noOcclusion()
+                        .isRedstoneConductor((s, w, p) -> false)
+                        .pushReaction(PushReaction.DESTROY),
                 DeckboxBlock::new,
-                (block, itemSettings) -> new DeckboxBlockItem(block, itemSettings.maxCount(1))
+                (block, itemSettings) -> new DeckboxBlockItem(block, itemSettings.stacksTo(1))
         );
 
         DECKBOX = deckbox.block;
         DECKBOX_ITEM = deckbox.item;
 
         // ---- Deck Control ----
-        var dcSettings = AbstractBlock.Settings.create()
+        var dcSettings = BlockBehaviour.Properties.of()
                 .strength(2.0f)
-                .nonOpaque()
-                .solidBlock((s, w, p) -> false)
-                .suffocates((s, w, p) -> false)
-                .blockVision((s, w, p) -> false)
-                .pistonBehavior(PistonBehavior.DESTROY)
-                .luminance(state -> {
-                    if (!state.get(DeckControlBlock.LIT)) return 0;
-                    return switch (state.get(DeckControlBlock.COLOR)) {
+                .noOcclusion()
+                .isRedstoneConductor((s, w, p) -> false)
+                .isSuffocating((s, w, p) -> false)
+                .isViewBlocking((s, w, p) -> false)
+                .pushReaction(PushReaction.DESTROY)
+                .lightLevel(state -> {
+                    if (!state.getValue(DeckControlBlock.LIT)) return 0;
+                    return switch (state.getValue(DeckControlBlock.COLOR)) {
                         case DEFAULT -> 14;
                         case SOULFIRE -> 10;
                         case REDSTONE -> 7;
@@ -107,23 +107,23 @@ public final class ModBlocks {
         // ---- Card Store ----
         CARD_STORE = registerBlockItem(
                 "card_store",
-                AbstractBlock.Settings.create().strength(2.0f),
+                BlockBehaviour.Properties.of().strength(2.0f),
                 CardStoreBlock::new
         );
 
         // ---- Graveyard ----
         GRAVEYARD = registerBlockItem(
                 "graveyard",
-                AbstractBlock.Settings.create().strength(2.0f),
+                BlockBehaviour.Properties.of().strength(2.0f),
                 GraveyardBlock::new
         );
 
         // ---- Display Block (custom item) ----
         DISPLAY_BLOCK = registerWithItem(
                 "display_block",
-                AbstractBlock.Settings.create()
+                BlockBehaviour.Properties.of()
                         .strength(2.0f)
-                        .pistonBehavior(PistonBehavior.BLOCK),
+                        .pushReaction(PushReaction.BLOCK),
                 DisplayBlock::new,
                 (block, itemSettings) -> new DisplayBlockItem(block, itemSettings)
         );
@@ -131,9 +131,9 @@ public final class ModBlocks {
         // ---- Card Database ----
         CARD_DB = registerBlockItem(
                 "card_database",
-                AbstractBlock.Settings.create()
+                BlockBehaviour.Properties.of()
                         .strength(3.5f)
-                        .requiresTool(),
+                        .requiresCorrectToolForDrops(),
                 CardDatabaseBlock::new
         );
     }
@@ -142,31 +142,31 @@ public final class ModBlocks {
 
     private static <T extends Block> T registerBlockItem(
             String path,
-            AbstractBlock.Settings base,
-            Function<AbstractBlock.Settings, T> ctor
+            BlockBehaviour.Properties base,
+            Function<BlockBehaviour.Properties, T> ctor
     ) {
         return registerWithItem(path, base, ctor, BlockItem::new);
     }
 
     private static <T extends Block> T registerWithItem(
             String path,
-            AbstractBlock.Settings base,
-            Function<AbstractBlock.Settings, T> ctor,
-            BiFunction<Block, Item.Settings, Item> itemFactory
+            BlockBehaviour.Properties base,
+            Function<BlockBehaviour.Properties, T> ctor,
+            BiFunction<Block, net.minecraft.world.item.Item.Properties, Item> itemFactory
     ) {
         Identifier id = id(path);
 
-        RegistryKey<Block> blockKey = RegistryKey.of(RegistryKeys.BLOCK, id);
-        RegistryKey<Item> itemKey = RegistryKey.of(RegistryKeys.ITEM, id);
+        ResourceKey<Block> blockKey = ResourceKey.create(Registries.BLOCK, id);
+        ResourceKey<Item> itemKey = ResourceKey.create(Registries.ITEM, id);
 
         // IMPORTANT in 1.21.x: settings must carry the registry key
-        AbstractBlock.Settings keyedSettings = base.registryKey(blockKey);
+        BlockBehaviour.Properties keyedSettings = base.setId(blockKey);
 
         T block = ctor.apply(keyedSettings);
-        Registry.register(Registries.BLOCK, id, block);
+        Registry.register(BuiltInRegistries.BLOCK, id, block);
 
-        Item.Settings itemSettings = new Item.Settings().registryKey(itemKey);
-        Registry.register(Registries.ITEM, id, itemFactory.apply(block, itemSettings));
+        net.minecraft.world.item.Item.Properties itemSettings = new net.minecraft.world.item.Item.Properties().setId(itemKey);
+        Registry.register(BuiltInRegistries.ITEM, id, itemFactory.apply(block, itemSettings));
 
         return block;
     }
@@ -178,20 +178,20 @@ public final class ModBlocks {
 
     private static <T extends Block> BlockAndItem<T> registerBlockWithItem(
             String path,
-            AbstractBlock.Settings base,
-            Function<AbstractBlock.Settings, T> ctor,
-            BiFunction<Block, Item.Settings, Item> itemFactory
+            BlockBehaviour.Properties base,
+            Function<BlockBehaviour.Properties, T> ctor,
+            BiFunction<Block, net.minecraft.world.item.Item.Properties, Item> itemFactory
     ) {
         Identifier id = id(path);
 
-        RegistryKey<Block> blockKey = RegistryKey.of(RegistryKeys.BLOCK, id);
-        RegistryKey<Item> itemKey   = RegistryKey.of(RegistryKeys.ITEM, id);
+        ResourceKey<Block> blockKey = ResourceKey.create(Registries.BLOCK, id);
+        ResourceKey<Item> itemKey   = ResourceKey.create(Registries.ITEM, id);
 
-        T block = ctor.apply(base.registryKey(blockKey));
-        Registry.register(Registries.BLOCK, id, block);
+        T block = ctor.apply(base.setId(blockKey));
+        Registry.register(BuiltInRegistries.BLOCK, id, block);
 
-        Item item = itemFactory.apply(block, new Item.Settings().registryKey(itemKey));
-        Registry.register(Registries.ITEM, id, item);
+        Item item = itemFactory.apply(block, new net.minecraft.world.item.Item.Properties().setId(itemKey));
+        Registry.register(BuiltInRegistries.ITEM, id, item);
 
         return new BlockAndItem<>(block, item);
     }

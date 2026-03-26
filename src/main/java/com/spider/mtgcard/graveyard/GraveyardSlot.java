@@ -1,9 +1,9 @@
 // com/spider/mtgcard/graveyard/GraveyardSlot.java
 package com.spider.mtgcard.graveyard;
 
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.slot.Slot;
+import net.minecraft.world.Container;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.inventory.Slot;
 
 public class GraveyardSlot extends Slot {
 

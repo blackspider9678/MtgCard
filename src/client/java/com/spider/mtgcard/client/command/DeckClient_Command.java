@@ -4,13 +4,13 @@ package com.spider.mtgcard.client.command;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.NbtComponent;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtList;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.network.chat.Component;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -26,12 +26,12 @@ public final class DeckClient_Command {
     private static final String MTG_CARD_ID = "mtgcard:card";
 
     private static int export(net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource src, String rawName) {
-        MinecraftClient mc = MinecraftClient.getInstance();
+        Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return 0;
 
         String name = sanitizeFilename(rawName);
         if (name.isEmpty()) {
-            src.sendFeedback(Text.literal("§cInvalid deck name."));
+            src.sendFeedback(Component.literal("§cInvalid deck name."));
             return 0;
         }
 
@@ -41,21 +41,21 @@ public final class DeckClient_Command {
         Path txt = uniquePath(dir.resolve(name + ".txt"));
         Path csv = uniquePath(dir.resolve(name + ".csv"));
 
-        ItemStack hand = mc.player.getMainHandStack();
+        ItemStack hand = mc.player.getMainHandItem();
         if (hand.isEmpty()) {
-            src.sendFeedback(Text.literal("§cHold a Deckbox to export."));
+            src.sendFeedback(Component.literal("§cHold a Deckbox to export."));
             return 0;
         }
 
         // If you prefer a stricter check, swap this to your deckbox item instance check.
         if (!(hand.getItem() instanceof com.spider.mtgcard.deckbox.DeckboxBlockItem)) {
-            src.sendFeedback(Text.literal("§cHold a Deckbox to export."));
+            src.sendFeedback(Component.literal("§cHold a Deckbox to export."));
             return 0;
         }
 
         List<ExportRow> rows = readDeckboxExportRows(hand);
         if (rows.isEmpty()) {
-            src.sendFeedback(Text.literal("§eDeckbox has no MTG cards to export."));
+            src.sendFeedback(Component.literal("§eDeckbox has no MTG cards to export."));
             return 0;
         }
 
@@ -85,20 +85,20 @@ public final class DeckClient_Command {
             Files.writeString(txt, txtOut.toString(), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
             Files.writeString(csv, csvOut.toString(), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         } catch (IOException e) {
-            src.sendFeedback(Text.literal("§cFailed to export: §7" + e.getMessage()));
+            src.sendFeedback(Component.literal("§cFailed to export: §7" + e.getMessage()));
             return 0;
         }
 
-        src.sendFeedback(Text.literal("§aExported deck:\n§7- §f" + txt.getFileName() + "\n§7- §f" + csv.getFileName()));
-        src.sendFeedback(Text.literal("§7Saved to: §e" + dir.toAbsolutePath()));
+        src.sendFeedback(Component.literal("§aExported deck:\n§7- §f" + txt.getFileName() + "\n§7- §f" + csv.getFileName()));
+        src.sendFeedback(Component.literal("§7Saved to: §e" + dir.toAbsolutePath()));
         return 1;
     }
 
     private static int list(net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource src) {
         Path dir = decksDir();
         if (!Files.exists(dir)) {
-            src.sendFeedback(Text.literal("§aDecks (Found §e0§a)."));
-            src.sendFeedback(Text.literal("§7Folder will be created on first export: §e" + dir.toAbsolutePath()));
+            src.sendFeedback(Component.literal("§aDecks (Found §e0§a)."));
+            src.sendFeedback(Component.literal("§7Folder will be created on first export: §e" + dir.toAbsolutePath()));
             return 1;
         }
 
@@ -113,15 +113,15 @@ public final class DeckClient_Command {
                     .sorted()
                     .toList();
 
-            src.sendFeedback(Text.literal("§aDecks (Found §e" + names.size() + "§a):"));
+            src.sendFeedback(Component.literal("§aDecks (Found §e" + names.size() + "§a):"));
             if (names.isEmpty()) {
-                src.sendFeedback(Text.literal("§7- (none)"));
+                src.sendFeedback(Component.literal("§7- (none)"));
             } else {
-                for (String fn : names) src.sendFeedback(Text.literal("§7- §f" + fn));
+                for (String fn : names) src.sendFeedback(Component.literal("§7- §f" + fn));
             }
             return 1;
         } catch (IOException e) {
-            src.sendFeedback(Text.literal("§cFailed to list decks: §7" + e.getMessage()));
+            src.sendFeedback(Component.literal("§cFailed to list decks: §7" + e.getMessage()));
             return 0;
         }
     }
@@ -178,10 +178,10 @@ public final class DeckClient_Command {
     ) {}
 
     private static List<ExportRow> readDeckboxExportRows(ItemStack deckbox) {
-        NbtComponent comp = deckbox.get(DataComponentTypes.CUSTOM_DATA);
+        CustomData comp = deckbox.get(DataComponents.CUSTOM_DATA);
         if (comp == null) return List.of();
 
-        NbtCompound root = comp.copyNbt();
+        CompoundTag root = comp.copyTag();
         if (root == null) return List.of();
 
         var beTagOpt = root.getCompound("BlockEntityTag");
@@ -190,16 +190,16 @@ public final class DeckClient_Command {
         var itemsOpt = beTagOpt.get().getList("Items");
         if (itemsOpt.isEmpty()) return List.of();
 
-        NbtList items = itemsOpt.get();
+        ListTag items = itemsOpt.get();
         Map<String, MutableAgg> agg = new LinkedHashMap<>();
 
         for (int i = 0; i < items.size(); i++) {
-            if (!(items.get(i) instanceof NbtCompound entry)) continue;
+            if (!(items.get(i) instanceof CompoundTag entry)) continue;
 
             var stackOpt = entry.getCompound("Stack");
             if (stackOpt.isEmpty()) continue;
 
-            NbtCompound st = stackOpt.get();
+            CompoundTag st = stackOpt.get();
 
             String itemId = st.getString("id").orElse("");
             if (!MTG_CARD_ID.equals(itemId)) continue;
@@ -208,15 +208,15 @@ public final class DeckClient_Command {
 
             var compsOpt = st.getCompound("components");
             if (compsOpt.isEmpty()) continue;
-            NbtCompound comps = compsOpt.get();
+            CompoundTag comps = compsOpt.get();
 
             var customDataOpt = comps.getCompound("minecraft:custom_data");
             if (customDataOpt.isEmpty()) continue;
-            NbtCompound customData = customDataOpt.get();
+            CompoundTag customData = customDataOpt.get();
 
             var metaOpt = customData.getCompound("mtg_meta");
             if (metaOpt.isEmpty()) continue;
-            NbtCompound meta = metaOpt.get();
+            CompoundTag meta = metaOpt.get();
 
             String name = meta.getString("name").orElse("");
             String set = meta.getString("set").orElse("");

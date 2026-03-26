@@ -3,20 +3,20 @@ package com.spider.mtgcard.life;
 import com.spider.mtgcard.registry.ModBlockEntities;
 import it.unimi.dsi.fastutil.longs.Long2IntMap;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.attribute.EntityAttributes;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.entity.mob.ShulkerEntity;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.storage.ReadView;
-import net.minecraft.storage.WriteView;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.monster.Shulker;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
 
 import java.util.*;
 
@@ -81,7 +81,7 @@ public class LifePointBlockEntity extends BlockEntity {
         counterIcons.put("energy", "energy");
     }
 
-    public void unlinkAllDisplaysOnBreak(ServerWorld world) {
+    public void unlinkAllDisplaysOnBreak(ServerLevel world) {
         if (world == null) return;
 
         // copy first so we don't mutate while iterating
@@ -89,14 +89,14 @@ public class LifePointBlockEntity extends BlockEntity {
 
         for (BlockPos dpos : displays) {
             if (dpos == null) continue;
-            if (!world.isChunkLoaded(dpos)) continue;
+            if (!world.isLoaded(dpos)) continue;
 
             var dbe = world.getBlockEntity(dpos);
             if (dbe instanceof com.spider.mtgcard.displayblock.DisplayBlockEntity display) {
                 // only clear if it is actually pointing at THIS life block
                 boolean matches =
-                        display.getLinkedDimId().map(world.getRegistryKey().getValue()::equals).orElse(false) &&
-                                display.getLinkedLifePos().map(this.pos::equals).orElse(false);
+                        display.getLinkedDimId().map(world.dimension().identifier()::equals).orElse(false) &&
+                                display.getLinkedLifePos().map(this.worldPosition::equals).orElse(false);
 
                 if (matches) display.clearLink();
             }
@@ -112,27 +112,27 @@ public class LifePointBlockEntity extends BlockEntity {
     public void addLinkedDisplay(BlockPos displayPos) {
         if (displayPos == null) return;
         if (linkedDisplays.add(displayPos.asLong())) {
-            markDirty();
+            setChanged();
         }
     }
 
     public void removeLinkedDisplay(BlockPos displayPos) {
         if (displayPos == null) return;
         if (linkedDisplays.remove(displayPos.asLong())) {
-            markDirty();
+            setChanged();
         }
     }
 
     public java.util.List<BlockPos> getLinkedDisplaysCopy() {
         var out = new java.util.ArrayList<BlockPos>(linkedDisplays.size());
-        for (long l : linkedDisplays) out.add(BlockPos.fromLong(l));
+        for (long l : linkedDisplays) out.add(BlockPos.of(l));
         return out;
     }
 
     public void clearLinkedDisplays() {
         if (!linkedDisplays.isEmpty()) {
             linkedDisplays.clear();
-            markDirty();
+            setChanged();
         }
     }
 
@@ -157,7 +157,7 @@ public class LifePointBlockEntity extends BlockEntity {
     public boolean isTurnActive() { return turnActive; }
 
     public boolean getLastPowered() { return lastPowered; }
-    public void setLastPowered(boolean v) { lastPowered = v; markDirty(); }
+    public void setLastPowered(boolean v) { lastPowered = v; setChanged(); }
 
     public boolean isGameStarted() { return gameStarted; }
     public void setGameStarted(boolean v) { gameStarted = v; sync(); }
@@ -245,9 +245,9 @@ public class LifePointBlockEntity extends BlockEntity {
         counterIcons.put(k, icon);
         counters.putIfAbsent(k, 0);
 
-        markDirty();
-        if (world != null && !world.isClient()) {
-            LifePointPackets.syncToTracking(world, pos, this);
+        setChanged();
+        if (level != null && !level.isClientSide()) {
+            LifePointPackets.syncToTracking(level, worldPosition, this);
         }
     }
 
@@ -315,7 +315,7 @@ public class LifePointBlockEntity extends BlockEntity {
     public void setTurnActive(boolean v) {
         turnActive = v;
 
-        if (world instanceof ServerWorld sw) {
+        if (level instanceof ServerLevel sw) {
             if (turnActive) ensureGlowEntity(sw);
             else removeGlowEntity(sw);
         }
@@ -325,8 +325,8 @@ public class LifePointBlockEntity extends BlockEntity {
 
     // -------------------- tick --------------------
 
-    public static void tick(World world, BlockPos pos, BlockState state, LifePointBlockEntity be) {
-        if (world.isClient()) return;
+    public static void tick(Level world, BlockPos pos, BlockState state, LifePointBlockEntity be) {
+        if (world.isClientSide()) return;
 
         if (be.firstTick) {
             be.firstTick = false;
@@ -338,14 +338,14 @@ public class LifePointBlockEntity extends BlockEntity {
             be.nameInitialized = true;
 
             if (be.displayName == null || be.displayName.isBlank()) {
-                int n = world.random.nextInt(10000);
+                int n = world.getRandom().nextInt(10000);
                 be.displayName = String.format("%04d", n);
                 be.sync(); // push name to clients right away
             }
         }
 
         // Marker maintenance
-        if (world instanceof ServerWorld sw) {
+        if (world instanceof ServerLevel sw) {
             if (be.turnActive) be.ensureGlowEntity(sw);
             else if (be.glowEntityId != null) be.removeGlowEntity(sw);
         }
@@ -354,24 +354,24 @@ public class LifePointBlockEntity extends BlockEntity {
     // -------------------- sync --------------------
 
     public void sync() {
-        markDirty();
-        if (world != null && !world.isClient()) {
-            LifePointPackets.syncToTracking(world, pos, this);
-            world.updateComparators(pos, getCachedState().getBlock());
+        setChanged();
+        if (level != null && !level.isClientSide()) {
+            LifePointPackets.syncToTracking(level, worldPosition, this);
+            level.updateNeighbourForOutputSignal(worldPosition, getBlockState().getBlock());
         }
     }
 
     // -------------------- default name helper --------------------
 
-    public void ensureDefaultName(ServerWorld world) {
+    public void ensureDefaultName(ServerLevel world) {
         String cur = getDisplayName();
         if (cur != null && !cur.isBlank()) return;
 
-        int n = 1000 + world.random.nextInt(9000);
+        int n = 1000 + world.getRandom().nextInt(9000);
         setDisplayName(Integer.toString(n));
-        markDirty();
+        setChanged();
 
-        LifePointPackets.syncToTracking(world, getPos(), this);
+        LifePointPackets.syncToTracking(world, getBlockPos(), this);
     }
 
     // -------------------- marker entity (glow) --------------------
@@ -380,70 +380,70 @@ public class LifePointBlockEntity extends BlockEntity {
      * Spawn / maintain marker entity.
      * Uses an invisible glowing shulker so the outline looks blocky (not armor-stand shaped).
      */
-    private void ensureGlowEntity(ServerWorld sw) {
+    private void ensureGlowEntity(ServerLevel sw) {
         final double size = 0.99D;
 
         if (glowEntityId != null) {
             Entity e = sw.getEntity(glowEntityId);
-            if (e instanceof ShulkerEntity sh) {
+            if (e instanceof Shulker sh) {
                 configureGlowShulker(sh, size);
                 return;
             }
             glowEntityId = null;
         }
 
-        ShulkerEntity sh = new ShulkerEntity(EntityType.SHULKER, sw);
+        Shulker sh = new Shulker(EntityType.SHULKER, sw);
 
-        sh.refreshPositionAndAngles(
-                pos.getX() + 0.5,
-                pos.getY() + 0.05,
-                pos.getZ() + 0.5,
+        sh.snapTo(
+                worldPosition.getX() + 0.5,
+                worldPosition.getY() + 0.05,
+                worldPosition.getZ() + 0.5,
                 0.0f,
                 0.0f
         );
 
         configureGlowShulker(sh, size);
 
-        sh.setPersistent();
-        sw.spawnEntity(sh);
+        sh.setPersistenceRequired();
+        sw.addFreshEntity(sh);
 
-        glowEntityId = sh.getUuid();
-        markDirty();
+        glowEntityId = sh.getUUID();
+        setChanged();
     }
 
-    private static void configureGlowShulker(ShulkerEntity sh, double size) {
+    private static void configureGlowShulker(Shulker sh, double size) {
         sh.setSilent(true);
         sh.setInvulnerable(true);
         sh.setNoGravity(true);
-        sh.setAiDisabled(true);
+        sh.setNoAi(true);
 
         sh.setInvisible(true);
-        sh.setGlowing(true);
+        sh.setGlowingTag(true);
 
-        sh.addStatusEffect(new StatusEffectInstance(
-                StatusEffects.INVISIBILITY,
+        sh.addEffect(new MobEffectInstance(
+                MobEffects.INVISIBILITY,
                 Integer.MAX_VALUE,
                 0,
                 true,
                 false
         ));
 
-        var attr = sh.getAttributeInstance(EntityAttributes.SCALE);
+        var attr = sh.getAttribute(Attributes.SCALE);
         if (attr != null) attr.setBaseValue(size);
     }
 
-    private void removeGlowEntity(ServerWorld sw) {
+    private void removeGlowEntity(ServerLevel sw) {
         if (glowEntityId == null) return;
         Entity e = sw.getEntity(glowEntityId);
         if (e != null) e.discard();
         glowEntityId = null;
-        markDirty();
+        setChanged();
     }
 
     @Override
-    public void markRemoved() {
-        super.markRemoved();
-        if (world instanceof ServerWorld sw) {
+    public void setRemoved() {
+        super.setRemoved();
+        if (level instanceof ServerLevel sw) {
             removeGlowEntity(sw);
         }
     }
@@ -451,8 +451,8 @@ public class LifePointBlockEntity extends BlockEntity {
     // -------------------- NBT --------------------
 
     @Override
-    protected void writeData(WriteView view) {
-        super.writeData(view);
+    protected void saveAdditional(ValueOutput view) {
+        super.saveAdditional(view);
 
         // appearance
         view.putInt("PlayerColor", playerColor);
@@ -478,9 +478,9 @@ public class LifePointBlockEntity extends BlockEntity {
             }
         }
 
-        var ci = new NbtCompound();
+        var ci = new CompoundTag();
         for (var e : counterIcons.entrySet()) ci.putString(e.getKey(), e.getValue());
-        view.put("CounterIcons", NbtCompound.CODEC, ci);
+        view.store("CounterIcons", CompoundTag.CODEC, ci);
 
         // commander damage (new long-key format)
         if (commanderDamage.isEmpty()) {
@@ -529,31 +529,31 @@ public class LifePointBlockEntity extends BlockEntity {
     }
 
     @Override
-    protected void readData(ReadView view) {
-        super.readData(view);
+    protected void loadAdditional(ValueInput view) {
+        super.loadAdditional(view);
 
         // appearance
-        playerColor = view.getInt("PlayerColor", 0xE8E8E8);
-        iconKey = view.getString("IconKey", "none");
-        formatKey = view.getString("FormatKey", "standard");
-        commanderLethal = view.getInt("CmdLethal", 21);
+        playerColor = view.getIntOr("PlayerColor", 0xE8E8E8);
+        iconKey = view.getStringOr("IconKey", "none");
+        formatKey = view.getStringOr("FormatKey", "standard");
+        commanderLethal = view.getIntOr("CmdLethal", 21);
 
         if (iconKey == null || iconKey.isBlank()) iconKey = "none";
         if (formatKey == null || formatKey.isBlank()) formatKey = "standard";
         if (commanderLethal < 1) commanderLethal = 1;
 
         // core
-        displayName = view.getString("DisplayName", "");
-        life = view.getInt("Life", 40);
-        lifeColor = view.getInt("LifeColor", 0xFFFFFF);
-        nameInitialized = view.getBoolean("NameInit", false);
-        iconSwapColor = view.getInt("IconSwapColor", 0xFF0000) & 0xFFFFFF;
+        displayName = view.getStringOr("DisplayName", "");
+        life = view.getIntOr("Life", 40);
+        lifeColor = view.getIntOr("LifeColor", 0xFFFFFF);
+        nameInitialized = view.getBooleanOr("NameInit", false);
+        iconSwapColor = view.getIntOr("IconSwapColor", 0xFF0000) & 0xFFFFFF;
 
         // ensure deterministic default name if missing
         if (!nameInitialized) {
             nameInitialized = true;
             if (displayName == null || displayName.isBlank()) {
-                int seed = (getPos().getX() * 73428767) ^ (getPos().getZ() * 912931) ^ getPos().getY();
+                int seed = (getBlockPos().getX() * 73428767) ^ (getBlockPos().getZ() * 912931) ^ getBlockPos().getY();
                 int n = Math.floorMod(seed, 10000);
                 displayName = String.format("%04d", n);
             }
@@ -562,7 +562,7 @@ public class LifePointBlockEntity extends BlockEntity {
         // counters
         counters.clear();
 
-        String keys = view.getString("CounterKeys", "");
+        String keys = view.getStringOr("CounterKeys", "");
         if (!keys.isEmpty()) {
             var parts = Arrays.stream(keys.split(","))
                     .map(String::trim)
@@ -574,17 +574,17 @@ public class LifePointBlockEntity extends BlockEntity {
 
             // keep pref order first if present
             for (String k : pref) {
-                if (parts.contains(k)) counters.put(k, view.getInt("Counter_" + k, 0));
+                if (parts.contains(k)) counters.put(k, view.getIntOr("Counter_" + k, 0));
             }
             // then remaining in saved order
             for (String k : parts) {
-                if (!counters.containsKey(k)) counters.put(k, view.getInt("Counter_" + k, 0));
+                if (!counters.containsKey(k)) counters.put(k, view.getIntOr("Counter_" + k, 0));
             }
         } else {
             // legacy fallback
-            counters.put("poison", view.getInt("Counter_poison", 0));
-            counters.put("experience", view.getInt("Counter_experience", 0));
-            counters.put("energy", view.getInt("Counter_energy", 0));
+            counters.put("poison", view.getIntOr("Counter_poison", 0));
+            counters.put("experience", view.getIntOr("Counter_experience", 0));
+            counters.put("energy", view.getIntOr("Counter_energy", 0));
         }
 
         if (counters.isEmpty()) {
@@ -595,9 +595,9 @@ public class LifePointBlockEntity extends BlockEntity {
 
         // counter icons
         counterIcons.clear();
-        var ci = view.read("CounterIcons", NbtCompound.CODEC).orElse(null);
+        var ci = view.read("CounterIcons", CompoundTag.CODEC).orElse(null);
         if (ci != null) {
-            for (String k : ci.getKeys()) {
+            for (String k : ci.keySet()) {
                 String v = ci.getString(k).orElse("none");
                 String kk = (k == null ? "" : k.toLowerCase(Locale.ROOT));
                 if (!kk.isEmpty()) {
@@ -621,19 +621,19 @@ public class LifePointBlockEntity extends BlockEntity {
         }
 
         // group
-        String gid = view.getString("GroupId", "");
+        String gid = view.getStringOr("GroupId", "");
         groupId = null;
         if (!gid.isEmpty()) {
             try { groupId = UUID.fromString(gid); } catch (Exception ignored) {}
         }
-        groupOrderIndex = view.getInt("GroupOrderIndex", -1);
+        groupOrderIndex = view.getIntOr("GroupOrderIndex", -1);
 
         // turn/power
-        turnActive = view.getBoolean("TurnActive", false);
-        lastPowered = view.getBoolean("LastPowered", false);
+        turnActive = view.getBooleanOr("TurnActive", false);
+        lastPowered = view.getBooleanOr("LastPowered", false);
 
         // marker entity
-        String glow = view.getString("GlowEntityId", "");
+        String glow = view.getStringOr("GlowEntityId", "");
         glowEntityId = null;
         if (!glow.isEmpty()) {
             try { glowEntityId = UUID.fromString(glow); } catch (Exception ignored) {}
@@ -643,7 +643,7 @@ public class LifePointBlockEntity extends BlockEntity {
         commanderDamage.clear();
 
 // 1) NEW FORMAT: CmdLKeys = "long,long,long" and each CmdL_<long> = value
-        String cmdLKeys = view.getString("CmdLKeys", "");
+        String cmdLKeys = view.getStringOr("CmdLKeys", "");
         if (!cmdLKeys.isEmpty()) {
             var parts = Arrays.stream(cmdLKeys.split(","))
                     .map(String::trim)
@@ -653,14 +653,14 @@ public class LifePointBlockEntity extends BlockEntity {
             for (String s : parts) {
                 try {
                     long k = Long.parseLong(s);
-                    int v = view.getInt("CmdL_" + k, 0);
+                    int v = view.getIntOr("CmdL_" + k, 0);
                     if (v < 0) v = 0;
                     if (v > 0) commanderDamage.put(k, v);
                 } catch (Exception ignored) {}
             }
         } else {
             // 2) LEGACY FORMAT: CmdKeys = "x,y,z,x,y,z..." + Cmd_<x,y,z> = value
-            String cmdKeys = view.getString("CmdKeys", "");
+            String cmdKeys = view.getStringOr("CmdKeys", "");
             if (!cmdKeys.isEmpty()) {
                 var parts = Arrays.stream(cmdKeys.split(","))
                         .map(String::trim)
@@ -668,7 +668,7 @@ public class LifePointBlockEntity extends BlockEntity {
                         .toList();
 
                 for (String kStr : parts) {
-                    int v = view.getInt("Cmd_" + kStr, 0);
+                    int v = view.getIntOr("Cmd_" + kStr, 0);
                     if (v < 0) v = 0;
                     if (v <= 0) continue;
 
@@ -679,7 +679,7 @@ public class LifePointBlockEntity extends BlockEntity {
         }
 
         linkedDisplays.clear();
-        String ld = view.getString("LinkedDisplayKeys", "");
+        String ld = view.getStringOr("LinkedDisplayKeys", "");
         if (ld != null && !ld.isEmpty()) {
             var parts = java.util.Arrays.stream(ld.split(","))
                     .map(String::trim)
@@ -691,7 +691,7 @@ public class LifePointBlockEntity extends BlockEntity {
         }
 
         // game
-        gameStarted = view.getBoolean("GameStarted", false);
+        gameStarted = view.getBooleanOr("GameStarted", false);
 
         // NOTE: don't spawn/remove marker here; tick() will reconcile on server.
     }

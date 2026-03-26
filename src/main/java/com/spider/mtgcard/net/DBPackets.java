@@ -10,7 +10,7 @@ public final class DBPackets {
 
     /** Call once during common init. */
     public static void registerTypes() {
-        PayloadTypeRegistry.playC2S().register(SearchPayload.ID, SearchPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SearchPayload.ID, SearchPayload.CODEC);
     }
 
     /** Call on server init. */
@@ -20,7 +20,7 @@ public final class DBPackets {
             var player = context.player();
 
             server.execute(() -> {
-                if (player.currentScreenHandler instanceof com.spider.mtgcard.db.CardDatabaseScreenHandler h) {
+                if (player.containerMenu instanceof com.spider.mtgcard.db.CardDatabaseScreenHandler h) {
                     String q = payload.q() == null ? "" : payload.q();
                     h.setActiveQuery(q);
                     h.applySearch(q, payload.order(), payload.dir());

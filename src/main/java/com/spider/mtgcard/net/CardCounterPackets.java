@@ -1,96 +1,140 @@
-// CardCounterPackets.java
 package com.spider.mtgcard.net;
 
 import com.spider.mtgcard.util.CardCounterNbt;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Hand;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.InteractionHand;
 
 public final class CardCounterPackets {
 
-    // Enum codec for Hand (MAIN_HAND=0, OFF_HAND=1)
-    private static final PacketCodec<RegistryByteBuf, Hand> HAND_CODEC = new PacketCodec<>() {
+    private static final StreamCodec<RegistryFriendlyByteBuf, InteractionHand> HAND_CODEC = new StreamCodec<>() {
         @Override
-        public Hand decode(RegistryByteBuf buf) {
+        public InteractionHand decode(RegistryFriendlyByteBuf buf) {
             int i = buf.readVarInt();
-            Hand[] v = Hand.values();
-            if (i < 0 || i >= v.length) i = 0;
-            return v[i];
+            InteractionHand[] values = InteractionHand.values();
+            if (i < 0 || i >= values.length) i = 0;
+            return values[i];
         }
 
         @Override
-        public void encode(RegistryByteBuf buf, Hand value) {
+        public void encode(RegistryFriendlyByteBuf buf, InteractionHand value) {
             buf.writeVarInt(value.ordinal());
         }
     };
 
-    public record SetCardCounterC2S(Hand hand, String key, int value) implements CustomPayload {
-        public static final Id<SetCardCounterC2S> ID = new Id<>(Identifier.of("mtgcard", "set_card_counter"));
-        public static final PacketCodec<RegistryByteBuf, SetCardCounterC2S> CODEC = PacketCodec.tuple(
-                HAND_CODEC, SetCardCounterC2S::hand,
-                PacketCodecs.STRING, SetCardCounterC2S::key,
-                PacketCodecs.VAR_INT, SetCardCounterC2S::value,
-                SetCardCounterC2S::new
-        );
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+    public record SetCardCounterC2S(InteractionHand hand, String key, int value) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<SetCardCounterC2S> TYPE =
+                new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath("mtgcard", "set_card_counter"));
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, SetCardCounterC2S> STREAM_CODEC = new StreamCodec<>() {
+            @Override
+            public SetCardCounterC2S decode(RegistryFriendlyByteBuf buf) {
+                InteractionHand hand = HAND_CODEC.decode(buf);
+                String key = buf.readUtf();
+                int value = buf.readVarInt();
+                return new SetCardCounterC2S(hand, key, value);
+            }
+
+            @Override
+            public void encode(RegistryFriendlyByteBuf buf, SetCardCounterC2S value) {
+                HAND_CODEC.encode(buf, value.hand());
+                buf.writeUtf(value.key());
+                buf.writeVarInt(value.value());
+            }
+        };
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
     }
 
-    public record SetCardCounterIconC2S(Hand hand, String key, String icon) implements CustomPayload {
-        public static final Id<SetCardCounterIconC2S> ID = new Id<>(Identifier.of("mtgcard", "set_card_counter_icon"));
-        public static final PacketCodec<RegistryByteBuf, SetCardCounterIconC2S> CODEC = PacketCodec.tuple(
-                HAND_CODEC, SetCardCounterIconC2S::hand,
-                PacketCodecs.STRING, SetCardCounterIconC2S::key,
-                PacketCodecs.STRING, SetCardCounterIconC2S::icon,
-                SetCardCounterIconC2S::new
-        );
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+    public record SetCardCounterIconC2S(InteractionHand hand, String key, String icon) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<SetCardCounterIconC2S> TYPE =
+                new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath("mtgcard", "set_card_counter_icon"));
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, SetCardCounterIconC2S> STREAM_CODEC = new StreamCodec<>() {
+            @Override
+            public SetCardCounterIconC2S decode(RegistryFriendlyByteBuf buf) {
+                InteractionHand hand = HAND_CODEC.decode(buf);
+                String key = buf.readUtf();
+                String icon = buf.readUtf();
+                return new SetCardCounterIconC2S(hand, key, icon);
+            }
+
+            @Override
+            public void encode(RegistryFriendlyByteBuf buf, SetCardCounterIconC2S value) {
+                HAND_CODEC.encode(buf, value.hand());
+                buf.writeUtf(value.key());
+                buf.writeUtf(value.icon());
+            }
+        };
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
     }
 
-    public record RemoveCardCounterC2S(Hand hand, String key) implements CustomPayload {
-        public static final Id<RemoveCardCounterC2S> ID = new Id<>(Identifier.of("mtgcard", "remove_card_counter"));
-        public static final PacketCodec<RegistryByteBuf, RemoveCardCounterC2S> CODEC = PacketCodec.tuple(
-                HAND_CODEC, RemoveCardCounterC2S::hand,
-                PacketCodecs.STRING, RemoveCardCounterC2S::key,
-                RemoveCardCounterC2S::new
-        );
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+    public record RemoveCardCounterC2S(InteractionHand hand, String key) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<RemoveCardCounterC2S> TYPE =
+                new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath("mtgcard", "remove_card_counter"));
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, RemoveCardCounterC2S> STREAM_CODEC = new StreamCodec<>() {
+            @Override
+            public RemoveCardCounterC2S decode(RegistryFriendlyByteBuf buf) {
+                InteractionHand hand = HAND_CODEC.decode(buf);
+                String key = buf.readUtf();
+                return new RemoveCardCounterC2S(hand, key);
+            }
+
+            @Override
+            public void encode(RegistryFriendlyByteBuf buf, RemoveCardCounterC2S value) {
+                HAND_CODEC.encode(buf, value.hand());
+                buf.writeUtf(value.key());
+            }
+        };
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
     }
 
     public static void registerC2S() {
-        ServerPlayNetworking.registerGlobalReceiver(SetCardCounterC2S.ID, (payload, ctx) -> {
+        ServerPlayNetworking.registerGlobalReceiver(SetCardCounterC2S.TYPE, (payload, ctx) -> {
             ctx.server().execute(() -> {
                 var player = ctx.player();
-                var stack = player.getStackInHand(payload.hand());
+                var stack = player.getItemInHand(payload.hand());
                 if (stack.isEmpty()) return;
 
                 CardCounterNbt.setCounter(stack, payload.key(), payload.value());
-                player.getInventory().markDirty();
+                player.getInventory().setChanged();
             });
         });
 
-        ServerPlayNetworking.registerGlobalReceiver(SetCardCounterIconC2S.ID, (payload, ctx) -> {
+        ServerPlayNetworking.registerGlobalReceiver(SetCardCounterIconC2S.TYPE, (payload, ctx) -> {
             ctx.server().execute(() -> {
                 var player = ctx.player();
-                var stack = player.getStackInHand(payload.hand());
+                var stack = player.getItemInHand(payload.hand());
                 if (stack.isEmpty()) return;
 
                 CardCounterNbt.setIcon(stack, payload.key(), payload.icon());
-                player.getInventory().markDirty();
+                player.getInventory().setChanged();
             });
         });
 
-        ServerPlayNetworking.registerGlobalReceiver(RemoveCardCounterC2S.ID, (payload, ctx) -> {
+        ServerPlayNetworking.registerGlobalReceiver(RemoveCardCounterC2S.TYPE, (payload, ctx) -> {
             ctx.server().execute(() -> {
                 var player = ctx.player();
-                var stack = player.getStackInHand(payload.hand());
+                var stack = player.getItemInHand(payload.hand());
                 if (stack.isEmpty()) return;
 
                 CardCounterNbt.removeCounter(stack, payload.key());
-                player.getInventory().markDirty();
+                player.getInventory().setChanged();
             });
         });
     }

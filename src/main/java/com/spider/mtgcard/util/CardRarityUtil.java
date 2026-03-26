@@ -1,8 +1,8 @@
 // src/main/java/com/spider/mtgcard/util/CardRarityUtil.java
 package com.spider.mtgcard.util;
 
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
 
 import java.util.Locale;
 
@@ -12,8 +12,8 @@ public final class CardRarityUtil {
 
     /** Returns null if no mtg_meta exists or rarity missing/unknown. */
     public static RarityKey getRarityKey(ItemStack st) {
-        NbtCompound root = StackData.readCustom(st);
-        NbtCompound meta = root.getCompound("mtg_meta").orElse(null);
+        CompoundTag root = StackData.readCustom(st);
+        CompoundTag meta = root.getCompound("mtg_meta").orElse(null);
         if (meta == null) return null;
 
         String raw = meta.getString("rarity").orElse("");

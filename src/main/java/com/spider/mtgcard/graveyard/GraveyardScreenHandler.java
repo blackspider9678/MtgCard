@@ -3,28 +3,28 @@ package com.spider.mtgcard.graveyard;
 
 import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.screen.ModScreenHandlers;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.inventory.SimpleInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.ScreenHandlerContext;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.Container;
+import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerLevelAccess;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.resources.Identifier;
+import net.minecraft.core.BlockPos;
 
-public class GraveyardScreenHandler extends ScreenHandler {
+public class GraveyardScreenHandler extends AbstractContainerMenu {
 
     public static final int SIDE_SIZE = 100;   // 10x10
     public static final int TOTAL = 200;       // graveyard(100) + exile(100)
 
     public final BlockPos pos;
-    private final ScreenHandlerContext context;
-    private final Inventory blockInv;
+    private final ContainerLevelAccess context;
+    private final Container blockInv;
 
     // ---- layout constants (match your GraveyardScreen background math) ----
-    public static final Identifier TEX = Identifier.of("mtgcard", "textures/gui/graveyard.png");
+    public static final Identifier TEX = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/graveyard.png");
     private static final int GRID = 10;
     private static final int SLOT = 18;
 
@@ -41,30 +41,34 @@ public class GraveyardScreenHandler extends ScreenHandler {
     private static final int PLAYER_INV_X = 1 + (TOTAL_W - PLAYER_INV_W) / 2; // centered
     private static final int PLAYER_INV_Y = GRID_Y + (10 * 18) + 8;      // under grids
 
+    public GraveyardScreenHandler(int syncId, Inventory playerInv) {
+        this(syncId, playerInv, BlockPos.ZERO);
+    }
+
     /** Client-side constructor (pos comes from opening data). */
-    public GraveyardScreenHandler(int syncId, PlayerInventory playerInv, BlockPos pos) {
-        this(syncId, playerInv, pos, ScreenHandlerContext.EMPTY);
+    public GraveyardScreenHandler(int syncId, Inventory playerInv, BlockPos pos) {
+        this(syncId, playerInv, pos, ContainerLevelAccess.NULL);
     }
 
     /** Server-side constructor. */
-    public GraveyardScreenHandler(int syncId, PlayerInventory playerInv, BlockPos pos, ScreenHandlerContext context) {
+    public GraveyardScreenHandler(int syncId, Inventory playerInv, BlockPos pos, ContainerLevelAccess context) {
         super(ModScreenHandlers.GRAVEYARD, syncId);
         this.pos = pos;
         this.context = context;
 
         // Resolve the real BE inventory on the server; on the client this falls back
-        this.blockInv = context.get((world, bp) -> {
+        this.blockInv = context.evaluate((world, bp) -> {
             var be = world.getBlockEntity(bp);
             if (be instanceof GraveyardBlockEntity gbe) return new BEInventory(gbe);
-            return new SimpleInventory(TOTAL);
-        }, new SimpleInventory(TOTAL));
+            return new SimpleContainer(TOTAL);
+        }, new SimpleContainer(TOTAL));
 
-        checkSize(this.blockInv, TOTAL);
-        this.blockInv.onOpen(playerInv.player);
+        checkContainerSize(this.blockInv, TOTAL);
+        this.blockInv.startOpen(playerInv.player);
 
         // ✅ Open animation while GUI is open (server only)
-        if (!playerInv.player.getEntityWorld().isClient()) {
-            context.run((world, bp) -> {
+        if (!playerInv.player.level().isClientSide()) {
+            context.execute((world, bp) -> {
                 var be = world.getBlockEntity(bp);
                 if (be instanceof GraveyardBlockEntity gbe) gbe.onViewerOpen();
             });
@@ -109,9 +113,9 @@ public class GraveyardScreenHandler extends ScreenHandler {
     }
 
     @Override
-    public boolean canUse(PlayerEntity player) {
-        return context.get((world, bp) -> {
-            if (!world.getBlockState(bp).isOf(ModBlocks.GRAVEYARD)) return false;
+    public boolean stillValid(Player player) {
+        return context.evaluate((world, bp) -> {
+            if (!world.getBlockState(bp).is(ModBlocks.GRAVEYARD)) return false;
 
             double cx = bp.getX() + 0.5;
             double cy = bp.getY() + 0.5;
@@ -126,11 +130,11 @@ public class GraveyardScreenHandler extends ScreenHandler {
     }
 
     @Override
-    public ItemStack quickMove(PlayerEntity player, int slotIndex) {
+    public ItemStack quickMoveStack(Player player, int slotIndex) {
         Slot slot = this.slots.get(slotIndex);
-        if (slot == null || !slot.hasStack()) return ItemStack.EMPTY;
+        if (slot == null || !slot.hasItem()) return ItemStack.EMPTY;
 
-        ItemStack original = slot.getStack();
+        ItemStack original = slot.getItem();
         ItemStack copy = original.copy();
 
         int blockSlots = TOTAL;                 // 200
@@ -138,29 +142,29 @@ public class GraveyardScreenHandler extends ScreenHandler {
         int playerEnd = playerStart + 36;
 
         if (slotIndex < blockSlots) {
-            if (!this.insertItem(original, playerStart, playerEnd, true)) return ItemStack.EMPTY;
+            if (!this.moveItemStackTo(original, playerStart, playerEnd, true)) return ItemStack.EMPTY;
         } else {
-            if (!this.insertItem(original, 0, SIDE_SIZE, false)) {
-                if (!this.insertItem(original, SIDE_SIZE, TOTAL, false)) {
+            if (!this.moveItemStackTo(original, 0, SIDE_SIZE, false)) {
+                if (!this.moveItemStackTo(original, SIDE_SIZE, TOTAL, false)) {
                     return ItemStack.EMPTY;
                 }
             }
         }
 
-        if (original.isEmpty()) slot.setStack(ItemStack.EMPTY);
-        else slot.markDirty();
+        if (original.isEmpty()) slot.setByPlayer(ItemStack.EMPTY);
+        else slot.setChanged();
 
         return copy;
     }
 
     @Override
-    public void onClosed(PlayerEntity player) {
-        super.onClosed(player);
-        this.blockInv.onClose(player);
+    public void removed(Player player) {
+        super.removed(player);
+        this.blockInv.stopOpen(player);
 
         // ✅ Close animation when last viewer closes (server only)
-        if (!player.getEntityWorld().isClient()) {
-            context.run((world, bp) -> {
+        if (!player.level().isClientSide()) {
+            context.execute((world, bp) -> {
                 var be = world.getBlockEntity(bp);
                 if (be instanceof GraveyardBlockEntity gbe) gbe.onViewerClose();
             });
@@ -169,50 +173,50 @@ public class GraveyardScreenHandler extends ScreenHandler {
 
     /** Only allow your card item in these grids (prevents junk filling grave/exile). */
     private static final class CardOnlySlot extends Slot {
-        public CardOnlySlot(Inventory inv, int index, int x, int y) {
+        public CardOnlySlot(Container inv, int index, int x, int y) {
             super(inv, index, x, y);
         }
 
         @Override
-        public boolean canInsert(ItemStack stack) {
-            return stack != null && stack.isOf(com.spider.mtgcard.item.ModItems.CARD);
+        public boolean mayPlace(ItemStack stack) {
+            return stack != null && stack.is(com.spider.mtgcard.item.ModItems.CARD);
         }
     }
 
     /** Inventory view backed by the GraveyardBlockEntity list. */
-    private static final class BEInventory implements Inventory {
+    private static final class BEInventory implements Container {
         private final GraveyardBlockEntity be;
         private BEInventory(GraveyardBlockEntity be) { this.be = be; }
 
-        @Override public int size() { return TOTAL; }
+        @Override public int getContainerSize() { return TOTAL; }
 
         @Override public boolean isEmpty() {
-            for (int i = 0; i < TOTAL; i++) if (!getStack(i).isEmpty()) return false;
+            for (int i = 0; i < TOTAL; i++) if (!getItem(i).isEmpty()) return false;
             return true;
         }
 
-        @Override public ItemStack getStack(int slot) { return be.getStack(slot); }
+        @Override public ItemStack getItem(int slot) { return be.getItem(slot); }
 
-        @Override public ItemStack removeStack(int slot, int amount) {
-            ItemStack cur = getStack(slot);
+        @Override public ItemStack removeItem(int slot, int amount) {
+            ItemStack cur = getItem(slot);
             if (cur.isEmpty()) return ItemStack.EMPTY;
 
             ItemStack taken = cur.split(amount);
-            if (cur.isEmpty()) be.setStack(slot, ItemStack.EMPTY);
-            else be.setStack(slot, cur);
+            if (cur.isEmpty()) be.setItem(slot, ItemStack.EMPTY);
+            else be.setItem(slot, cur);
             return taken;
         }
 
-        @Override public ItemStack removeStack(int slot) { return be.removeStack(slot); }
+        @Override public ItemStack removeItemNoUpdate(int slot) { return be.removeItemNoUpdate(slot); }
 
-        @Override public void setStack(int slot, ItemStack stack) { be.setStack(slot, stack); }
+        @Override public void setItem(int slot, ItemStack stack) { be.setItem(slot, stack); }
 
-        @Override public void markDirty() { be.markDirty(); }
+        @Override public void setChanged() { be.setChanged(); }
 
-        @Override public boolean canPlayerUse(PlayerEntity player) { return true; }
+        @Override public boolean stillValid(Player player) { return true; }
 
-        @Override public void clear() {
-            for (int i = 0; i < TOTAL; i++) setStack(i, ItemStack.EMPTY);
+        @Override public void clearContent() {
+            for (int i = 0; i < TOTAL; i++) setItem(i, ItemStack.EMPTY);
         }
     }
 }

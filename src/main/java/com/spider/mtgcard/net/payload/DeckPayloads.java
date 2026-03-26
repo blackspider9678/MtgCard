@@ -1,10 +1,11 @@
 package com.spider.mtgcard.net.payload;
 
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload.Type;
+import net.minecraft.resources.Identifier;
 
 public final class DeckPayloads {
     private DeckPayloads() {}
@@ -12,26 +13,26 @@ public final class DeckPayloads {
     // -------------------------
     // S2C: request export
     // -------------------------
-    public record DeckExportRequestS2C(String name) implements CustomPayload {
-        public static final Id<DeckExportRequestS2C> ID =
-                new Id<>(Identifier.of("mtgcard", "deck_export_request"));
+    public record DeckExportRequestS2C(String name) implements CustomPacketPayload {
+        public static final Type<DeckExportRequestS2C> ID =
+                new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "deck_export_request"));
 
-        public static final PacketCodec<RegistryByteBuf, DeckExportRequestS2C> CODEC =
-                PacketCodec.tuple(PacketCodecs.STRING, DeckExportRequestS2C::name, DeckExportRequestS2C::new);
+        public static final StreamCodec<RegistryFriendlyByteBuf, DeckExportRequestS2C> CODEC =
+                StreamCodec.composite(ByteBufCodecs.STRING_UTF8, DeckExportRequestS2C::name, DeckExportRequestS2C::new);
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // -------------------------
     // S2C: request list
     // -------------------------
-    public record DeckListRequestS2C() implements CustomPayload {
-        public static final Id<DeckListRequestS2C> ID =
-                new Id<>(Identifier.of("mtgcard", "deck_list_request"));
+    public record DeckListRequestS2C() implements CustomPacketPayload {
+        public static final Type<DeckListRequestS2C> ID =
+                new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "deck_list_request"));
 
-        public static final PacketCodec<RegistryByteBuf, DeckListRequestS2C> CODEC =
-                PacketCodec.unit(new DeckListRequestS2C());
+        public static final StreamCodec<RegistryFriendlyByteBuf, DeckListRequestS2C> CODEC =
+                StreamCodec.unit(new DeckListRequestS2C());
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 }

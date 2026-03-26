@@ -2,8 +2,8 @@ package com.spider.mtgcard.net;
 
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.storage.LevelResource;
 
 import java.nio.file.*;
 import java.util.*;
@@ -38,10 +38,10 @@ public final class CustomArtUploadServer {
 
     private static final Map<String, Upload> ACTIVE = new ConcurrentHashMap<>();
 
-    public static void handleBegin(CustomCardPackets.CustomArtBegin p, ServerPlayerEntity player) {
+    public static void handleBegin(CustomCardPackets.CustomArtBegin p, ServerPlayer player) {
         cleanupOld();
 
-        UUID pid = player.getUuid();
+        UUID pid = player.getUUID();
 
         long activeForPlayer = ACTIVE.values().stream().filter(u -> u.playerId.equals(pid)).count();
         if (activeForPlayer >= MAX_ACTIVE_PER_PLAYER) {
@@ -68,12 +68,12 @@ public final class CustomArtUploadServer {
         ACTIVE.put(p.uploadId(), new Upload(pid, artKey, ext, p.totalBytes(), p.totalChunks()));
     }
 
-    public static void handleChunk(CustomCardPackets.CustomArtChunk p, ServerPlayerEntity player) {
+    public static void handleChunk(CustomCardPackets.CustomArtChunk p, ServerPlayer player) {
         Upload u = ACTIVE.get(p.uploadId());
         if (u == null) {
             return;
         }
-        if (!u.playerId.equals(player.getUuid())) {
+        if (!u.playerId.equals(player.getUUID())) {
             return;
         }
 
@@ -96,12 +96,12 @@ public final class CustomArtUploadServer {
         }
     }
 
-    public static void handleFinish(CustomCardPackets.CustomArtFinish p, ServerPlayerEntity player, MinecraftServer server) {
+    public static void handleFinish(CustomCardPackets.CustomArtFinish p, ServerPlayer player, MinecraftServer server) {
         Upload u = ACTIVE.get(p.uploadId());
         if (u == null) {
             return;
         }
-        if (!u.playerId.equals(player.getUuid())) {
+        if (!u.playerId.equals(player.getUUID())) {
             return;
         }
 
@@ -123,7 +123,7 @@ public final class CustomArtUploadServer {
             off += c.length;
         }
 
-        Path dir = server.getSavePath(WorldSavePath.ROOT).resolve("mtgcard").resolve("art");
+        Path dir = server.getWorldPath(LevelResource.ROOT).resolve("mtgcard").resolve("art");
         Path out = dir.resolve(u.artKey + "." + u.ext);
 
         try {

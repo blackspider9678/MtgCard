@@ -1,14 +1,15 @@
 package com.spider.mtgcard.net;
 
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload.Type;
+import net.minecraft.resources.Identifier;
 
 public final class ArtcachePackets {
 
-    public static final Identifier ART_CACHE_REQ_ID = Identifier.of("mtgcard", "artcache_request");
+    public static final Identifier ART_CACHE_REQ_ID = Identifier.fromNamespaceAndPath("mtgcard", "artcache_request");
 
     public enum Action {
         STATS,
@@ -17,11 +18,11 @@ public final class ArtcachePackets {
     }
 
     /** Server -> Client request */
-    public record ArtcacheRequest(Action action) implements CustomPayload {
-        public static final Id<ArtcacheRequest> ID = new Id<>(ART_CACHE_REQ_ID);
+    public record ArtcacheRequest(Action action) implements CustomPacketPayload {
+        public static final Type<ArtcacheRequest> ID = new Type<>(ART_CACHE_REQ_ID);
 
-        public static final PacketCodec<RegistryByteBuf, ArtcacheRequest> CODEC =
-                PacketCodec.ofStatic(
+        public static final StreamCodec<RegistryFriendlyByteBuf, ArtcacheRequest> CODEC =
+                StreamCodec.of(
                         (buf, p) -> buf.writeVarInt(p.action().ordinal()),
                         (buf) -> {
                             int ord = buf.readVarInt();
@@ -31,12 +32,12 @@ public final class ArtcachePackets {
                         }
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     /** Call from your ModInitializer (common). */
     public static void registerCommon() {
-        PayloadTypeRegistry.playS2C().register(ArtcacheRequest.ID, ArtcacheRequest.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(ArtcacheRequest.ID, ArtcacheRequest.CODEC);
     }
 
     private ArtcachePackets() {}

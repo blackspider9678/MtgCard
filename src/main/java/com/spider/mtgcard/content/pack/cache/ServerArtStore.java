@@ -1,7 +1,7 @@
 // src/main/java/com/spider/mtgcard/content/pack/cache/ServerArtStore.java
 package com.spider.mtgcard.content.pack.cache;
 
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.server.MinecraftServer;
 
 import java.io.InputStream;
@@ -16,7 +16,7 @@ public final class ServerArtStore {
     private final Map<String, Boolean> inFlight = new ConcurrentHashMap<>();
 
     public ServerArtStore(MinecraftServer server) {
-        this.dir = server.getSavePath(WorldSavePath.ROOT).resolve("mtgcard").resolve("art");
+        this.dir = server.getWorldPath(LevelResource.ROOT).resolve("mtgcard").resolve("art");
         try { Files.createDirectories(dir); } catch (Exception ignored) {}
     }
 
@@ -54,16 +54,23 @@ public final class ServerArtStore {
 
     private static void downloadPng(Path dst, String url) throws Exception {
         Files.createDirectories(dst.getParent());
-        var conn = (HttpURLConnection)new URL(url).openConnection();
+
+        var conn = (HttpURLConnection) java.net.URI.create(url).toURL().openConnection();
         conn.setInstanceFollowRedirects(true);
         conn.setConnectTimeout(7000);
         conn.setReadTimeout(15000);
-        conn.setRequestProperty("User-Agent","mtgcard/1.0 (+server)");
-        Path tmp = dst.resolveSibling(dst.getFileName()+".tmp");
+        conn.setRequestProperty("User-Agent", "mtgcard/1.0 (+server)");
+
+        Path tmp = dst.resolveSibling(dst.getFileName() + ".tmp");
         try (InputStream in = conn.getInputStream()) {
             Files.copy(in, tmp, StandardCopyOption.REPLACE_EXISTING);
         }
-        if (Files.size(tmp) <= 32) { Files.deleteIfExists(tmp); throw new RuntimeException("tiny"); }
+
+        if (Files.size(tmp) <= 32) {
+            Files.deleteIfExists(tmp);
+            throw new RuntimeException("tiny");
+        }
+
         Files.move(tmp, dst, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
     }
 }

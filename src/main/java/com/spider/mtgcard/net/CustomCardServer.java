@@ -2,7 +2,7 @@ package com.spider.mtgcard.net;
 
 import com.spider.mtgcard.content.pack.custom.CustomCardStore;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.level.ServerPlayer;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -10,10 +10,10 @@ import java.nio.file.Path;
 public final class CustomCardServer {
 
     /** Handles the C2S batch create payload. */
-    public static void handleBatch(CustomCardPackets.CustomBatchCreate payload, ServerPlayerEntity who) {
+    public static void handleBatch(CustomCardPackets.CustomBatchCreate payload, ServerPlayer who) {
         if (payload == null || who == null) return;
 
-        MinecraftServer server = who.getEntityWorld().getServer();
+        MinecraftServer server = who.level().getServer();
         if (server == null) return;
 
         var state = WorldState.get(server);

@@ -3,21 +3,21 @@ package com.spider.mtgcard.client.gui;
 
 import com.spider.mtgcard.cardstore.CardStorePackets;
 import com.spider.mtgcard.cardstore.CardStoreScreenHandler;
+import com.spider.mtgcard.client.compat.LegacyContainerScreen;
 import com.spider.mtgcard.client.java.CardArtManager;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.text.StringVisitable;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.FormattedText;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 import java.nio.charset.StandardCharsets;
@@ -30,7 +30,7 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
+public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandler> {
 
     // --- LifeBlock-ish tinting (lighter so world shows through) ---
     // --- Blue-gray "glass" theme (ARGB) ---
@@ -59,22 +59,22 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
     private ItemStack priceIcon = ItemStack.EMPTY;
 
     // --- CART UI ---
-    private ButtonWidget clearCartBtn;
+    private Button clearCartBtn;
     private int selectedCartIndex = -1;
     private int cartScrollPx = 0;
 
     private static final int CART_ROW_H = 22;
     private static final int CART_ROW_PAD = 4;
 
-    private static final Identifier TEX = Identifier.of("mtgcard", "textures/gui/card_store.png");
-    private static final StringVisitable SCRY_HELP = StringVisitable.plain("Use Scryfall Syntax for Advanced Search");
+    private static final Identifier TEX = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/card_store.png");
+    private static final FormattedText SCRY_HELP = FormattedText.of("Use Scryfall Syntax for Advanced Search");
 
 
     private enum Tab { STORE, CART }
     private Tab tab = Tab.STORE;
 
-    private TextFieldWidget searchField;
-    private ButtonWidget addToCartBtn;
+    private EditBox searchField;
+    private Button addToCartBtn;
 
     // ---- virtual GUI size (MUST match ScreenHandler) ----
     private static final int GUI_W = 426;
@@ -117,8 +117,8 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
 
     // --- prints paging ---
     private String lastPrintsQuery = "";
-    private ButtonWidget prevPageBtn;
-    private ButtonWidget nextPageBtn;
+    private Button prevPageBtn;
+    private Button nextPageBtn;
 
     // --- left-panel column layout ---
     private static final int PREVIEW_COL_W = 150; // width of preview column inside left panel
@@ -140,7 +140,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
     private boolean gridLoading = false;
     private int lastRequestedPageSize = 80;
 
-    private ButtonWidget buyCartBtn;
+    private Button buyCartBtn;
 
 
     // header row
@@ -164,7 +164,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
         return INV_H + 14 + RIGHT_PAD;
     }
 
-    private ButtonWidget sortBtn;
+    private Button sortBtn;
 
     // --- Sort dropdown state ---
     private boolean sortMenuOpen = false;
@@ -219,7 +219,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
             return;
         }
         sortMode = mode;
-        if (sortBtn != null) sortBtn.setMessage(Text.literal("Sort: " + sortMode.label));
+        if (sortBtn != null) sortBtn.setMessage(Component.literal("Sort: " + sortMode.label));
         sortGrid();          // << only happens once per selection
         closeSortMenu();
     }
@@ -243,8 +243,8 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
                     return Integer.compare(a.arrival, b.arrival);
                 }
                 case NAME -> {
-                    String an = a.stack.getName().getString();
-                    String bn = b.stack.getName().getString();
+                    String an = a.stack.getHoverName().getString();
+                    String bn = b.stack.getHoverName().getString();
                     int c = String.CASE_INSENSITIVE_ORDER.compare(an, bn);
                     if (c != 0) return c;
                     // tiebreak
@@ -277,8 +277,8 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
                     if (c != 0) return c;
                     // final tie break by name
                     return String.CASE_INSENSITIVE_ORDER.compare(
-                            a.stack.getName().getString(),
-                            b.stack.getName().getString()
+                            a.stack.getHoverName().getString(),
+                            b.stack.getHoverName().getString()
                     );
                 }
             }
@@ -362,16 +362,16 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
 // remove LEFT_W usage; left becomes "whatever is left"
 
 
-    public CardStoreScreen(CardStoreScreenHandler handler, PlayerInventory inv, Text title) {
+    public CardStoreScreen(CardStoreScreenHandler handler, Inventory inv, Component title) {
         super(handler, inv, title);
 
-        this.backgroundWidth = 352;   // adjust later to match your art
-        this.backgroundHeight = 256;  // includes player inventory area
-        this.playerInventoryTitleY = this.backgroundHeight - 94;
+        this.imageWidth = 352;   // adjust later to match your art
+        this.imageHeight = 256;  // includes player inventory area
+        this.inventoryLabelY = this.imageHeight - 94;
     }
 
     private void sendConfirm(List<CardStorePackets.ConfirmPurchaseC2S.Line> lines) {
-        var payload = new CardStorePackets.ConfirmPurchaseC2S(handler.blockPos, lines.size(), lines);
+        var payload = new CardStorePackets.ConfirmPurchaseC2S(menu.blockPos, lines.size(), lines);
         ClientPlayNetworking.send(payload);
     }
 
@@ -400,8 +400,8 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
 
     private void rebuildPriceIcon() {
         try {
-            Identifier id = Identifier.of(priceItemId);
-            var item = Registries.ITEM.get(id);
+            Identifier id = Identifier.parse(priceItemId);
+            var item = BuiltInRegistries.ITEM.getValue(id);
             if (item != null) priceIcon = new ItemStack(item);
             else priceIcon = ItemStack.EMPTY;
         } catch (Throwable t) {
@@ -416,7 +416,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
     private static final int CELL_PAD = 4;   // spacing
     private static final int THUMB = 32;     // thumb draw size
 
-    private void drawGrid(DrawContext ctx, int mouseX, int mouseY) {
+    private void drawGrid(GuiGraphics ctx, int mouseX, int mouseY) {
         int gridX = gridAreaX() + 8;
         int gridY = gridAreaY() + 8;
         int gridW = gridAreaW() - 16;
@@ -459,12 +459,12 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
                 float sx = (float) drawW / (float) texW;
                 float sy = (float) drawH / (float) texH;
 
-                var m = ctx.getMatrices();
+                var m = ctx.pose();
                 m.pushMatrix();
                 m.translate(dx, dy);
                 m.scale(sx, sy);
 
-                ctx.drawTexture(
+                ctx.blit(
                         RenderPipelines.GUI_TEXTURED,
                         tex.id(),
                         0, 0,
@@ -474,43 +474,43 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
                 );
                 m.popMatrix();
             } else {
-                ctx.drawItem(s, cx + 4, cy + 4);
+                ctx.renderItem(s, cx + 4, cy + 4);
             }
         }
     }
 
     private boolean isCreativePlayer() {
-        var p = this.client != null ? this.client.player : null;
-        return p != null && p.getAbilities().creativeMode;
+        var p = this.minecraft != null ? this.minecraft.player : null;
+        return p != null && p.getAbilities().instabuild;
     }
 
     private long countCurrencyInInventory() {
-        var p = (this.client != null) ? this.client.player : null;
+        var p = (this.minecraft != null) ? this.minecraft.player : null;
         if (p == null) return 0L;
 
         Identifier id;
         try {
-            id = Identifier.of(priceItemId);
+            id = Identifier.parse(priceItemId);
         } catch (Throwable t) {
             return 0L;
         }
 
-        var item = Registries.ITEM.get(id);
+        var item = BuiltInRegistries.ITEM.getValue(id);
         if (item == null) return 0L;
 
         long count = 0L;
 
         // Player main inventory (includes hotbar + main)
         var inv = p.getInventory();
-        int size = inv.size();
+        int size = inv.getContainerSize();
         for (int i = 0; i < size; i++) {
-            ItemStack s = inv.getStack(i);
-            if (!s.isEmpty() && s.isOf(item)) count += s.getCount();
+            ItemStack s = inv.getItem(i);
+            if (!s.isEmpty() && s.is(item)) count += s.getCount();
         }
 
         // Offhand is not in PlayerInventory list on some mappings—count it explicitly
-        ItemStack off = p.getOffHandStack();
-        if (!off.isEmpty() && off.isOf(item)) count += off.getCount();
+        ItemStack off = p.getOffhandItem();
+        if (!off.isEmpty() && off.is(item)) count += off.getCount();
 
         return count;
     }
@@ -527,8 +527,8 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
         super.init();
 
         // keep virtual GUI size (slot coords are based on this)
-        this.backgroundWidth = GUI_W;
-        this.backgroundHeight = GUI_H;
+        this.imageWidth = GUI_W;
+        this.imageHeight = GUI_H;
 
         // Fullscreen panel space
         fsX = 0;
@@ -566,44 +566,44 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
         int desiredInvLeftX = rightX + RIGHT_PAD;                    // left padding inside right panel
 
         // Move the entire GUI origin so slot grid lands there
-        this.x = desiredInvLeftX - HANDLER_INV_X;
-        this.y = desiredInvTopY - HANDLER_INV_TOP_Y;
+        this.leftPos = desiredInvLeftX - HANDLER_INV_X;
+        this.topPos = desiredInvTopY - HANDLER_INV_TOP_Y;
 
         // Inventory title (above slots)
-        this.playerInventoryTitleX = desiredInvLeftX;
-        this.playerInventoryTitleY = desiredInvTopY - 12;
+        this.inventoryLabelX = desiredInvLeftX;
+        this.inventoryLabelY = desiredInvTopY - 12;
 
         // Screen title (top-left)
-        this.titleX = topX + 4;
-        this.titleY = topY + 6;
+        this.titleLabelX = topX + 4;
+        this.titleLabelY = topY + 6;
 
         // Clear & rebuild widgets
-        this.clearChildren();
+        this.clearWidgets();
 
         // Tabs
         int tabX = topX + 2;
         int tabY = topY + 2;
 
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("Store"), b -> {
+        this.addRenderableWidget(Button.builder(Component.literal("Store"), b -> {
             tab = Tab.STORE;
             closeSortMenu();
             updateWidgetVisibility();
-        }).dimensions(tabX, tabY, 64, 18).build());
+        }).bounds(tabX, tabY, 64, 18).build());
 
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("Cart"), b -> {
+        this.addRenderableWidget(Button.builder(Component.literal("Cart"), b -> {
             tab = Tab.CART;
             updateWidgetVisibility();
-        }).dimensions(tabX + 68, tabY, 64, 18).build());
+        }).bounds(tabX + 68, tabY, 64, 18).build());
 
         // --- NOW that leftX/leftY exist, compute previewBox coords ---
         int sortX = previewBoxX() + 6;
         int sortY = previewBoxY() + 6;
         int sortW = previewBoxW() - 12;
 
-        sortBtn = this.addDrawableChild(ButtonWidget.builder(
-                Text.literal("Sort: " + sortMode.label),
+        sortBtn = this.addRenderableWidget(Button.builder(
+                Component.literal("Sort: " + sortMode.label),
                 b -> toggleSortMenu()
-        ).dimensions(sortX, sortY, sortW, SORT_BTN_H).build());
+        ).bounds(sortX, sortY, sortW, SORT_BTN_H).build());
 
         // Right panel fields (above inventory area)
         int fieldX = rightX + RIGHT_PAD;
@@ -611,10 +611,10 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
 
         int fieldW = rightW - (RIGHT_PAD * 2);
 
-        searchField = new TextFieldWidget(this.textRenderer, fieldX, fieldY, fieldW, 18, Text.literal(""));
+        searchField = new EditBox(this.font, fieldX, fieldY, fieldW, 18, Component.literal(""));
         searchField.setMaxLength(128);
-        searchField.setPlaceholder(Text.literal("Search Name"));
-        this.addSelectableChild(searchField);
+        searchField.setHint(Component.literal("Search Name"));
+        this.addWidget(searchField);
 
         // Add-to-cart sits ABOVE the inventory block, aligned to right panel
         // Add-to-cart / Clear Cart sit ABOVE the inventory block, aligned to right panel
@@ -626,15 +626,15 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
         int btnY = desiredInvTopY - 10 - btnH;
 
         // STORE button
-        addToCartBtn = this.addDrawableChild(ButtonWidget.builder(Text.literal("Add to Cart"), btn -> {
+        addToCartBtn = this.addRenderableWidget(Button.builder(Component.literal("Add to Cart"), btn -> {
             addSelectedToCart();
-        }).dimensions(btnX, btnY, btnW, btnH).build());
+        }).bounds(btnX, btnY, btnW, btnH).build());
 
         // CART buttons (stacked)
         int clearY = btnY;
         int buyY   = btnY - (btnH + 6);
 
-        buyCartBtn = this.addDrawableChild(ButtonWidget.builder(Text.literal("Buy"), btn -> {
+        buyCartBtn = this.addRenderableWidget(Button.builder(Component.literal("Buy"), btn -> {
             if (cart.isEmpty()) { status = "Cart is empty."; return; }
             if (!canAffordCart()) { status = "You can't afford this cart."; return; }
 
@@ -660,10 +660,10 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
             selectedPriceItems = 0;
 
             updateWidgetVisibility(); // disables Buy/Clear when empty
-        }).dimensions(btnX, buyY, btnW, btnH).build());
+        }).bounds(btnX, buyY, btnW, btnH).build());
 
 
-        clearCartBtn = this.addDrawableChild(ButtonWidget.builder(Text.literal("Clear Cart"), btn -> {
+        clearCartBtn = this.addRenderableWidget(Button.builder(Component.literal("Clear Cart"), btn -> {
             cart.clear();
             selectedCartIndex = -1;
             cartScrollPx = 0;
@@ -671,7 +671,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
             previewTex = null;
             selectedPriceItems = 0;
             status = "Cart cleared.";
-        }).dimensions(btnX, clearY, btnW, btnH).build());
+        }).bounds(btnX, clearY, btnW, btnH).build());
 
 
         int gx = gridAreaX();
@@ -687,7 +687,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
         int totalW = pagerBtnW + pagerGap + pageLabelW + pagerGap + pagerBtnW;
         int startX = gx + (gw - totalW) / 2;
 
-        prevPageBtn = this.addDrawableChild(ButtonWidget.builder(Text.literal("< Prev"), b -> {
+        prevPageBtn = this.addRenderableWidget(Button.builder(Component.literal("< Prev"), b -> {
             if (lastPrintsQuery.isBlank()) return;
             if (gridPage <= 1) return;
 
@@ -699,12 +699,12 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
             UUID req = UUID.randomUUID();
             activePrintsRequest = req;
 
-            ClientPlayNetworking.send(new CardStorePackets.SearchPrintsC2S(handler.blockPos, lastPrintsQuery, target, pageSize, req));
+            ClientPlayNetworking.send(new CardStorePackets.SearchPrintsC2S(menu.blockPos, lastPrintsQuery, target, pageSize, req));
             status = "Loading page " + target + "…";
 
-        }).dimensions(startX, pagerY, pagerBtnW, pagerBtnH).build());
+        }).bounds(startX, pagerY, pagerBtnW, pagerBtnH).build());
 
-        nextPageBtn = this.addDrawableChild(ButtonWidget.builder(Text.literal("Next >"), b -> {
+        nextPageBtn = this.addRenderableWidget(Button.builder(Component.literal("Next >"), b -> {
             if (lastPrintsQuery.isBlank()) return;
 
             boolean computedHasMore = (gridTotal > gridPage * lastRequestedPageSize);
@@ -719,10 +719,10 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
             UUID req = UUID.randomUUID();
             activePrintsRequest = req;
 
-            ClientPlayNetworking.send(new CardStorePackets.SearchPrintsC2S(handler.blockPos, lastPrintsQuery, target, pageSize, req));
+            ClientPlayNetworking.send(new CardStorePackets.SearchPrintsC2S(menu.blockPos, lastPrintsQuery, target, pageSize, req));
             status = "Loading page " + target + "…";
 
-        }).dimensions(startX + pagerBtnW + pagerGap + pageLabelW + pagerGap, pagerY, pagerBtnW, pagerBtnH).build());
+        }).bounds(startX + pagerBtnW + pagerGap + pageLabelW + pagerGap, pagerY, pagerBtnW, pagerBtnH).build());
         if (addToCartBtn != null) addToCartBtn.active = hasValidSelection();
 
         rebuildPriceIcon();
@@ -768,7 +768,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
         return idx;
     }
 
-    private void renderSortMenu(DrawContext ctx, int mouseX, int mouseY) {
+    private void renderSortMenu(GuiGraphics ctx, int mouseX, int mouseY) {
         if (!sortMenuOpen || sortBtn == null) return;
 
         int x = sortMenuX();
@@ -794,9 +794,9 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
             if (hovered) ctx.fill(x + 1, iy0, x + w - 1, iy1, 0x33FFFFFF);
             if (selected) ctx.fill(x + 1, iy0, x + w - 1, iy1, 0x2200FFFF);
 
-            ctx.drawText(
-                    this.textRenderer,
-                    Text.literal(vals[i].label),
+            ctx.drawString(
+                    this.font,
+                    Component.literal(vals[i].label),
                     x + 6,
                     iy0 + 5,
                     0xFFFFFFFF,
@@ -880,17 +880,17 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
         // Walk right-to-left like rendering: [price][cn][set][ qty controls ]
         int right = rightEdge;
 
-        int pw = this.textRenderer.getWidth(price);
+        int pw = this.font.width(price);
         right -= pw + 10;
 
-        int cnw = this.textRenderer.getWidth(cn);
+        int cnw = this.font.width(cn);
         right -= cnw + 10;
 
-        int sw = this.textRenderer.getWidth(set);
+        int sw = this.font.width(set);
         right -= sw + 10;
 
         // Qty controls geometry (must match drawCartRows)
-        int qw = this.textRenderer.getWidth(qtyStr);
+        int qw = this.font.width(qtyStr);
         int pillW = qw + 8;
         int pillY = (ry0 + 6) + 1;      // textY + 1
         int btnY  = pillY - 1;
@@ -916,7 +916,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
 
 
     @Override
-    public boolean mouseClicked(net.minecraft.client.gui.Click click, boolean bl) {
+    public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent click, boolean bl) {
         boolean handled = super.mouseClicked(click, bl);
 
         // If tabs were clicked (buttons), visibility should update right away
@@ -1001,18 +1001,18 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
     private static final int CART_TEXT_PAD = 6;
 
     private boolean isTextureReady(Identifier id) {
-        if (this.client == null) return false;
-        var tm = this.client.getTextureManager();
+        if (this.minecraft == null) return false;
+        var tm = this.minecraft.getTextureManager();
         var tex = tm.getTexture(id);
         return tex != null; // if it exists here, it’s registered/boundable
     }
 
-    private void drawCardThumb(DrawContext ctx, ItemStack stack, int x, int y, int size) {
+    private void drawCardThumb(GuiGraphics ctx, ItemStack stack, int x, int y, int size) {
         var tex = CardArtManager.getOrRequestFace(stack, 0);
 
         // fallback if not ready
         if (tex == null || tex.id() == null) {
-            ctx.drawItem(stack, x, y);
+            ctx.renderItem(stack, x, y);
             return;
         }
 
@@ -1035,12 +1035,12 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
         float sx = (float) drawW / (float) texW;
         float sy = (float) drawH / (float) texH;
 
-        var m = ctx.getMatrices();
+        var m = ctx.pose();
         m.pushMatrix();
         m.translate((float) dx, (float) dy);
         m.scale(sx, sy);
 
-        ctx.drawTexture(
+        ctx.blit(
                 RenderPipelines.GUI_TEXTURED,
                 tex.id(),
                 0, 0,
@@ -1077,7 +1077,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
     }
 
     public void onPrintsStart(CardStorePackets.SearchPrintsStartS2C p) {
-        if (!p.storePos().equals(handler.blockPos)) return;
+        if (!p.storePos().equals(menu.blockPos)) return;
 
         // accept + lock to this request
         activePrintsRequest = p.requestId();
@@ -1108,7 +1108,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
     }
 
     public void onPrintsAdd(CardStorePackets.SearchPrintsAddS2C p) {
-        if (!p.storePos().equals(handler.blockPos)) return;
+        if (!p.storePos().equals(menu.blockPos)) return;
         if (!p.requestId().equals(activePrintsRequest)) return;
 
         var e = p.entry();
@@ -1135,7 +1135,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
     }
 
     public void onPrintsDone(CardStorePackets.SearchPrintsDoneS2C p) {
-        if (!p.storePos().equals(handler.blockPos)) return;
+        if (!p.storePos().equals(menu.blockPos)) return;
         if (!p.requestId().equals(activePrintsRequest)) return;
 
         status = p.message();
@@ -1158,7 +1158,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
 
 
     @Override
-    protected void drawBackground(DrawContext ctx, float delta, int mouseX, int mouseY) {
+    protected void renderBg(GuiGraphics ctx, float delta, int mouseX, int mouseY) {
         // dim the world
         ctx.fill(0, 0, this.width, this.height, DIM_BG);
 
@@ -1186,7 +1186,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
         ctx.fill(gridAreaX(), gridAreaY(), gridAreaX() + gridAreaW(), gridAreaY() + gridAreaH(), BOX_BG);
     }
 
-    private static void outline(DrawContext ctx, int x, int y, int w, int h, int color) {
+    private static void outline(GuiGraphics ctx, int x, int y, int w, int h, int color) {
         ctx.fill(x, y, x + w, y + 1, color);
         ctx.fill(x, y + h - 1, x + w, y + h, color);
         ctx.fill(x, y, x + 1, y + h, color);
@@ -1195,7 +1195,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
 
 
     @Override
-    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
         MtgGuiChrome.drawDimBackground(ctx, width, height);
         MtgGuiChrome.drawHudStrips(ctx, width, height);
 
@@ -1204,14 +1204,14 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
         refreshBuyEnabled();
 
         if (status != null && !status.isBlank()) {
-            ctx.drawText(this.textRenderer, Text.literal(status), infoX + 6, infoY + 3, 0xFFFFFFFF, false);
+            ctx.drawString(this.font, Component.literal(status), infoX + 6, infoY + 3, 0xFFFFFFFF, false);
         }
 
         drawDropHint(ctx);
 
         if (tab == Tab.STORE) {
             // fields
-            searchField.render(ctx, mouseX, mouseY, delta);
+            searchField.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
 
             // helper text under search field
             int hx = searchField.getX() + 2;
@@ -1220,9 +1220,9 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
             // wrap to the search field width (minus a little padding)
             int wrapW = searchField.getWidth() - 4;
 
-            String q = (searchField != null) ? searchField.getText() : "";
+            String q = (searchField != null) ? searchField.getValue() : "";
             if (isAdvancedQuery(q)) {
-                ctx.drawWrappedText(this.textRenderer, SCRY_HELP, hx, hy, wrapW, TEXT_FAINT, false);
+                ctx.drawWordWrap(this.font, SCRY_HELP, hx, hy, wrapW, TEXT_FAINT, false);
             }
 
             // grid + pager
@@ -1253,16 +1253,16 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
             int ty = rightY + RIGHT_PAD + 6;
 
             // total
-            ctx.drawText(this.textRenderer, Text.literal(totalStr), tx, ty, 0xFFFFFFFF, false);
+            ctx.drawString(this.font, Component.literal(totalStr), tx, ty, 0xFFFFFFFF, false);
 
             // price icon immediately after total value
-            int tw = this.textRenderer.getWidth(totalStr);
+            int tw = this.font.width(totalStr);
             if (!priceIcon.isEmpty()) {
-                ctx.drawItem(priceIcon, tx + tw + 6, ty - 2);
+                ctx.renderItem(priceIcon, tx + tw + 6, ty - 2);
             }
 
             // meta line
-            ctx.drawText(this.textRenderer, Text.literal(meta), tx, ty + 12, 0xFFAAAAAA, false);
+            ctx.drawString(this.font, Component.literal(meta), tx, ty + 12, 0xFFAAAAAA, false);
 
         }
 
@@ -1270,7 +1270,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
         if (tab == Tab.STORE) {
             renderSortMenu(ctx, mouseX, mouseY);
         }
-        this.drawMouseoverTooltip(ctx, mouseX, mouseY);
+        this.renderTooltip(ctx, mouseX, mouseY);
     }
 
     private boolean isMouseOverSortButton(int mx, int my) {
@@ -1280,7 +1280,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
                 && my < sortBtn.getY() + sortBtn.getHeight();
     }
 
-    private void drawStorePagerLabel(DrawContext ctx) {
+    private void drawStorePagerLabel(GuiGraphics ctx) {
         int gx = gridAreaX();
         int gy = gridAreaY();
         int gw = gridAreaW();
@@ -1289,11 +1289,11 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
         int maxPages = Math.max(1, (int) Math.ceil(gridTotal / (double) lastRequestedPageSize));
 
         String label = "Page " + gridPage + " / " + maxPages;
-        int labelW = this.textRenderer.getWidth(label);
-        ctx.drawText(this.textRenderer, Text.literal(label), gx + (gw - labelW) / 2, pagerY + 5, 0xFFFFFFFF, false);
+        int labelW = this.font.width(label);
+        ctx.drawString(this.font, Component.literal(label), gx + (gw - labelW) / 2, pagerY + 5, 0xFFFFFFFF, false);
     }
 
-    private void drawPreviewPanel(DrawContext ctx) {
+    private void drawPreviewPanel(GuiGraphics ctx) {
         if (preview.isEmpty()) return;
 
         int px = previewBoxX();
@@ -1328,12 +1328,12 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
             float sx = (float) drawW / (float) texW;
             float sy = (float) drawH / (float) texH;
 
-            var m = ctx.getMatrices();
+            var m = ctx.pose();
             m.pushMatrix();
             m.translate((float) dx, (float) dy);
             m.scale(sx, sy);
 
-            ctx.drawTexture(
+            ctx.blit(
                     RenderPipelines.GUI_TEXTURED,
                     previewTex.id(),
                     0, 0,
@@ -1353,37 +1353,37 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
 
             ctx.fill(priceX - 2, priceY - 2, px + boxW - pricePad, priceY + priceRowH, 0x66000000);
 
-            if (!priceIcon.isEmpty()) ctx.drawItem(priceIcon, priceX, priceY);
+            if (!priceIcon.isEmpty()) ctx.renderItem(priceIcon, priceX, priceY);
 
             String costText = (selectedPriceItems <= 0) ? "Cost: —" : ("Cost: " + selectedPriceItems);
             int textX = priceX + 18;
 
-            ctx.drawText(this.textRenderer, Text.literal(costText), textX, priceY + 5, 0xFFFFFFFF, false);
+            ctx.drawString(this.font, Component.literal(costText), textX, priceY + 5, 0xFFFFFFFF, false);
 
             if (priceBasis != null && !priceBasis.isBlank()) {
                 String basis = "(" + priceBasis.toUpperCase() + ")";
-                ctx.drawText(
-                        this.textRenderer,
-                        Text.literal(basis),
-                        textX + this.textRenderer.getWidth(costText) + 6,
+                ctx.drawString(
+                        this.font,
+                        Component.literal(basis),
+                        textX + this.font.width(costText) + 6,
                         priceY + 5,
                         0xFFAAAAAA,
                         false
                 );
             }
         } else {
-            ctx.drawItem(preview, px, py);
-            ctx.drawStackOverlay(this.textRenderer, preview, px, py);
+            ctx.renderItem(preview, px, py);
+            ctx.renderItemDecorations(this.font, preview, px, py);
         }
     }
 
-    private ButtonWidget pageLabelBtn;
+    private Button pageLabelBtn;
     private String status = "";
     private String resolvedSet = "";
     private String resolvedCn = "";
 
     public void onSearchResult(CardStorePackets.SearchS2C p) {
-        if (!p.storePos().equals(handler.blockPos)) return;
+        if (!p.storePos().equals(menu.blockPos)) return;
 
         status = p.message();
 
@@ -1392,7 +1392,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
             resolvedCn  = p.collectorNumber();
 
             if (p.name() != null && !p.name().isBlank() && searchField != null) {
-                searchField.setText(p.name());
+                searchField.setValue(p.name());
             }
 
             preview = p.hasPreview() ? p.preview() : ItemStack.EMPTY;
@@ -1407,7 +1407,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
     }
 
     @Override
-    public void onFilesDropped(List<Path> paths) {
+    public void onFilesDrop(List<Path> paths) {
         handleDeckDrop(paths);
     }
 
@@ -1442,22 +1442,22 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
             return;
         }
 
-        ClientPlayNetworking.send(new CardStorePackets.ImportDeckC2S(handler.blockPos, all.size(), all));
+        ClientPlayNetworking.send(new CardStorePackets.ImportDeckC2S(menu.blockPos, all.size(), all));
         status = "Importing " + all.size() + " lines from " + filesUsed + " file(s)...";
     }
 
-    private static final Text DROP_HINT = Text.literal("Drag in .txt or .csv files");
+    private static final Component DROP_HINT = Component.literal("Drag in .txt or .csv files");
 
-    private void drawDropHint(DrawContext ctx) {
+    private void drawDropHint(GuiGraphics ctx) {
         int pad = 6;
         int y = topY + 6;
 
-        int w = this.textRenderer.getWidth(DROP_HINT);
+        int w = this.font.width(DROP_HINT);
         int x = (topX + topW) - pad - w;
 
         // subtle shadow plate so it reads on bright backgrounds
         ctx.fill(x - 4, y - 2, x + w + 4, y + 10, 0x33202A33);
-        ctx.drawText(this.textRenderer, DROP_HINT, x, y, TEXT_MUTED, false);
+        ctx.drawString(this.font, DROP_HINT, x, y, TEXT_MUTED, false);
     }
 
     private static final Pattern DECK_TXT =
@@ -1552,7 +1552,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
     }
 
     public void onImportDeckResult(CardStorePackets.ImportDeckS2C p) {
-        if (!p.pos().equals(handler.blockPos)) return;
+        if (!p.pos().equals(menu.blockPos)) return;
 
         status = p.message();
 
@@ -1650,7 +1650,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
 
 
     @Override
-    public boolean keyPressed(KeyInput key) {
+    public boolean keyPressed(KeyEvent key) {
         int code = key.key();
 
         // Close sort menu on ESC (or inventory key) before anything else
@@ -1676,7 +1676,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
                     return true;
                 }
 
-                String q = searchField.getText().trim();
+                String q = searchField.getValue().trim();
                 if (q.isBlank()) {
                     status = "Type a search first.";
                     return true;
@@ -1692,7 +1692,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
                 activePrintsRequest = req;
 
                 // ✅ allow advanced queries again
-                ClientPlayNetworking.send(new CardStorePackets.SearchPrintsC2S(handler.blockPos, q, page, pageSize, req));
+                ClientPlayNetworking.send(new CardStorePackets.SearchPrintsC2S(menu.blockPos, q, page, pageSize, req));
                 status = "Loading page " + page + "…";
                 return true;
             }
@@ -1775,7 +1775,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
 
     public static final int MAX_PAGE_SIZE = 175;
 
-    private void drawCartRows(DrawContext ctx, int mouseX, int mouseY) {
+    private void drawCartRows(GuiGraphics ctx, int mouseX, int mouseY) {
 
         int x = cartListX();
         int y = cartListY();
@@ -1798,8 +1798,8 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
 
 // Header labels: Art | Name | Qty | Set | CN | Price
         int labelY = hy0 + 5;
-        ctx.drawText(this.textRenderer, Text.literal("Art"),  hx0 + 6, labelY, 0xFFAAAAAA, false);
-        ctx.drawText(this.textRenderer, Text.literal("Name"), hx0 + 30, labelY, 0xFFAAAAAA, false);
+        ctx.drawString(this.font, Component.literal("Art"),  hx0 + 6, labelY, 0xFFAAAAAA, false);
+        ctx.drawString(this.font, Component.literal("Name"), hx0 + 30, labelY, 0xFFAAAAAA, false);
 
 // Right-aligned labels (match your column order)
         String hPrice = "Price";
@@ -1808,20 +1808,20 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
         String hQty   = "Qty";
 
         int r = hx1 - 6;
-        int wPrice = this.textRenderer.getWidth(hPrice);
-        ctx.drawText(this.textRenderer, Text.literal(hPrice), r - wPrice, labelY, 0xFFAAAAAA, false);
+        int wPrice = this.font.width(hPrice);
+        ctx.drawString(this.font, Component.literal(hPrice), r - wPrice, labelY, 0xFFAAAAAA, false);
         r -= wPrice + 10;
 
-        int wCn = this.textRenderer.getWidth(hCn);
-        ctx.drawText(this.textRenderer, Text.literal(hCn), r - wCn, labelY, 0xFFAAAAAA, false);
+        int wCn = this.font.width(hCn);
+        ctx.drawString(this.font, Component.literal(hCn), r - wCn, labelY, 0xFFAAAAAA, false);
         r -= wCn + 10;
 
-        int wSet = this.textRenderer.getWidth(hSet);
-        ctx.drawText(this.textRenderer, Text.literal(hSet), r - wSet, labelY, 0xFFAAAAAA, false);
+        int wSet = this.font.width(hSet);
+        ctx.drawString(this.font, Component.literal(hSet), r - wSet, labelY, 0xFFAAAAAA, false);
         r -= wSet + 10;
 
-        int wQty = this.textRenderer.getWidth(hQty);
-        ctx.drawText(this.textRenderer, Text.literal(hQty), r - wQty, labelY, 0xFFAAAAAA, false);
+        int wQty = this.font.width(hQty);
+        ctx.drawString(this.font, Component.literal(hQty), r - wQty, labelY, 0xFFAAAAAA, false);
 
         int hovered = hitTestCartIndex(mouseX, mouseY);
 
@@ -1873,7 +1873,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
             int textX = thumbX + CART_THUMB + CART_TEXT_PAD;
             int textY = ry0 + 6;
 
-            String name  = line.stack.getName().getString();
+            String name  = line.stack.getHoverName().getString();
             String set   = shortSet(line.set).toUpperCase();
             String cnRaw = (line.cn == null ? "" : line.cn);
             String cn    = (cnRaw.length() <= 3) ? cnRaw : cnRaw.substring(0, 3);
@@ -1884,10 +1884,10 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
             int rightEdge = rx1 - 6;
 
             // Reserve space for right-side columns: [-][qty pill][+], plus set/cn/price with gaps
-            int pw  = this.textRenderer.getWidth(price);
-            int cnw = this.textRenderer.getWidth(cn);
-            int sw  = this.textRenderer.getWidth(set);
-            int qw  = this.textRenderer.getWidth(qty);
+            int pw  = this.font.width(price);
+            int cnw = this.font.width(cn);
+            int sw  = this.font.width(set);
+            int qw  = this.font.width(qty);
 
             int pillW = qw + 8;
             int qtyControlsW = (QBTN /*-*/ + QBTN_GAP + pillW + QBTN_GAP + QBTN /*+*/);
@@ -1901,29 +1901,29 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
             // how much width the name is allowed to use
             int nameMaxW = Math.max(10, (rightEdge - rightColumnsW) - textX);
 
-            if (this.textRenderer.getWidth(name) > nameMaxW) {
-                int ellW = this.textRenderer.getWidth("…");
-                name = this.textRenderer.trimToWidth(name, Math.max(0, nameMaxW - ellW)) + "…";
+            if (this.font.width(name) > nameMaxW) {
+                int ellW = this.font.width("…");
+                name = this.font.plainSubstrByWidth(name, Math.max(0, nameMaxW - ellW)) + "…";
             }
 
-            ctx.drawText(this.textRenderer, Text.literal(name), textX, textY, 0xFFFFFFFF, false);
+            ctx.drawString(this.font, Component.literal(name), textX, textY, 0xFFFFFFFF, false);
 
             // right aligned: [qty] [set] [cn] [price]
             int right = rightEdge;
 
             // price
 
-            ctx.drawText(this.textRenderer, Text.literal(price), right - pw, textY, 0xFFFFFFFF, false);
+            ctx.drawString(this.font, Component.literal(price), right - pw, textY, 0xFFFFFFFF, false);
             right -= pw + 10;
 
             // cn
 
-            ctx.drawText(this.textRenderer, Text.literal(cn), right - cnw, textY, 0xFFDDDDDD, false);
+            ctx.drawString(this.font, Component.literal(cn), right - cnw, textY, 0xFFDDDDDD, false);
             right -= cnw + 10;
 
             // set
 
-            ctx.drawText(this.textRenderer, Text.literal(set), right - sw, textY, 0xFFDDDDDD, false);
+            ctx.drawString(this.font, Component.literal(set), right - sw, textY, 0xFFDDDDDD, false);
             right -= sw + 10;
 
             // qty pill (looks nice, optional)
@@ -1940,19 +1940,19 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
             ctx.fill(minusX, btnY, minusX + QBTN, btnY + QBTN, 0x22000000);
             ctx.fill(minusX, btnY, minusX + QBTN, btnY + 1, 0x26FFFFFF);
             ctx.fill(minusX, btnY + QBTN - 1, minusX + QBTN, btnY + QBTN, 0x26000000);
-            ctx.drawText(this.textRenderer, Text.literal("-"), minusX + 4, btnY + 3, 0xFFFFFFFF, false);
+            ctx.drawString(this.font, Component.literal("-"), minusX + 4, btnY + 3, 0xFFFFFFFF, false);
 
             // qty pill
             ctx.fill(pillX, pillY, pillX + pillW, pillY + pillH, 0x22000000);
             ctx.fill(pillX, pillY, pillX + pillW, pillY + 1, 0x26FFFFFF);
             ctx.fill(pillX, pillY + pillH - 1, pillX + pillW, pillY + pillH, 0x26000000);
-            ctx.drawText(this.textRenderer, Text.literal(qty), pillX + 4, pillY + 2, 0xFFDDDDDD, false);
+            ctx.drawString(this.font, Component.literal(qty), pillX + 4, pillY + 2, 0xFFDDDDDD, false);
 
             // plus button
             ctx.fill(plusX, btnY, plusX + QBTN, btnY + QBTN, 0x22000000);
             ctx.fill(plusX, btnY, plusX + QBTN, btnY + 1, 0x26FFFFFF);
             ctx.fill(plusX, btnY + QBTN - 1, plusX + QBTN, btnY + QBTN, 0x26000000);
-            ctx.drawText(this.textRenderer, Text.literal("+"), plusX + 4, btnY + 3, 0xFFFFFFFF, false);
+            ctx.drawString(this.font, Component.literal("+"), plusX + 4, btnY + 3, 0xFFFFFFFF, false);
 
         }
     }
@@ -1960,14 +1960,14 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
     private static String readMtgMetaString(ItemStack st, String key) {
         if (st == null || st.isEmpty()) return "";
         try {
-            var comp = st.get(DataComponentTypes.CUSTOM_DATA);
+            var comp = st.get(DataComponents.CUSTOM_DATA);
             if (comp == null) return "";
 
-            var root = comp.copyNbt();
+            var root = comp.copyTag();
             if (root == null) return "";
 
             // ✅ Optional-aware
-            var meta = root.getCompound("mtg_meta").orElseGet(net.minecraft.nbt.NbtCompound::new);
+            var meta = root.getCompound("mtg_meta").orElseGet(net.minecraft.nbt.CompoundTag::new);
             if (meta.isEmpty()) return "";
 
             return meta.getString(key).orElse("");
@@ -1981,7 +1981,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
         String n = readMtgMetaString(st, "name");
         if (n != null && !n.isBlank()) return n;
         // fallback
-        return st.getName().getString();
+        return st.getHoverName().getString();
     }
 
     private static boolean isAdvancedQuery(String q) {
@@ -2016,7 +2016,7 @@ public class CardStoreScreen extends HandledScreen<CardStoreScreenHandler> {
         activePrintsRequest = req;
 
         ClientPlayNetworking.send(new CardStorePackets.SearchPrintsC2S(
-                handler.blockPos, lastPrintsQuery, page, pageSize, req
+                menu.blockPos, lastPrintsQuery, page, pageSize, req
         ));
 
         status = "Loading page " + page + "…";

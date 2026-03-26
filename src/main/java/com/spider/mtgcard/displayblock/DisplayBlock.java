@@ -2,44 +2,45 @@ package com.spider.mtgcard.displayblock;
 
 import com.mojang.serialization.MapCodec;
 import com.spider.mtgcard.registry.ModBlockEntities;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.BlockWithEntity;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.BlockEntityTicker;
-import net.minecraft.block.entity.BlockEntityType;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemPlacementContext;
-import net.minecraft.item.ItemStack;
-import net.minecraft.state.StateManager;
-import net.minecraft.state.property.EnumProperty;
-import net.minecraft.state.property.Properties;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.world.World;
+import net.minecraft.world.level.block.state.BlockBehaviour.Properties;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.BaseEntityBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.EnumProperty;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.Nullable;
 
-public class DisplayBlock extends BlockWithEntity {
+public class DisplayBlock extends BaseEntityBlock {
 
-    public static final EnumProperty<Direction> FACING = Properties.HORIZONTAL_FACING;
-    public static final MapCodec<DisplayBlock> CODEC = createCodec(DisplayBlock::new);
+    public static final EnumProperty<Direction> FACING = BlockStateProperties.HORIZONTAL_FACING;
+    public static final MapCodec<DisplayBlock> CODEC = simpleCodec(DisplayBlock::new);
 
     public static final EnumProperty<DisplayShape> SHAPE =
-            EnumProperty.of("shape", DisplayShape.class);
+            EnumProperty.create("shape", DisplayShape.class);
 
-    public DisplayBlock(Settings settings) {
+    public DisplayBlock(Properties settings) {
         super(settings);
-        setDefaultState(getStateManager().getDefaultState().with(FACING, Direction.NORTH).with(SHAPE, DisplayShape.SINGLE));
+        registerDefaultState(getStateDefinition().any().setValue(FACING, Direction.NORTH).setValue(SHAPE, DisplayShape.SINGLE));
     }
 
     @Override
-    protected void neighborUpdate(BlockState state, World world, BlockPos pos,
-                                  net.minecraft.block.Block neighborBlock,
-                                  net.minecraft.world.block.WireOrientation wireOrientation,
-                                  boolean notify) {
-        if (!world.isClient()) {
+    protected void neighborChanged(BlockState state, Level world, BlockPos pos,
+                                   net.minecraft.world.level.block.Block neighborBlock,
+                                   net.minecraft.world.level.redstone.Orientation wireOrientation,
+                                   boolean notify) {
+        if (!world.isClientSide()) {
             var be = world.getBlockEntity(pos);
             if (be instanceof DisplayBlockEntity dbe) {
                 // NEW: if this tile is linked, claim any adjacent unlinked tiles
@@ -51,38 +52,38 @@ public class DisplayBlock extends BlockWithEntity {
         }
         updateSelfAndNeighbors(world, pos);
 
-        super.neighborUpdate(state, world, pos, neighborBlock, wireOrientation, notify);
+        super.neighborChanged(state, world, pos, neighborBlock, wireOrientation, notify);
     }
 
     @Override
-    protected void onStateReplaced(BlockState state, net.minecraft.server.world.ServerWorld world, BlockPos pos, boolean moved) {
+    protected void affectNeighborsAfterRemoval(BlockState state, net.minecraft.server.level.ServerLevel world, BlockPos pos, boolean moved) {
         if (world.getBlockState(pos).getBlock() != this) {
             // Ask neighbors to rebuild screens
             for (Direction d : new Direction[]{Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST, Direction.UP, Direction.DOWN}) {
-                updateSelfAndNeighbors(world, pos.offset(d));
+                updateSelfAndNeighbors(world, pos.relative(d));
             }
         }
-        super.onStateReplaced(state, world, pos, moved);
+        super.affectNeighborsAfterRemoval(state, world, pos, moved);
     }
 
     @Override
-    protected MapCodec<? extends BlockWithEntity> getCodec() {
+    protected MapCodec<? extends BaseEntityBlock> codec() {
         return CODEC;
     }
 
     @Override
-    protected void appendProperties(StateManager.Builder<net.minecraft.block.Block, BlockState> builder) {
+    protected void createBlockStateDefinition(StateDefinition.Builder<net.minecraft.world.level.block.Block, BlockState> builder) {
         builder.add(FACING, SHAPE);
     }
 
     @Override
-    public BlockState getPlacementState(ItemPlacementContext ctx) {
-        return getDefaultState()
-                .with(FACING, ctx.getHorizontalPlayerFacing().getOpposite())
-                .with(SHAPE, DisplayShape.SINGLE);
+    public BlockState getStateForPlacement(BlockPlaceContext ctx) {
+        return defaultBlockState()
+                .setValue(FACING, ctx.getHorizontalDirection().getOpposite())
+                .setValue(SHAPE, DisplayShape.SINGLE);
     }
 
-    private static boolean canConnect(World world, BlockPos a, BlockPos b) {
+    private static boolean canConnect(Level world, BlockPos a, BlockPos b) {
         if (!(world.getBlockState(b).getBlock() instanceof DisplayBlock)) return false;
 
         var beA = world.getBlockEntity(a);
@@ -90,8 +91,8 @@ public class DisplayBlock extends BlockWithEntity {
         if (!(beA instanceof DisplayBlockEntity da) || !(beB instanceof DisplayBlockEntity db)) return false;
 
         // Must face same way
-        Direction fa = world.getBlockState(a).get(FACING);
-        Direction fb = world.getBlockState(b).get(FACING);
+        Direction fa = world.getBlockState(a).getValue(FACING);
+        Direction fb = world.getBlockState(b).getValue(FACING);
         if (fa != fb) return false;
 
         // Must have same link to merge visually (matches your BE merge rule)
@@ -99,15 +100,15 @@ public class DisplayBlock extends BlockWithEntity {
         return da.sameLinkAs(db);
     }
 
-    private static DisplayShape computeShape(World world, BlockPos pos, BlockState state) {
-        Direction facing = state.get(FACING);
-        Direction leftDir  = facing.rotateYCounterclockwise();
-        Direction rightDir = facing.rotateYClockwise();
+    private static DisplayShape computeShape(Level world, BlockPos pos, BlockState state) {
+        Direction facing = state.getValue(FACING);
+        Direction leftDir  = facing.getCounterClockWise();
+        Direction rightDir = facing.getClockWise();
 
-        boolean up    = canConnect(world, pos, pos.up());
-        boolean down  = canConnect(world, pos, pos.down());
-        boolean left  = canConnect(world, pos, pos.offset(leftDir));
-        boolean right = canConnect(world, pos, pos.offset(rightDir));
+        boolean up    = canConnect(world, pos, pos.above());
+        boolean down  = canConnect(world, pos, pos.below());
+        boolean left  = canConnect(world, pos, pos.relative(leftDir));
+        boolean right = canConnect(world, pos, pos.relative(rightDir));
 
         if (!up && !down && !left && !right) return DisplayShape.SINGLE;
 
@@ -144,24 +145,24 @@ public class DisplayBlock extends BlockWithEntity {
         return DisplayShape.MIDDLE;
     }
 
-    private static void updateSelfAndNeighbors(World world, BlockPos pos) {
-        if (world.isClient()) return;
+    private static void updateSelfAndNeighbors(Level world, BlockPos pos) {
+        if (world.isClientSide()) return;
         BlockState st = world.getBlockState(pos);
         if (!(st.getBlock() instanceof DisplayBlock)) return;
 
         DisplayShape newShape = computeShape(world, pos, st);
-        if (st.get(SHAPE) != newShape) {
-            world.setBlockState(pos, st.with(SHAPE, newShape), 3);
+        if (st.getValue(SHAPE) != newShape) {
+            world.setBlock(pos, st.setValue(SHAPE, newShape), 3);
         }
 
         // Update neighbors in the screen plane + vertical
-        Direction facing = st.get(FACING);
-        Direction leftDir  = facing.rotateYCounterclockwise();
-        Direction rightDir = facing.rotateYClockwise();
+        Direction facing = st.getValue(FACING);
+        Direction leftDir  = facing.getCounterClockWise();
+        Direction rightDir = facing.getClockWise();
 
         BlockPos[] affected = new BlockPos[] {
-                pos.up(), pos.down(),
-                pos.offset(leftDir), pos.offset(rightDir)
+                pos.above(), pos.below(),
+                pos.relative(leftDir), pos.relative(rightDir)
         };
 
         for (BlockPos p : affected) {
@@ -169,23 +170,23 @@ public class DisplayBlock extends BlockWithEntity {
             if (!(s2.getBlock() instanceof DisplayBlock)) continue;
 
             DisplayShape ns = computeShape(world, p, s2);
-            if (s2.get(SHAPE) != ns) {
-                world.setBlockState(p, s2.with(SHAPE, ns), 3);
+            if (s2.getValue(SHAPE) != ns) {
+                world.setBlock(p, s2.setValue(SHAPE, ns), 3);
             }
         }
     }
 
     @Nullable
     @Override
-    public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
+    public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
         return new DisplayBlockEntity(pos, state);
     }
 
     @Override
-    public void onPlaced(World world, BlockPos pos, BlockState state, LivingEntity placer, ItemStack stack) {
-        super.onPlaced(world, pos, state, placer, stack);
+    public void setPlacedBy(Level world, BlockPos pos, BlockState state, LivingEntity placer, ItemStack stack) {
+        super.setPlacedBy(world, pos, state, placer, stack);
 
-        if (world.isClient()) return;
+        if (world.isClientSide()) return;
 
         var be = world.getBlockEntity(pos);
         if (!(be instanceof DisplayBlockEntity dbe)) return;
@@ -210,7 +211,7 @@ public class DisplayBlock extends BlockWithEntity {
 
         // 4) Also ask neighbors to rebuild so the elected controller + cache settles immediately
         for (Direction d : new Direction[]{Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST}) {
-            var nbe = world.getBlockEntity(pos.offset(d));
+            var nbe = world.getBlockEntity(pos.relative(d));
             if (nbe instanceof DisplayBlockEntity ndbe) ndbe.requestRebuild();
         }
         // after dbe.tryInheritLinkFromNeighbors();
@@ -218,14 +219,14 @@ public class DisplayBlock extends BlockWithEntity {
     }
 
     @Override
-    protected ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, BlockHitResult hit) {
+    protected InteractionResult useWithoutItem(BlockState state, Level world, BlockPos pos, Player player, BlockHitResult hit) {
         // No GUI. Scroll interaction will be handled client-side later.
-        return ActionResult.SUCCESS;
+        return InteractionResult.SUCCESS;
     }
 
     @Override
-    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(World world, BlockState state, BlockEntityType<T> type) {
-        if (world.isClient()) return null;
+    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level world, BlockState state, BlockEntityType<T> type) {
+        if (world.isClientSide()) return null;
 
         if (type == ModBlockEntities.DISPLAY_BLOCK) {
 

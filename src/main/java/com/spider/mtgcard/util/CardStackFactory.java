@@ -1,8 +1,8 @@
 package com.spider.mtgcard.util;
 
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
 
 import java.util.List;
 
@@ -37,10 +37,10 @@ public final class CardStackFactory {
         ItemStack st = new ItemStack(cardItem, 1);
 
         // Read/modify your custom root data
-        NbtCompound root = StackData.readCustom(st);
+        CompoundTag root = StackData.readCustom(st);
 
         // mtg_meta compound as expected by CardMeta.read()
-        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
 
         meta.putString("name", name);
         meta.putString("set", setCode);
@@ -54,13 +54,13 @@ public final class CardStackFactory {
 
         // colors lists: ["W","U"...]
         if (colors != null) {
-            var lst = new net.minecraft.nbt.NbtList();
-            for (String c : colors) lst.add(net.minecraft.nbt.NbtString.of(c));
+            var lst = new net.minecraft.nbt.ListTag();
+            for (String c : colors) lst.add(net.minecraft.nbt.StringTag.valueOf(c));
             meta.put("colors", lst);
         }
         if (colorIdentity != null) {
-            var lst = new net.minecraft.nbt.NbtList();
-            for (String c : colorIdentity) lst.add(net.minecraft.nbt.NbtString.of(c));
+            var lst = new net.minecraft.nbt.ListTag();
+            for (String c : colorIdentity) lst.add(net.minecraft.nbt.StringTag.valueOf(c));
             meta.put("color_identity", lst);
         }
 

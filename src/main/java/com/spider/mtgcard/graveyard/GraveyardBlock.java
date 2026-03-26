@@ -1,121 +1,113 @@
-// com/spider/mtgcard/graveyard/GraveyardBlock.java
 package com.spider.mtgcard.graveyard;
 
 import com.mojang.serialization.MapCodec;
-import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
-import net.minecraft.block.*;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemPlacementContext;
-import net.minecraft.item.ItemStack;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.state.StateManager;
-import net.minecraft.state.property.BooleanProperty;
-import net.minecraft.state.property.EnumProperty;
-import net.minecraft.state.property.Properties;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.BlockMirror;
-import net.minecraft.util.BlockRotation;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BaseEntityBlock;
+import net.minecraft.world.level.block.Mirror;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
+import net.minecraft.world.level.block.state.properties.EnumProperty;
+import net.minecraft.world.phys.BlockHitResult;
 import org.jetbrains.annotations.Nullable;
 
-public class GraveyardBlock extends BlockWithEntity {
+public class GraveyardBlock extends BaseEntityBlock {
 
-    public static final BooleanProperty OPEN = BooleanProperty.of("open");
+    public static final BooleanProperty OPEN = BooleanProperty.create("open");
+    public static final EnumProperty<Direction> FACING = BlockStateProperties.HORIZONTAL_FACING;
 
-    public static final EnumProperty<Direction> FACING = Properties.HORIZONTAL_FACING;
+    public static final MapCodec<GraveyardBlock> CODEC = simpleCodec(GraveyardBlock::new);
 
-    // Newer API wants a codec on BlockWithEntity blocks
-    public static final MapCodec<GraveyardBlock> CODEC = createCodec(GraveyardBlock::new);
-
-    public GraveyardBlock(AbstractBlock.Settings settings) {
+    public GraveyardBlock(BlockBehaviour.Properties settings) {
         super(settings);
-        this.setDefaultState(
-                this.getStateManager().getDefaultState()
-                        .with(FACING, Direction.NORTH)
-                        .with(OPEN, false)
+        this.registerDefaultState(
+                this.getStateDefinition().any()
+                        .setValue(FACING, Direction.NORTH)
+                        .setValue(OPEN, false)
         );
     }
 
     @Override
-    public BlockState getPlacementState(ItemPlacementContext ctx) {
-        // Most “machine” blocks face the player (front toward player),
-        // so we use opposite of player facing.
-        Direction facing = ctx.getHorizontalPlayerFacing().getOpposite();
-        return this.getDefaultState()
-                .with(FACING, facing)
-                .with(OPEN, false);
+    public BlockState getStateForPlacement(BlockPlaceContext ctx) {
+        Direction facing = ctx.getHorizontalDirection().getOpposite();
+        return this.defaultBlockState()
+                .setValue(FACING, facing)
+                .setValue(OPEN, false);
     }
 
     @Override
-    public BlockState rotate(BlockState state, BlockRotation rotation) {
-        return state.with(FACING, rotation.rotate(state.get(FACING)));
+    public BlockState rotate(BlockState state, Rotation rotation) {
+        return state.setValue(FACING, rotation.rotate(state.getValue(FACING)));
     }
 
     @Override
-    public BlockState mirror(BlockState state, BlockMirror mirror) {
-        return state.rotate(mirror.getRotation(state.get(FACING)));
+    public BlockState mirror(BlockState state, Mirror mirror) {
+        return state.rotate(mirror.getRotation(state.getValue(FACING)));
     }
 
     @Override
-    protected MapCodec<? extends BlockWithEntity> getCodec() {
+    protected MapCodec<? extends BaseEntityBlock> codec() {
         return CODEC;
     }
 
     @Override
-    protected void appendProperties(StateManager.Builder<net.minecraft.block.Block, BlockState> builder) {
-        builder.add(OPEN);
-        builder.add(FACING);
+    protected void createBlockStateDefinition(StateDefinition.Builder<net.minecraft.world.level.block.Block, BlockState> builder) {
+        builder.add(OPEN, FACING);
     }
 
     @Override
-    public BlockRenderType getRenderType(BlockState state) {
-        return BlockRenderType.MODEL;
+    public RenderShape getRenderShape(BlockState state) {
+        return RenderShape.MODEL;
     }
 
     @Nullable
     @Override
-    public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
+    public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
         return new GraveyardBlockEntity(pos, state);
     }
 
-    /**
-     * Newer mappings: use onUseWithItem instead of onUse.
-     * This is called for item-in-hand interactions, but it also works fine for empty hand.
-     */
     @Override
-    protected ActionResult onUseWithItem(ItemStack stack, BlockState state, World world, BlockPos pos,
-                                         PlayerEntity player, Hand hand, BlockHitResult hit) {
-        if (world.isClient()) return ActionResult.SUCCESS;
+    protected InteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos,
+                                          Player player, InteractionHand hand, BlockHitResult hit) {
+        if (level.isClientSide()) return InteractionResult.SUCCESS;
 
-        BlockEntity be = world.getBlockEntity(pos);
-        if (be instanceof ExtendedScreenHandlerFactory<?> factory && player instanceof ServerPlayerEntity sp) {
-            sp.openHandledScreen(factory);
-            return ActionResult.CONSUME;
+        BlockEntity be = level.getBlockEntity(pos);
+        if (be instanceof MenuProvider provider && player instanceof ServerPlayer sp) {
+            sp.openMenu(provider);
+            return InteractionResult.CONSUME;
         }
-        return ActionResult.PASS;
+        return InteractionResult.PASS;
     }
 
     @Override
-    public boolean hasComparatorOutput(BlockState state) {
+    public boolean hasAnalogOutputSignal(BlockState state) {
         return true;
     }
 
     @Override
-    protected int getComparatorOutput(BlockState state, World world, BlockPos pos, Direction direction) {
-        BlockEntity be = world.getBlockEntity(pos);
+    protected int getAnalogOutputSignal(BlockState state, Level level, BlockPos pos, Direction direction) {
+        BlockEntity be = level.getBlockEntity(pos);
         if (!(be instanceof GraveyardBlockEntity gy)) return 0;
 
         int filled = 0;
-        for (int i = 0; i < 100; i++) { // graveyard only
-            if (!gy.getStack(i).isEmpty()) filled++;
+        for (int i = 0; i < 100; i++) {
+            if (!gy.getItem(i).isEmpty()) filled++;
         }
 
-        // scale 0..100 → 0..15
         return Math.min(15, (int) Math.floor((filled / 100.0) * 15.0));
     }
 }

@@ -4,21 +4,21 @@ import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.guidebook.BasicGuideChapter;
 import com.spider.mtgcard.guidebook.GuideCategory;
 import com.spider.mtgcard.guidebook.GuideSection;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.registry.Registries;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 
 import java.util.List;
 
 public final class DisplayChapter extends BasicGuideChapter {
-    private static final Identifier ID = Identifier.of(Mtgcard.MOD_ID, "guide/display");
-    private static final Identifier ICON_ITEM = Identifier.of(Mtgcard.MOD_ID, "display_block");
+    private static final Identifier ID = Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "guide/display");
+    private static final Identifier ICON_ITEM = Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "display_block");
 
     public DisplayChapter() {
         super(ID, GuideCategory.BLOCKS, "guide.mtgcard.display.title", () -> {
-            var item = Registries.ITEM.get(ICON_ITEM);
+            var item = BuiltInRegistries.ITEM.getValue(ICON_ITEM);
             return item == Items.AIR ? ItemStack.EMPTY : new ItemStack(item);
         });
     }
@@ -26,44 +26,44 @@ public final class DisplayChapter extends BasicGuideChapter {
     @Override
     public List<GuideSection> sections() {
         return List.of(
-                new GuideSection.Paragraph(Text.translatable("guide.mtgcard.display.p_overview")),
+                new GuideSection.Paragraph(Component.translatable("guide.mtgcard.display.p_overview")),
 
-                new GuideSection.Heading(Text.translatable("guide.mtgcard.display.h_linking")),
+                new GuideSection.Heading(Component.translatable("guide.mtgcard.display.h_linking")),
                 new GuideSection.Bullets(List.of(
-                        Text.translatable("guide.mtgcard.display.b_link_sneak_use_item"),
-                        Text.translatable("guide.mtgcard.display.b_link_sound"),
-                        Text.translatable("guide.mtgcard.display.b_link_persists_item")
+                        Component.translatable("guide.mtgcard.display.b_link_sneak_use_item"),
+                        Component.translatable("guide.mtgcard.display.b_link_sound"),
+                        Component.translatable("guide.mtgcard.display.b_link_persists_item")
                 )),
 
-                new GuideSection.Heading(Text.translatable("guide.mtgcard.display.h_placing")),
+                new GuideSection.Heading(Component.translatable("guide.mtgcard.display.h_placing")),
                 new GuideSection.Bullets(List.of(
-                        Text.translatable("guide.mtgcard.display.b_place_applies_link"),
-                        Text.translatable("guide.mtgcard.display.b_place_inherit_from_neighbors"),
-                        Text.translatable("guide.mtgcard.display.b_place_propagates_to_component")
+                        Component.translatable("guide.mtgcard.display.b_place_applies_link"),
+                        Component.translatable("guide.mtgcard.display.b_place_inherit_from_neighbors"),
+                        Component.translatable("guide.mtgcard.display.b_place_propagates_to_component")
                 )),
 
-                new GuideSection.Heading(Text.translatable("guide.mtgcard.display.h_multiblock")),
+                new GuideSection.Heading(Component.translatable("guide.mtgcard.display.h_multiblock")),
                 new GuideSection.Bullets(List.of(
-                        Text.translatable("guide.mtgcard.display.b_multi_same_facing"),
-                        Text.translatable("guide.mtgcard.display.b_multi_same_link_only"),
-                        Text.translatable("guide.mtgcard.display.b_multi_largest_rectangle"),
-                        Text.translatable("guide.mtgcard.display.b_multi_controller_only")
+                        Component.translatable("guide.mtgcard.display.b_multi_same_facing"),
+                        Component.translatable("guide.mtgcard.display.b_multi_same_link_only"),
+                        Component.translatable("guide.mtgcard.display.b_multi_largest_rectangle"),
+                        Component.translatable("guide.mtgcard.display.b_multi_controller_only")
                 )),
 
-                new GuideSection.Heading(Text.translatable("guide.mtgcard.display.h_rendering")),
+                new GuideSection.Heading(Component.translatable("guide.mtgcard.display.h_rendering")),
                 new GuideSection.Bullets(List.of(
-                        Text.translatable("guide.mtgcard.display.b_render_same_dimension_only"),
-                        Text.translatable("guide.mtgcard.display.b_render_turn_pip"),
-                        Text.translatable("guide.mtgcard.display.b_render_dead_skull"),
-                        Text.translatable("guide.mtgcard.display.b_render_icon_swap_color"),
-                        Text.translatable("guide.mtgcard.display.b_render_commander_threshold")
+                        Component.translatable("guide.mtgcard.display.b_render_same_dimension_only"),
+                        Component.translatable("guide.mtgcard.display.b_render_turn_pip"),
+                        Component.translatable("guide.mtgcard.display.b_render_dead_skull"),
+                        Component.translatable("guide.mtgcard.display.b_render_icon_swap_color"),
+                        Component.translatable("guide.mtgcard.display.b_render_commander_threshold")
                 )),
 
-                new GuideSection.Heading(Text.translatable("guide.mtgcard.display.h_updates")),
+                new GuideSection.Heading(Component.translatable("guide.mtgcard.display.h_updates")),
                 new GuideSection.Bullets(List.of(
-                        Text.translatable("guide.mtgcard.display.b_update_controller_sync"),
-                        Text.translatable("guide.mtgcard.display.b_update_missing_life_clears"),
-                        Text.translatable("guide.mtgcard.display.b_update_no_chunk_load")
+                        Component.translatable("guide.mtgcard.display.b_update_controller_sync"),
+                        Component.translatable("guide.mtgcard.display.b_update_missing_life_clears"),
+                        Component.translatable("guide.mtgcard.display.b_update_no_chunk_load")
                 ))
         );
     }

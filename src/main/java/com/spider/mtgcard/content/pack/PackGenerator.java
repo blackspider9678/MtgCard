@@ -6,16 +6,16 @@ import com.spider.mtgcard.item.ModItems;
 import com.spider.mtgcard.net.ModPayloads;
 
 import com.spider.mtgcard.util.CardStackBuilders;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.BundleContentsComponent;
-import net.minecraft.component.type.NbtComponent;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.nbt.NbtCompound;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.component.BundleContents;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.network.chat.Component;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -75,7 +75,7 @@ public final class PackGenerator {
 
         // ---------- One-shot fetch ----------
         private static CompletableFuture<ScryfallModels.Card> fetchOneCardAsync(
-                ServerWorld world,
+                ServerLevel world,
                 String desiredSet,
                 ScryfallCache.Query q,
                 RaritySlot slot
@@ -116,7 +116,7 @@ public final class PackGenerator {
         }
 
         // ---------- Async pack opening ----------
-        public static void openPackAsync(MinecraftServer server, ServerPlayerEntity player, String packUid) {
+        public static void openPackAsync(MinecraftServer server, ServerPlayer player, String packUid) {
                 final int TOTAL = 15;
 
                 final PackOpenManager.Active active = PackOpenManager.get(player);
@@ -127,7 +127,7 @@ public final class PackGenerator {
                 if (pack.isEmpty()) pack = findAnyPackInHandsOrInv(player);
 
                 if (pack.isEmpty()) {
-                        player.sendMessage(Text.literal("No MTG pack found to open."), true);
+                        player.sendSystemMessage(Component.literal("No MTG pack found to open."), true);
                         PackOpenManager.finish(player);
                         return;
                 }
@@ -160,7 +160,7 @@ public final class PackGenerator {
                                 return makeCardAsyncNoDupe(server, player, slot, desiredSet, customMode, seenIds, 6)
                                         .exceptionally(ex -> {
                                                 server.execute(() -> {
-                                                        player.sendMessage(Text.literal("[MTGCard] Pack slot failed: " + ex.getClass().getSimpleName()), true);
+                                                        player.sendSystemMessage(Component.literal("[MTGCard] Pack slot failed: " + ex.getClass().getSimpleName()), true);
                                                 });
                                                 return placeholderCard();
                                         })
@@ -188,7 +188,7 @@ public final class PackGenerator {
                                 // refund exactly once
                                 if (active != null) {
                                         ItemStack refund = active.refundPackOne.copy();
-                                        if (!player.getInventory().insertStack(refund)) player.dropItem(refund, false);
+                                        if (!player.getInventory().add(refund)) player.drop(refund, false);
                                 }
 
                                 PackOpenManager.finish(player);
@@ -202,14 +202,20 @@ public final class PackGenerator {
                         // Success path
                         int foilIndex = slots.indexOf(RaritySlot.FOIL_RANDOM);
                         if (foilIndex >= 0 && foilIndex < out.size() && !out.get(foilIndex).isEmpty()) {
-                                out.get(foilIndex).set(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, true);
+                                out.get(foilIndex).set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
                         }
 
                         ItemStack bundle = new ItemStack(Items.BUNDLE);
-                        bundle.set(DataComponentTypes.BUNDLE_CONTENTS, new BundleContentsComponent(new ArrayList<>(out)));
 
-                        if (!player.getInventory().insertStack(bundle)) {
-                                player.dropItem(bundle, false);
+                        List<net.minecraft.world.item.ItemStackTemplate> templates = out.stream()
+                                .filter(stack -> stack != null && !stack.isEmpty())
+                                .map(net.minecraft.world.item.ItemStackTemplate::fromNonEmptyStack)
+                                .toList();
+
+                        bundle.set(DataComponents.BUNDLE_CONTENTS, new BundleContents(templates));
+
+                        if (!player.getInventory().add(bundle)) {
+                                player.drop(bundle, false);
                         }
 
                         ModPayloads.sendUnpackProgress(player, 100);
@@ -226,7 +232,7 @@ public final class PackGenerator {
 
         private static CompletableFuture<ItemStack> makeCardAsyncNoDupe(
                 MinecraftServer server,
-                ServerPlayerEntity player,
+                ServerPlayer player,
                 RaritySlot slot,
                 String desiredSet,
                 CustomMode customMode,
@@ -253,12 +259,12 @@ public final class PackGenerator {
         // ---------- Core card builder (async) ----------
         private static CompletableFuture<ItemStack> makeCardAsync(
                 MinecraftServer server,
-                ServerPlayerEntity player,
+                ServerPlayer player,
                 RaritySlot slot,
                 String desiredSet,
                 CustomMode customMode
         ) {
-                ServerWorld world = player.getEntityWorld();
+                ServerLevel world = player.level();
                 boolean foilVisual = (slot == RaritySlot.FOIL_RANDOM);
 
                 // Query per slot
@@ -289,7 +295,7 @@ public final class PackGenerator {
                                 : tryCustomCard(world, null, slot, false);
 
                         if (!custom.isEmpty()) {
-                                if (foilVisual) custom.set(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, true);
+                                if (foilVisual) custom.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
                                 return CompletableFuture.completedFuture(custom);
                         }
                         // else fall through to Scryfall fallback
@@ -320,7 +326,7 @@ public final class PackGenerator {
                         if (slot != RaritySlot.TOKEN_OR_ART && isTokenLike(built)) {
                                 return new ItemStack(ModItems.CARD);
                         }
-                        if (foilVisual) built.set(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, true);
+                        if (foilVisual) built.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
                         return built;
                 });
         }
@@ -343,7 +349,7 @@ public final class PackGenerator {
          * @param desiredSet If non-null, restrict to that set code (custom set packs). If null, allow ALL sets (global custom pool).
          * @param setRestricted true when desiredSet is meaningful (set-specific), false when global pool.
          */
-        private static ItemStack tryCustomCard(ServerWorld world, @org.jetbrains.annotations.Nullable String desiredSet, RaritySlot slot, boolean setRestricted) {
+        private static ItemStack tryCustomCard(ServerLevel world, @org.jetbrains.annotations.Nullable String desiredSet, RaritySlot slot, boolean setRestricted) {
                 var server = world.getServer();
                 var store = customStore(server);
                 if (store == null) return ItemStack.EMPTY;
@@ -373,12 +379,12 @@ public final class PackGenerator {
                 // If this is TOKEN slot, mark token-like for downstream code/UI
                 if (slot == RaritySlot.TOKEN_OR_ART) {
                         try {
-                                var comp = st.getOrDefault(DataComponentTypes.CUSTOM_DATA, NbtComponent.DEFAULT);
-                                NbtCompound root = comp.copyNbt();
-                                NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+                                var comp = st.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY);
+                                CompoundTag root = comp.copyTag();
+                                CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
                                 meta.putBoolean("is_token_like", true);
                                 root.put("mtg_meta", meta);
-                                st.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(root));
+                                st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
                         } catch (Throwable ignored) {}
                 }
 
@@ -422,9 +428,9 @@ public final class PackGenerator {
 
         // ---------- Dedupe / helpers ----------
         private static String readMtgId(ItemStack st) {
-                var cd = st.get(DataComponentTypes.CUSTOM_DATA);
+                var cd = st.get(DataComponents.CUSTOM_DATA);
                 if (cd == null) return null;
-                var root = cd.copyNbt();
+                var root = cd.copyTag();
                 var meta = root.getCompound("mtg_meta").orElse(null);
                 if (meta == null) return null;
                 String id = meta.getString("id").orElse("");
@@ -433,9 +439,9 @@ public final class PackGenerator {
 
         private static boolean isTokenLike(ItemStack st) {
                 try {
-                        var cd = st.get(DataComponentTypes.CUSTOM_DATA);
+                        var cd = st.get(DataComponents.CUSTOM_DATA);
                         if (cd == null) return false;
-                        var root = cd.copyNbt();
+                        var root = cd.copyTag();
                         var meta = root.getCompound("mtg_meta").orElse(null);
                         if (meta == null) return false;
                         return meta.getBoolean("is_token_like").orElse(false);
@@ -445,23 +451,23 @@ public final class PackGenerator {
         }
 
         // ---------- Pack lookup ----------
-        private static ItemStack findPackByUid(ServerPlayerEntity player, String packUid) {
+        private static ItemStack findPackByUid(ServerPlayer player, String packUid) {
                 if (packUid == null || packUid.isEmpty()) return ItemStack.EMPTY;
 
-                ItemStack[] hands = { player.getMainHandStack(), player.getOffHandStack() };
+                ItemStack[] hands = { player.getMainHandItem(), player.getOffhandItem() };
                 for (ItemStack st : hands) {
                         if (!st.isEmpty()
-                                && st.isOf(ModItems.MTG_PACK)
+                                && st.is(ModItems.MTG_PACK)
                                 && uidEquals(st, packUid)) {
                                 return st;
                         }
                 }
 
                 var inv = player.getInventory();
-                for (int i = 0; i < inv.size(); i++) {
-                        ItemStack st = inv.getStack(i);
+                for (int i = 0; i < inv.getContainerSize(); i++) {
+                        ItemStack st = inv.getItem(i);
                         if (!st.isEmpty()
-                                && st.isOf(ModItems.MTG_PACK)
+                                && st.is(ModItems.MTG_PACK)
                                 && uidEquals(st, packUid)) {
                                 return st;
                         }
@@ -470,23 +476,23 @@ public final class PackGenerator {
         }
 
         private static boolean uidEquals(ItemStack st, String uid) {
-                var comp = st.get(DataComponentTypes.CUSTOM_DATA);
+                var comp = st.get(DataComponents.CUSTOM_DATA);
                 if (comp == null) return false;
-                NbtCompound root = comp.copyNbt();
-                NbtCompound tag  = root.getCompound("mtg_pack").orElse(null);
+                CompoundTag root = comp.copyTag();
+                CompoundTag tag  = root.getCompound("mtg_pack").orElse(null);
                 if (tag == null) return false;
                 String have = tag.getString("uid").orElse("");
                 return !have.isEmpty() && have.equals(uid);
         }
 
-        private static ItemStack findAnyPackInHandsOrInv(ServerPlayerEntity player) {
-                for (ItemStack st : new ItemStack[]{ player.getMainHandStack(), player.getOffHandStack() }) {
-                        if (!st.isEmpty() && st.isOf(ModItems.MTG_PACK)) return st;
+        private static ItemStack findAnyPackInHandsOrInv(ServerPlayer player) {
+                for (ItemStack st : new ItemStack[]{ player.getMainHandItem(), player.getOffhandItem() }) {
+                        if (!st.isEmpty() && st.is(ModItems.MTG_PACK)) return st;
                 }
                 var inv = player.getInventory();
-                for (int i = 0; i < inv.size(); i++) {
-                        ItemStack st = inv.getStack(i);
-                        if (!st.isEmpty() && st.isOf(ModItems.MTG_PACK)) return st;
+                for (int i = 0; i < inv.getContainerSize(); i++) {
+                        ItemStack st = inv.getItem(i);
+                        if (!st.isEmpty() && st.is(ModItems.MTG_PACK)) return st;
                 }
                 return ItemStack.EMPTY;
         }
@@ -499,7 +505,7 @@ public final class PackGenerator {
         private static String detectPackSet(ItemStack packItem) {
                 if (packItem == null || packItem.isEmpty()) return null;
 
-                var name = packItem.getName();
+                var name = packItem.getHoverName();
                 String disp = (name == null) ? "" : name.getString();
                 disp = disp.replaceAll("§.", "").trim();
 
@@ -518,9 +524,9 @@ public final class PackGenerator {
                 }
 
                 // CUSTOM_DATA fallback
-                var comp = packItem.get(DataComponentTypes.CUSTOM_DATA);
+                var comp = packItem.get(DataComponents.CUSTOM_DATA);
                 if (comp != null) {
-                        var root = comp.copyNbt();
+                        var root = comp.copyTag();
                         var tag  = root.getCompound("mtg_pack").orElse(null);
                         String fromData = (tag == null) ? "" : tag.getString("set").orElse("");
                         if (!fromData.isBlank()) return fromData.trim().toLowerCase(Locale.ROOT);

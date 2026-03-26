@@ -1,38 +1,39 @@
 package com.spider.mtgcard.net.payload;
 
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload.Type;
+import net.minecraft.resources.Identifier;
 
-public record XmlArtUploadPayload(String fileName, String sourceUrl, byte[] imgBytes) implements CustomPayload {
+public record XmlArtUploadPayload(String fileName, String sourceUrl, byte[] imgBytes) implements CustomPacketPayload {
 
-    public static final Id<XmlArtUploadPayload> ID =
-            new Id<>(Identifier.of("mtgcard", "xml_art_upload"));
+    public static final Type<XmlArtUploadPayload> ID =
+            new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "xml_art_upload"));
 
-    public static final PacketCodec<RegistryByteBuf, XmlArtUploadPayload> CODEC =
-            PacketCodec.<RegistryByteBuf, XmlArtUploadPayload>of(
+    public static final StreamCodec<RegistryFriendlyByteBuf, XmlArtUploadPayload> CODEC =
+            StreamCodec.<RegistryFriendlyByteBuf, XmlArtUploadPayload>ofMember(
                     // Value-first encoder: (value, buf)
-                    (XmlArtUploadPayload v, RegistryByteBuf b) -> write(b, v),
+                    (XmlArtUploadPayload v, RegistryFriendlyByteBuf b) -> write(b, v),
                     // Decoder: (buf) -> value
-                    (RegistryByteBuf b) -> read(b)
+                    (RegistryFriendlyByteBuf b) -> read(b)
             );
 
-    private static XmlArtUploadPayload read(RegistryByteBuf buf) {
-        String fn = buf.readString();
-        String su = buf.readString();
+    private static XmlArtUploadPayload read(RegistryFriendlyByteBuf buf) {
+        String fn = buf.readUtf();
+        String su = buf.readUtf();
         byte[] data = buf.readByteArray();
         return new XmlArtUploadPayload(fn, su, data);
     }
 
-    private static void write(RegistryByteBuf buf, XmlArtUploadPayload p) {
-        buf.writeString(p.fileName());
-        buf.writeString(p.sourceUrl());
+    private static void write(RegistryFriendlyByteBuf buf, XmlArtUploadPayload p) {
+        buf.writeUtf(p.fileName());
+        buf.writeUtf(p.sourceUrl());
         buf.writeByteArray(p.imgBytes());
     }
 
     @Override
-    public Id<? extends CustomPayload> getId() {
+    public Type<? extends CustomPacketPayload> type() {
         return ID;
     }
 }

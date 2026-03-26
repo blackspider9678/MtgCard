@@ -1,21 +1,22 @@
 package com.spider.mtgcard.net.payload;
 
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload.Type;
+import net.minecraft.resources.Identifier;
 
-public record DeleteCounterPayload(int slot, String key) implements CustomPayload {
-    public static final CustomPayload.Id<DeleteCounterPayload> ID =
-            new CustomPayload.Id<>(Identifier.of("mtgcard", "delete_counter"));
+public record DeleteCounterPayload(int slot, String key) implements CustomPacketPayload {
+    public static final CustomPacketPayload.Type<DeleteCounterPayload> ID =
+            new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath("mtgcard", "delete_counter"));
 
-    public static final PacketCodec<RegistryByteBuf, DeleteCounterPayload> CODEC =
-            PacketCodec.tuple(
-                    PacketCodecs.VAR_INT, DeleteCounterPayload::slot,
-                    PacketCodecs.STRING,  DeleteCounterPayload::key,
+    public static final StreamCodec<RegistryFriendlyByteBuf, DeleteCounterPayload> CODEC =
+            StreamCodec.composite(
+                    ByteBufCodecs.VAR_INT, DeleteCounterPayload::slot,
+                    ByteBufCodecs.STRING_UTF8,  DeleteCounterPayload::key,
                     DeleteCounterPayload::new
             );
 
-    @Override public Id<? extends CustomPayload> getId() { return ID; }
+    @Override public Type<? extends CustomPacketPayload> type() { return ID; }
 }

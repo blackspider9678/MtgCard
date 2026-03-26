@@ -1,6 +1,6 @@
 package com.spider.mtgcard.deckbox.net;
 
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 /*package com.spider.mtgcard.deckbox.net;
 

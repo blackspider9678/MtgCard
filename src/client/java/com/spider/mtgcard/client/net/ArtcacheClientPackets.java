@@ -3,7 +3,7 @@ package com.spider.mtgcard.client.net;
 import com.spider.mtgcard.net.ArtcachePackets;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
-import static net.minecraft.util.WorldSavePath.*;
+import static net.minecraft.world.level.storage.LevelResource.*;
 
 public final class ArtcacheClientPackets {
 

@@ -1,7 +1,7 @@
 package com.spider.mtgcard.content.pack.cache;
 
 import com.spider.mtgcard.content.pack.PackGenerator;
-import net.minecraft.server.world.ServerWorld;
+import net.minecraft.server.level.ServerLevel;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -88,7 +88,7 @@ public final class ScryfallCache {
     }
 
     /** Fetch with the hard-coded JS-style URL set above. */
-    public static CompletableFuture<ScryfallModels.Card> pickHardAsync(ServerWorld world, HardQuery hq) {
+    public static CompletableFuture<ScryfallModels.Card> pickHardAsync(ServerLevel world, HardQuery hq) {
         final String url = hardUrl(hq);
         return ScryfallService.supplyAsync(() -> {
             String body = ScryfallHttp.get(url);
@@ -148,21 +148,21 @@ public final class ScryfallCache {
         public static Query legendary(){ return new Legendary(); }
     }
 
-    public static Set<String> getBlackout(ServerWorld world){ return Set.of(); }
+    public static Set<String> getBlackout(ServerLevel world){ return Set.of(); }
 
     // ---- caches ----
     private static final Random RNG = new Random();
     private static final Map<String, ScryfallModels.Card> SESSION = new HashMap<>();
     private static PersistentCardStore PERSISTENT; // lazy
 
-    private static PersistentCardStore store(ServerWorld w) {
+    private static PersistentCardStore store(ServerLevel w) {
         if (PERSISTENT == null) PERSISTENT = PersistentCardStore.load(w);
         return PERSISTENT;
     }
 
     /** Flexible picker (kept for other callers). */
     public static CompletableFuture<ScryfallModels.Card> pickRandomAsync(
-            ServerWorld world, Context ctx, Query q, boolean foil, boolean allowVariant
+            ServerLevel world, Context ctx, Query q, boolean foil, boolean allowVariant
     ) {
         final String query = buildQuery(ctx, q, foil, allowVariant);
         final String url = "https://api.scryfall.com/cards/random?q=" + url(query) + "&unique=prints";
@@ -255,7 +255,7 @@ public final class ScryfallCache {
 
     private static String url(String s) { return URLEncoder.encode(s, StandardCharsets.UTF_8); }
 
-    public static void flush(ServerWorld world) {
+    public static void flush(ServerLevel world) {
         try { store(world).save(); } catch (Exception ignored) {}
     }
 

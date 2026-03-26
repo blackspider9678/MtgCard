@@ -3,15 +3,15 @@ package com.spider.mtgcard.client.render;
 import com.mojang.serialization.MapCodec;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.util.StackData;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.RenderLayers;
-import net.minecraft.client.render.command.OrderedRenderCommandQueue;
-import net.minecraft.client.render.item.model.special.SpecialModelRenderer;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.item.ItemDisplayContext;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.special.SpecialModelRenderer;
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.client.renderer.special.SpecialModelRenderer.BakingContext;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.Identifier;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
@@ -23,26 +23,25 @@ public class CardItemRenderer implements SpecialModelRenderer<CardItemRenderer.D
 
     public record Data(ItemStack stack, int face) {}
 
-    private static final Identifier FALLBACK_FRONT = Identifier.of("mtgcard", "textures/item/card.png");
-    private static final Identifier FALLBACK_BACK  = Identifier.of("mtgcard", "textures/item/card_back.png");
+    private static final Identifier FALLBACK_FRONT = Identifier.fromNamespaceAndPath("mtgcard", "textures/item/card.png");
+    private static final Identifier FALLBACK_BACK  = Identifier.fromNamespaceAndPath("mtgcard", "textures/item/card_back.png");
 
     private static int readFaceIndex(ItemStack st) {
-        NbtCompound root = StackData.readCustom(st);
-        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+        CompoundTag root = StackData.readCustom(st);
+        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
         return meta.getInt("mtg_face").orElse(0);
     }
 
     @Override
-    public @Nullable Data getData(ItemStack stack) {
+    public @Nullable Data extractArgument(ItemStack stack) {
         // ALWAYS run the special renderer so fallback can draw while loading.
         return new Data(stack, readFaceIndex(stack));
     }
 
     @Override
-    public void render(@Nullable Data data,
-                       ItemDisplayContext displayContext,
-                       MatrixStack matrices,
-                       OrderedRenderCommandQueue queue,
+    public void submit(@Nullable Data data,
+                       PoseStack matrices,
+                       SubmitNodeCollector queue,
                        int light,
                        int overlay,
                        boolean glint,
@@ -59,44 +58,44 @@ public class CardItemRenderer implements SpecialModelRenderer<CardItemRenderer.D
                 ? ref.id()
                 : (face == 1 ? FALLBACK_BACK : FALLBACK_FRONT);
 
-        matrices.push();
+        matrices.pushPose();
 
         matrices.translate(0f, 0f, 0.5f);
         matrices.translate(1f / 16f, 1f / 16f, 0f);
         matrices.scale(14f / 16f, 14f / 16f, 14f / 16f);
 
-        RenderLayer layer = RenderLayers.entityCutoutNoCull(tex);
+        RenderType layer = RenderTypes.entityCutout(tex);
 
-        queue.submitCustom(matrices, layer, (matrix, buffer) -> {
-            Matrix4f m = matrix.getPositionMatrix();
+        queue.submitCustomGeometry(matrices, layer, (matrix, buffer) -> {
+            Matrix4f m = matrix.pose();
 
-            buffer.vertex(m, 1f, 0f, 0f).color(0xffffffff).texture(1f, 1f).overlay(overlay).light(light).normal(matrix, 0f, 0f, 1f);
-            buffer.vertex(m, 1f, 1f, 0f).color(0xffffffff).texture(1f, 0f).overlay(overlay).light(light).normal(matrix, 0f, 0f, 1f);
-            buffer.vertex(m, 0f, 1f, 0f).color(0xffffffff).texture(0f, 0f).overlay(overlay).light(light).normal(matrix, 0f, 0f, 1f);
-            buffer.vertex(m, 0f, 0f, 0f).color(0xffffffff).texture(0f, 1f).overlay(overlay).light(light).normal(matrix, 0f, 0f, 1f);
+            buffer.addVertex(m, 1f, 0f, 0f).setColor(0xffffffff).setUv(1f, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, 1f);
+            buffer.addVertex(m, 1f, 1f, 0f).setColor(0xffffffff).setUv(1f, 0f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, 1f);
+            buffer.addVertex(m, 0f, 1f, 0f).setColor(0xffffffff).setUv(0f, 0f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, 1f);
+            buffer.addVertex(m, 0f, 0f, 0f).setColor(0xffffffff).setUv(0f, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, 1f);
         });
 
-        matrices.pop();
+        matrices.popPose();
     }
 
     @Override
-    public void collectVertices(Consumer<Vector3fc> vertices) {
+    public void getExtents(Consumer<Vector3fc> vertices) {
         vertices.accept(new Vector3f(1f, 0f, 0f));
         vertices.accept(new Vector3f(1f, 1f, 0f));
         vertices.accept(new Vector3f(0f, 1f, 0f));
         vertices.accept(new Vector3f(0f, 0f, 0f));
     }
 
-    public static class Unbaked implements SpecialModelRenderer.Unbaked {
+    public static class Unbaked implements net.minecraft.client.renderer.special.SpecialModelRenderer.Unbaked {
         public static final MapCodec<Unbaked> MAP_CODEC = MapCodec.unit(Unbaked::new);
 
         @Override
-        public SpecialModelRenderer<?> bake(BakeContext context) {
+        public SpecialModelRenderer<?> bake(BakingContext context) {
             return new CardItemRenderer();
         }
 
         @Override
-        public MapCodec<Unbaked> getCodec() {
+        public MapCodec<Unbaked> type() {
             return MAP_CODEC;
         }
     }

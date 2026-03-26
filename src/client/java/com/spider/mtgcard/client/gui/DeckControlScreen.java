@@ -1,6 +1,7 @@
 // DeckControlScreen.java
 package com.spider.mtgcard.client.gui;
 
+import com.spider.mtgcard.client.compat.LegacyContainerScreen;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.db.search.CardMeta;
 import com.spider.mtgcard.deckbox.DeckboxBlockEntity;
@@ -8,22 +9,21 @@ import com.spider.mtgcard.deckcontrol.DeckControlBlockEntity;
 import com.spider.mtgcard.deckcontrol.DeckControlPackets;
 import com.spider.mtgcard.deckcontrol.DeckControlScreenHandler;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.RotationAxis;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.core.BlockPos;
+import com.mojang.math.Axis;
 import org.joml.Matrix3x2f;
 import org.lwjgl.glfw.GLFW;
 
@@ -38,7 +38,7 @@ import static com.spider.mtgcard.deckcontrol.DeckControlScreenHandler.GUI_W;
  * Put in:
  *   src/client/java/com/spider/mtgcard/client/gui/DeckControlScreen.java
  */
-public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
+public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHandler> {
 
     // --- layout constants ---
     private static final int PAD = 8;
@@ -85,35 +85,35 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
     private int cascadeSourceMv = 4;
 
     // Buttons
-    private ButtonWidget btnDraw;
-    private ButtonWidget btnShuffle;
+    private Button btnDraw;
+    private Button btnShuffle;
 
-    private ButtonWidget btnStartCascade;
-    private ButtonWidget btnPlaceHovered;
+    private Button btnStartCascade;
+    private Button btnPlaceHovered;
 
-    private ButtonWidget btnOverlayPlaceConfirm;
-    private ButtonWidget btnOverlayConfirm; // Scry/Surveil Confirm
-    private ButtonWidget btnOverlayDone;    // Reveal Done
-    private ButtonWidget overlayCancel;
+    private Button btnOverlayPlaceConfirm;
+    private Button btnOverlayConfirm; // Scry/Surveil Confirm
+    private Button btnOverlayDone;    // Reveal Done
+    private Button overlayCancel;
 
     // Stepper buttons (main screen)
-    private ButtonWidget btnScryMinus, btnScryPlus;
-    private ButtonWidget btnSurveilMinus, btnSurveilPlus;
-    private ButtonWidget btnRevealMinus, btnRevealPlus;
-    private ButtonWidget btnMillMinus, btnMillPlus;
+    private Button btnScryMinus, btnScryPlus;
+    private Button btnSurveilMinus, btnSurveilPlus;
+    private Button btnRevealMinus, btnRevealPlus;
+    private Button btnMillMinus, btnMillPlus;
 
     // Place overlay controls (extra buttons)
-    private ButtonWidget btnPlaceTop;
-    private ButtonWidget btnPlaceBottomMode;
-    private ButtonWidget btnPlaceMinus;
-    private ButtonWidget btnPlacePlus;
+    private Button btnPlaceTop;
+    private Button btnPlaceBottomMode;
+    private Button btnPlaceMinus;
+    private Button btnPlacePlus;
 
     private int cascadeHitIndex = -1;
     private int cascadeSourceMvNet = 0;
     private List<ItemStack> cascadeRevealed = List.of();
 
-    private ButtonWidget btnCascadeCast;
-    private ButtonWidget btnCascadeExile;
+    private Button btnCascadeCast;
+    private Button btnCascadeExile;
 
     // Server-driven overlay payload state
     private DeckControlPackets.OverlayKind overlayKind = null;
@@ -131,7 +131,10 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
 
     // fallback "card back" texture (your existing item texture)
     private static final Identifier CARD_BACK_TEX =
-            Identifier.of("mtgcard", "textures/item/card.png");
+            Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/card.png");
+    private static final int CARD_BACK_TEX_W = 1040;
+    private static final int CARD_BACK_TEX_H = 1040;
+    private static final float CARD_BACK_ASPECT = 488f / 680f;
 
     private boolean cascadePendingClient = false;
 
@@ -186,24 +189,24 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         return out;
     }
 
-    public DeckControlScreen(DeckControlScreenHandler handler, PlayerInventory inv, Text title) {
+    public DeckControlScreen(DeckControlScreenHandler handler, Inventory inv, Component title) {
         super(handler, inv, title);
 
-        this.backgroundWidth = GUI_W; // whatever yours is now
-        this.backgroundHeight = GUI_H; // <- increase (example)
-        this.playerInventoryTitleY = this.backgroundHeight - 94; // keep player inv label aligned
+        this.imageWidth = GUI_W; // whatever yours is now
+        this.imageHeight = GUI_H; // <- increase (example)
+        this.inventoryLabelY = this.imageHeight - 94; // keep player inv label aligned
     }
 
     // Base (non-overlay) buttons we want to hide during modal overlays
-    private final List<ButtonWidget> baseButtons = new ArrayList<>();
+    private final List<Button> baseButtons = new ArrayList<>();
 
-    private ButtonWidget addBase(ButtonWidget w) {
+    private Button addBase(Button w) {
         baseButtons.add(w);
-        return addDrawableChild(w);
+        return addRenderableWidget(w);
     }
 
-    private ButtonWidget addOverlay(ButtonWidget w) {
-        return addDrawableChild(w);
+    private Button addOverlay(Button w) {
+        return addRenderableWidget(w);
     }
 
     @Override
@@ -211,11 +214,11 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         super.init();
 
         // Re-center + clamp so the header never renders off-screen on shorter windows
-        this.x = (this.width - this.backgroundWidth) / 2;
-        this.y = Math.max(0, (this.height - this.backgroundHeight) / 2);
+        this.leftPos = (this.width - this.imageWidth) / 2;
+        this.topPos = Math.max(0, (this.height - this.imageHeight) / 2);
 
-        int left = this.x;
-        int top  = this.y;
+        int left = this.leftPos;
+        int top  = this.topPos;
 
         // --- Main layout anchors ---
         int headerH = 20;
@@ -226,22 +229,22 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         int controlsX = selX + SEL_PANEL_W + GAP;
         int controlsY = selY;
 
-        int rightEdge = left + backgroundWidth - PAD;
+        int rightEdge = left + imageWidth - PAD;
         int controlsW = rightEdge - controlsX;
 
         // Top row: [Draw] [Shuffle] [Reveal Top]
         int topBtnW = (controlsW - GAP * 2) / 3;
 
 
-        btnDraw = addBase(ButtonWidget.builder(Text.literal("Draw"), b ->
+        btnDraw = addBase(Button.builder(Component.literal("Draw"), b ->
                 sendDeckAction(DeckControlPackets.Action.DRAW, 0, 0)
-        ).dimensions(controlsX, controlsY, topBtnW, BTN_H).build());
+        ).bounds(controlsX, controlsY, topBtnW, BTN_H).build());
 
-        btnShuffle = addBase(ButtonWidget.builder(Text.literal("Shuffle"), b -> {
+        btnShuffle = addBase(Button.builder(Component.literal("Shuffle"), b -> {
             sendDeckAction(DeckControlPackets.Action.SHUFFLE, 0, 0);
             toast = "Shuffling…";
             toastTicks = 40;
-        }).dimensions(controlsX + topBtnW + GAP, controlsY, topBtnW, BTN_H).build());
+        }).bounds(controlsX + topBtnW + GAP, controlsY, topBtnW, BTN_H).build());
 
         // Action rows:
         // [ Action ] [-] [+]   x#
@@ -255,93 +258,93 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         // Scry row
         btnScryMinus = addBase(stepperButton(minusX, rowY, "-", () -> scryN = clamp(scryN - 1, 1, 31)));
         btnScryPlus  = addBase(stepperButton(plusX,  rowY, "+", () -> scryN = clamp(scryN + 1, 1, 31)));
-        addBase(ButtonWidget.builder(Text.literal("Scry"), b ->
+        addBase(Button.builder(Component.literal("Scry"), b ->
                 sendDeckAction(DeckControlPackets.Action.START_SCRY, scryN, 0)
-        ).dimensions(controlsX, rowY, actionW, BTN_H).build());
+        ).bounds(controlsX, rowY, actionW, BTN_H).build());
         rowY += BTN_H + 8;
 
         // Surveil row
         btnSurveilMinus = addBase(stepperButton(minusX, rowY, "-", () -> surveilN = clamp(surveilN - 1, 1, 31)));
         btnSurveilPlus  = addBase(stepperButton(plusX,  rowY, "+", () -> surveilN = clamp(surveilN + 1, 1, 31)));
-        addBase(ButtonWidget.builder(Text.literal("Surveil"), b ->
+        addBase(Button.builder(Component.literal("Surveil"), b ->
                 sendDeckAction(DeckControlPackets.Action.START_SURVEIL, surveilN, 0)
-        ).dimensions(controlsX, rowY, actionW, BTN_H).build());
+        ).bounds(controlsX, rowY, actionW, BTN_H).build());
         rowY += BTN_H + 8;
 
         // Reveal N row
         btnRevealMinus = addBase(stepperButton(minusX, rowY, "-", () -> revealN = clamp(revealN - 1, 1, 31)));
         btnRevealPlus  = addBase(stepperButton(plusX,  rowY, "+", () -> revealN = clamp(revealN + 1, 1, 31)));
-        addBase(ButtonWidget.builder(Text.literal("Peek N"), b ->
+        addBase(Button.builder(Component.literal("Peek N"), b ->
                 sendDeckAction(DeckControlPackets.Action.REVEAL_N, revealN, 0)
-        ).dimensions(controlsX, rowY, actionW, BTN_H).build());
+        ).bounds(controlsX, rowY, actionW, BTN_H).build());
         rowY += BTN_H + 8;
 
         // Mill row
         btnMillMinus = addBase(stepperButton(minusX, rowY, "-", () -> millN = clamp(millN - 1, 1, 99)));
         btnMillPlus  = addBase(stepperButton(plusX,  rowY, "+", () -> millN = clamp(millN + 1, 1, 99)));
-        addBase(ButtonWidget.builder(Text.literal("Mill"), b ->
+        addBase(Button.builder(Component.literal("Mill"), b ->
                 sendDeckAction(DeckControlPackets.Action.MILL_N, millN, 0)
-        ).dimensions(controlsX, rowY, actionW, BTN_H).build());
+        ).bounds(controlsX, rowY, actionW, BTN_H).build());
         rowY += BTN_H + 18;
 
         // Bottom row: [Start Cascade] [Place Selected...]
         int bottomBtnW = (controlsW - GAP) / 2;
 
-        btnStartCascade = addBase(ButtonWidget.builder(Text.literal("Start Cascade"), b -> {
+        btnStartCascade = addBase(Button.builder(Component.literal("Start Cascade"), b -> {
             int mv = getCascadeSourceMv();
-            ClientPlayNetworking.send(new DeckControlPackets.CascadeStartC2S(handler.getPos(), mv));
+            ClientPlayNetworking.send(new DeckControlPackets.CascadeStartC2S(menu.getPos(), mv));
             toast = "Cascading…";
             toastTicks = 30;
-        }).dimensions(controlsX, rowY, bottomBtnW, BTN_H).build());
+        }).bounds(controlsX, rowY, bottomBtnW, BTN_H).build());
 
-        btnPlaceHovered = addBase(ButtonWidget.builder(Text.literal("Place Selected…"), b -> {
+        btnPlaceHovered = addBase(Button.builder(Component.literal("Place Selected…"), b -> {
             overlay = OverlayMode.PLACE_CARD;
             placeBottom = false;
             placeFromTop = 3;
-        }).dimensions(controlsX + bottomBtnW + GAP, rowY, bottomBtnW, BTN_H).build());
+        }).bounds(controlsX + bottomBtnW + GAP, rowY, bottomBtnW, BTN_H).build());
 
         // New row under cascade/place
         int utilY = rowY + BTN_H + 6;
         int utilW = (controlsW - GAP) / 2;
 
-        addBase(ButtonWidget.builder(Text.literal("Shuffle GY → Library"), b -> {
+        addBase(Button.builder(Component.literal("Shuffle GY → Library"), b -> {
             sendDeckAction(DeckControlPackets.Action.SHUFFLE_GRAVEYARD_TO_LIBRARY, 0, 0);
             toast = "Shuffling graveyard into library…";
             toastTicks = 40;
-        }).dimensions(controlsX, utilY, utilW, BTN_H).build());
+        }).bounds(controlsX, utilY, utilW, BTN_H).build());
 
-        addBase(ButtonWidget.builder(Text.literal("Reset Deck"), b -> {
+        addBase(Button.builder(Component.literal("Reset Deck"), b -> {
             sendDeckAction(DeckControlPackets.Action.RESET_DECK, 0, 0);
             toast = "Resetting deck…";
             toastTicks = 40;
-        }).dimensions(controlsX + utilW + GAP, utilY, utilW, BTN_H).build());
+        }).bounds(controlsX + utilW + GAP, utilY, utilW, BTN_H).build());
 
 
         // NOTE: positions for these are re-anchored inside drawOverlay() when CASCADE is open.
-        btnCascadeCast = addOverlay(ButtonWidget.builder(Text.literal("Cast"), b -> {
-            ClientPlayNetworking.send(new DeckControlPackets.CascadeResolveC2S(handler.getPos(), true));
+        btnCascadeCast = addOverlay(Button.builder(Component.literal("Cast"), b -> {
+            ClientPlayNetworking.send(new DeckControlPackets.CascadeResolveC2S(menu.getPos(), true));
             cascadePendingClient = false;
             overlay = OverlayMode.NONE;
             clearOverlayHoverCache();
-        }).dimensions(left + PAD + 148, top + PAD + 118, 54, BTN_H).build());
+        }).bounds(left + PAD + 148, top + PAD + 118, 54, BTN_H).build());
         btnCascadeCast.visible = false;
 
-        btnCascadeExile = addOverlay(ButtonWidget.builder(Text.literal("Exile"), b -> {
-            ClientPlayNetworking.send(new DeckControlPackets.CascadeResolveC2S(handler.getPos(), false));
+        btnCascadeExile = addOverlay(Button.builder(Component.literal("Exile"), b -> {
+            ClientPlayNetworking.send(new DeckControlPackets.CascadeResolveC2S(menu.getPos(), false));
             cascadePendingClient = false;
             overlay = OverlayMode.NONE;
             clearOverlayHoverCache();
-        }).dimensions(left + PAD + 188, top + PAD + 118, 54, BTN_H).build());
+        }).bounds(left + PAD + 188, top + PAD + 118, 54, BTN_H).build());
         btnCascadeExile.visible = false;
 
         // --- Overlay buttons ---
-        btnOverlayPlaceConfirm = addOverlay(ButtonWidget.builder(Text.literal("Place"), b -> {
+        btnOverlayPlaceConfirm = addOverlay(Button.builder(Component.literal("Place"), b -> {
             performPlaceSelected();
-        }).dimensions(left + PAD + 168, top + PAD + 80, 56, BTN_H).build());
+        }).bounds(left + PAD + 168, top + PAD + 80, 56, BTN_H).build());
         btnOverlayPlaceConfirm.visible = false;
 
         btnOverlayConfirm = addOverlay(
-                ButtonWidget.builder(Text.literal("Confirm"), b -> {
+                Button.builder(Component.literal("Confirm"), b -> {
 
                     if (overlay == OverlayMode.SCRY) {
                         int keepMask = 0;
@@ -356,57 +359,57 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
                     overlay = OverlayMode.NONE;
                     clearOverlayHoverCache();
 
-                }).dimensions(left + PAD + 168, top + PAD + 118, 76, BTN_H).build()
+                }).bounds(left + PAD + 168, top + PAD + 118, 76, BTN_H).build()
         );
         btnOverlayConfirm.visible = false;
 
-        btnOverlayDone = addOverlay(ButtonWidget.builder(Text.literal("Done"), b -> overlay = OverlayMode.NONE)
-                .dimensions(left + PAD + 168, top + PAD + 118, 56, BTN_H).build());
+        btnOverlayDone = addOverlay(Button.builder(Component.literal("Done"), b -> overlay = OverlayMode.NONE)
+                .bounds(left + PAD + 168, top + PAD + 118, 56, BTN_H).build());
         btnOverlayDone.visible = false;
 
-        overlayCancel = addOverlay(ButtonWidget.builder(Text.literal("Cancel"), b -> {
+        overlayCancel = addOverlay(Button.builder(Component.literal("Cancel"), b -> {
             if (overlay == OverlayMode.CASCADE && cascadePendingClient) {
-                ClientPlayNetworking.send(new DeckControlPackets.CascadeResolveC2S(handler.getPos(), false));
+                ClientPlayNetworking.send(new DeckControlPackets.CascadeResolveC2S(menu.getPos(), false));
                 cascadePendingClient = false;
             }
             overlay = OverlayMode.NONE;
             clearOverlayHoverCache();
 
-        }).dimensions(left + PAD + 168, top + PAD + 104, 56, BTN_H).build());
+        }).bounds(left + PAD + 168, top + PAD + 104, 56, BTN_H).build());
         overlayCancel.visible = false;
 
         // --- Place overlay extra controls (anchored later in drawPlaceOverlay) ---
-        btnPlaceTop = addOverlay(ButtonWidget.builder(Text.literal("Top"), b -> {
+        btnPlaceTop = addOverlay(Button.builder(Component.literal("Top"), b -> {
             placeBottom = false;
             placeFromTop = 1;
-        }).dimensions(left + PAD + 120, top + PAD + 60, 44, BTN_H).build());
+        }).bounds(left + PAD + 120, top + PAD + 60, 44, BTN_H).build());
         btnPlaceTop.visible = false;
 
-        btnPlaceBottomMode = addOverlay(ButtonWidget.builder(Text.literal("Bottom"), b -> {
+        btnPlaceBottomMode = addOverlay(Button.builder(Component.literal("Bottom"), b -> {
             placeBottom = true;
-        }).dimensions(left + PAD + 170, top + PAD + 60, 60, BTN_H).build());
+        }).bounds(left + PAD + 170, top + PAD + 60, 60, BTN_H).build());
         btnPlaceBottomMode.visible = false;
 
-        btnPlaceMinus = addOverlay(ButtonWidget.builder(Text.literal("-"), b -> {
+        btnPlaceMinus = addOverlay(Button.builder(Component.literal("-"), b -> {
             placeBottom = false;
             placeFromTop = clamp(placeFromTop - 1, 1, 99);
-        }).dimensions(left + PAD + 120, top + PAD + 86, 20, BTN_H).build());
+        }).bounds(left + PAD + 120, top + PAD + 86, 20, BTN_H).build());
         btnPlaceMinus.visible = false;
 
-        btnPlacePlus = addOverlay(ButtonWidget.builder(Text.literal("+"), b -> {
+        btnPlacePlus = addOverlay(Button.builder(Component.literal("+"), b -> {
             placeBottom = false;
             placeFromTop = clamp(placeFromTop + 1, 1, 99);
-        }).dimensions(left + PAD + 146, top + PAD + 86, 20, BTN_H).build());
+        }).bounds(left + PAD + 146, top + PAD + 86, 20, BTN_H).build());
         btnPlacePlus.visible = false;
     }
 
-    private ButtonWidget stepperButton(int x, int y, String label, Runnable onClick) {
-        return ButtonWidget.builder(Text.literal(label), b -> onClick.run())
-                .dimensions(x, y, STEP_W, BTN_H).build();
+    private Button stepperButton(int x, int y, String label, Runnable onClick) {
+        return Button.builder(Component.literal(label), b -> onClick.run())
+                .bounds(x, y, STEP_W, BTN_H).build();
     }
 
     @Override
-    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
         this.renderBackground(ctx, mouseX, mouseY, delta);
 
         // keep hover/selection updated even while overlay is open
@@ -415,7 +418,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         boolean modal = overlay != OverlayMode.NONE;
 
         // Hide/disable normal UI while modal overlay is open
-        for (ButtonWidget w : baseButtons) {
+        for (Button w : baseButtons) {
             w.visible = !modal;
             w.active  = !modal;
         }
@@ -457,32 +460,32 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
 
             // redraw overlay buttons on TOP of overlay so they are visible
             if (overlayCancel != null && overlayCancel.visible)
-                overlayCancel.render(ctx, mouseX, mouseY, delta);
+                overlayCancel.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
 
             if (overlay == OverlayMode.CASCADE) {
                 if (btnCascadeCast != null && btnCascadeCast.visible)
-                    btnCascadeCast.render(ctx, mouseX, mouseY, delta);
+                    btnCascadeCast.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
                 if (btnCascadeExile != null && btnCascadeExile.visible)
-                    btnCascadeExile.render(ctx, mouseX, mouseY, delta);
+                    btnCascadeExile.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
             }
 
             if (overlay == OverlayMode.PLACE_CARD) {
                 if (btnPlaceTop != null && btnPlaceTop.visible)
-                    btnPlaceTop.render(ctx, mouseX, mouseY, delta);
+                    btnPlaceTop.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
                 if (btnPlaceBottomMode != null && btnPlaceBottomMode.visible)
-                    btnPlaceBottomMode.render(ctx, mouseX, mouseY, delta);
+                    btnPlaceBottomMode.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
                 if (btnPlaceMinus != null && btnPlaceMinus.visible)
-                    btnPlaceMinus.render(ctx, mouseX, mouseY, delta);
+                    btnPlaceMinus.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
                 if (btnPlacePlus != null && btnPlacePlus.visible)
-                    btnPlacePlus.render(ctx, mouseX, mouseY, delta);
+                    btnPlacePlus.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
             }
 
             if (btnOverlayPlaceConfirm != null && btnOverlayPlaceConfirm.visible)
-                btnOverlayPlaceConfirm.render(ctx, mouseX, mouseY, delta);
+                btnOverlayPlaceConfirm.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
             if (btnOverlayConfirm != null && btnOverlayConfirm.visible)
-                btnOverlayConfirm.render(ctx, mouseX, mouseY, delta);
+                btnOverlayConfirm.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
             if (btnOverlayDone != null && btnOverlayDone.visible)
-                btnOverlayDone.render(ctx, mouseX, mouseY, delta);
+                btnOverlayDone.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
 
         } else {
             // Draw the "x#" counts on the main screen (text only)
@@ -494,17 +497,17 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         renderHoverPreview(ctx, mouseX, mouseY, delta);
 
 
-        this.drawMouseoverTooltip(ctx, mouseX, mouseY);
+        this.renderTooltip(ctx, mouseX, mouseY);
 
         if (toastTicks > 0) {
             toastTicks--;
-            ctx.drawText(textRenderer, Text.literal(toast), this.x + PAD, this.y + backgroundHeight - 26, 0xFFFFFFFF, false);
+            ctx.drawString(font, Component.literal(toast), this.leftPos + PAD, this.topPos + imageHeight - 26, 0xFFFFFFFF, false);
         }
     }
 
-    private void drawMainCounts(DrawContext ctx) {
-        int left = this.x;
-        int top = this.y;
+    private void drawMainCounts(GuiGraphics ctx) {
+        int left = this.leftPos;
+        int top = this.topPos;
 
         int headerH = 20;
 
@@ -514,7 +517,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         int controlsX = selX + SEL_PANEL_W + GAP;
         int controlsY = selY;
 
-        int rightEdge = left + backgroundWidth - PAD;
+        int rightEdge = left + imageWidth - PAD;
         int controlsW = rightEdge - controlsX;
 
         int rowY = controlsY + BTN_H + 14;
@@ -525,24 +528,24 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         int countX = plusX + STEP_W + COUNT_PAD;
 
         // Scry
-        ctx.drawText(textRenderer, Text.literal("x" + scryN), countX, rowY + COUNT_TEXT_Y_OFF, 0xFFD0D0D0, false);
+        ctx.drawString(font, Component.literal("x" + scryN), countX, rowY + COUNT_TEXT_Y_OFF, 0xFFD0D0D0, false);
         rowY += BTN_H + 8;
 
         // Surveil
-        ctx.drawText(textRenderer, Text.literal("x" + surveilN), countX, rowY + COUNT_TEXT_Y_OFF, 0xFFD0D0D0, false);
+        ctx.drawString(font, Component.literal("x" + surveilN), countX, rowY + COUNT_TEXT_Y_OFF, 0xFFD0D0D0, false);
         rowY += BTN_H + 8;
 
         // Reveal N
-        ctx.drawText(textRenderer, Text.literal("x" + revealN), countX, rowY + COUNT_TEXT_Y_OFF, 0xFFD0D0D0, false);
+        ctx.drawString(font, Component.literal("x" + revealN), countX, rowY + COUNT_TEXT_Y_OFF, 0xFFD0D0D0, false);
         rowY += BTN_H + 8;
 
         // Mill
-        ctx.drawText(textRenderer, Text.literal("x" + millN), countX, rowY + COUNT_TEXT_Y_OFF, 0xFFD0D0D0, false);
+        ctx.drawString(font, Component.literal("x" + millN), countX, rowY + COUNT_TEXT_Y_OFF, 0xFFD0D0D0, false);
     }
 
-    private void drawMainHint(DrawContext ctx) {
-        int left = this.x;
-        int top = this.y;
+    private void drawMainHint(GuiGraphics ctx) {
+        int left = this.leftPos;
+        int top = this.topPos;
 
         int headerH = 20;
         int selX = left + PAD;
@@ -551,7 +554,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         int controlsX = selX + SEL_PANEL_W + GAP;
         int controlsY = selY;
 
-        int rightEdge = left + backgroundWidth - PAD;
+        int rightEdge = left + imageWidth - PAD;
         int controlsW = rightEdge - controlsX;
 
         int rowY = controlsY + BTN_H + 14;
@@ -560,29 +563,29 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         rowY += BTN_H + 6;        // below Start Cascade / Place Selected
         rowY += BTN_H + 6;        // below Shuffle GY / Reset Deck
 
-        Text hint = Text.literal("Click a card in your inventory to select");
-        int w = textRenderer.getWidth(hint);
+        Component hint = Component.literal("Click a card in your inventory to select");
+        int w = font.width(hint);
         int x = controlsX + (controlsW - w) / 2;
-        ctx.drawText(textRenderer, hint, x, rowY, 0xFFB0B0B0, false);
+        ctx.drawString(font, hint, x, rowY, 0xFFB0B0B0, false);
     }
 
     @Override
-    protected void drawBackground(DrawContext ctx, float delta, int mouseX, int mouseY) {
-        int left = this.x;
-        int top = this.y;
+    protected void renderBg(GuiGraphics ctx, float delta, int mouseX, int mouseY) {
+        int left = this.leftPos;
+        int top = this.topPos;
 
         // Frame
-        ctx.fill(left, top, left + backgroundWidth, top + backgroundHeight, 0xCC101010);
-        ctx.fill(left + 1, top + 1, left + backgroundWidth - 1, top + backgroundHeight - 1, 0xCC1A1A1A);
+        ctx.fill(left, top, left + imageWidth, top + imageHeight, 0xCC101010);
+        ctx.fill(left + 1, top + 1, left + imageWidth - 1, top + imageHeight - 1, 0xCC1A1A1A);
 
         // Header
-        ctx.fill(left, top, left + backgroundWidth, top + 20, 0xCC0E0E0E);
-        ctx.drawText(textRenderer, Text.literal("Deck Control"), left + PAD, top + 6, 0xFFF2F2F2, false);
+        ctx.fill(left, top, left + imageWidth, top + 20, 0xCC0E0E0E);
+        ctx.drawString(font, Component.literal("Deck Control"), left + PAD, top + 6, 0xFFF2F2F2, false);
 
-        String linked = handler.isLinked() ? "Linked: ✓" : "Linked: ✕";
-        int linkedColor = handler.isLinked() ? 0xFF55FF55 : 0xFFFF5555;
-        int lw = textRenderer.getWidth(linked);
-        ctx.drawText(textRenderer, Text.literal(linked), left + backgroundWidth - PAD - lw, top + 6, linkedColor, false);
+        String linked = menu.isLinked() ? "Linked: ✓" : "Linked: ✕";
+        int linkedColor = menu.isLinked() ? 0xFF55FF55 : 0xFFFF5555;
+        int lw = font.width(linked);
+        ctx.drawString(font, Component.literal(linked), left + imageWidth - PAD - lw, top + 6, linkedColor, false);
 
         // --- Left Selected Card panel ---
         int selX = left + PAD;
@@ -593,7 +596,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         ctx.fill(selX, selY, selX + panelW, selY + panelH, 0xAA000000);
         ctx.fill(selX + 1, selY + 1, selX + panelW - 1, selY + panelH - 1, 0xAA111111);
 
-        ctx.drawText(textRenderer, Text.literal("Card Selected"), selX + 6, selY + 6, 0xFFE0E0E0, false);
+        ctx.drawString(font, Component.literal("Card Selected"), selX + 6, selY + 6, 0xFFE0E0E0, false);
 
         int cardX = selX + (panelW - SEL_CARD_W) / 2;
         int cardY = selY + 18;
@@ -615,32 +618,32 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
 
         // Selected card info lines
         int infoY = cardY + SEL_CARD_H + 6;
-        if (!selectedPlayerCard.isEmpty() && handler.isCardItem(selectedPlayerCard)) {
+        if (!selectedPlayerCard.isEmpty() && menu.isCardItem(selectedPlayerCard)) {
             CardMeta.Info info = CardMeta.read(selectedPlayerCard);
             String nm = info.name().isEmpty() ? "(card)" : info.name();
-            ctx.drawText(textRenderer, Text.literal(nm), selX + 6, infoY, 0xFFFFFFFF, false);
-            ctx.drawText(textRenderer, Text.literal("MV: " + info.mv()), selX + 6, infoY + 12, 0xFFCFCFCF, false);
+            ctx.drawString(font, Component.literal(nm), selX + 6, infoY, 0xFFFFFFFF, false);
+            ctx.drawString(font, Component.literal("MV: " + info.mv()), selX + 6, infoY + 12, 0xFFCFCFCF, false);
         } else {
-            ctx.drawText(textRenderer, Text.literal("(none)"), selX + 6, infoY, 0xFFCFCFCF, false);
-            ctx.drawText(textRenderer, Text.literal("Click card to select"), selX + 6, infoY + 12, 0xFFB0B0B0, false);
+            ctx.drawString(font, Component.literal("(none)"), selX + 6, infoY, 0xFFCFCFCF, false);
+            ctx.drawString(font, Component.literal("Click card to select"), selX + 6, infoY + 12, 0xFFB0B0B0, false);
         }
 
         // Footer separator above inventory (keep your existing bar if you like)
-        int invTop = top + (this.backgroundHeight - 94); // matches playerInventoryTitleY logic
-        ctx.fill(left + PAD, invTop - 6, left + backgroundWidth - PAD, invTop - 5, 0x80383838);
+        int invTop = top + (this.imageHeight - 94); // matches playerInventoryTitleY logic
+        ctx.fill(left + PAD, invTop - 6, left + imageWidth - PAD, invTop - 5, 0x80383838);
     }
 
     @Override
-    protected void drawForeground(DrawContext ctx, int mouseX, int mouseY) {
+    protected void renderLabels(GuiGraphics ctx, int mouseX, int mouseY) {
         // Keep empty — we draw our own header in drawBackground.
     }
 
-    private void drawOverlay(DrawContext ctx, int mouseX, int mouseY) {
-        int left = this.x;
-        int top = this.y;
+    private void drawOverlay(GuiGraphics ctx, int mouseX, int mouseY) {
+        int left = this.leftPos;
+        int top = this.topPos;
 
         // dim
-        ctx.fill(left, top, left + backgroundWidth, top + backgroundHeight, 0xAA000000);
+        ctx.fill(left, top, left + imageWidth, top + imageHeight, 0xAA000000);
 
         hoverTopCols = 0;
         hoverBotCols = 0;
@@ -654,13 +657,13 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         if (overlay == OverlayMode.CASCADE) {
             int ox = left + PAD;
             int oy = top + PAD + 10;
-            int ow = backgroundWidth - PAD * 2;
+            int ow = imageWidth - PAD * 2;
             int oh = 180;
 
             ctx.fill(ox, oy, ox + ow, oy + oh, 0xDD151515);
             ctx.fill(ox + 1, oy + 1, ox + ow - 1, oy + oh - 1, 0xDD202020);
 
-            ctx.drawText(textRenderer, Text.literal("CASCADE (MV " + cascadeSourceMvNet + ")"),
+            ctx.drawString(font, Component.literal("CASCADE (MV " + cascadeSourceMvNet + ")"),
                     ox + 8, oy + 8, 0xFFFFFFFF, false);
 
             // --- Bigger chosen card preview ---
@@ -703,12 +706,12 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
                 ItemStack hit = cascadeRevealed.get(cascadeHitIndex);
                 drawCardArtFit(ctx, hit, bx + 2, by + 2, bw - 4, bh - 4);
                 var info = CardMeta.read(hit);
-                ctx.drawText(textRenderer, Text.literal(info.name() + " | MV " + info.mv()),
+                ctx.drawString(font, Component.literal(info.name() + " | MV " + info.mv()),
                         bx + bw + 10, by + 4, 0xFFFFFF, false);
             } else {
-                ctx.drawText(textRenderer, Text.literal("No valid hit"),
+                ctx.drawString(font, Component.literal("No valid hit"),
                         bx + 10, by + 52, 0xFFCFCFCF, false);
-                ctx.drawText(textRenderer, Text.literal("Exile will bottom all revealed"),
+                ctx.drawString(font, Component.literal("Exile will bottom all revealed"),
                         bx + bw + 10, by + 4, 0xFFCFCFCF, false);
             }
 
@@ -750,7 +753,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
 
             int remaining = cascadeRevealed.size() - shown;
             if (remaining > 0) {
-                ctx.drawText(textRenderer, Text.literal("+" + remaining + " more"),
+                ctx.drawString(font, Component.literal("+" + remaining + " more"),
                         thumbX, thumbY + thumbH - 10, 0xFFCFCFCF, false);
             }
 
@@ -774,15 +777,15 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         // 0) PLACE overlay: hovering the big preview card box
         if (overlay == OverlayMode.PLACE_CARD) {
             if (isMouseIn(mouseX, mouseY, placeCardBoxX, placeCardBoxY, placeCardBoxW, placeCardBoxH)) {
-                if (!selectedPlayerCard.isEmpty() && handler.isCardItem(selectedPlayerCard)) return selectedPlayerCard;
+                if (!selectedPlayerCard.isEmpty() && menu.isCardItem(selectedPlayerCard)) return selectedPlayerCard;
             }
         }
 
         // 1) slot hover
-        Slot slot = this.focusedSlot;
-        if (slot != null && slot.hasStack() && isMouseOverSlotArea(slot, mouseX, mouseY)) {
-            ItemStack st = slot.getStack();
-            if (st.isOf(com.spider.mtgcard.item.ModItems.CARD)) return st;
+        Slot slot = this.hoveredSlot;
+        if (slot != null && slot.hasItem() && isMouseOverSlotArea(slot, mouseX, mouseY)) {
+            ItemStack st = slot.getItem();
+            if (st.is(com.spider.mtgcard.item.ModItems.CARD)) return st;
         }
 
         // 2) CASCADE overlay: hover thumbnails grid (multi-row)
@@ -840,20 +843,20 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         if (idx < 0 || idx >= stacks.size()) return ItemStack.EMPTY;
 
         ItemStack st = stacks.get(idx);
-        return (st != null && !st.isEmpty() && st.isOf(com.spider.mtgcard.item.ModItems.CARD)) ? st : ItemStack.EMPTY;
+        return (st != null && !st.isEmpty() && st.is(com.spider.mtgcard.item.ModItems.CARD)) ? st : ItemStack.EMPTY;
     }
 
-    private void drawScrySurveilOverlay(DrawContext ctx, int mouseX, int mouseY) {
-        int left = this.x;
-        int top  = this.y;
+    private void drawScrySurveilOverlay(GuiGraphics ctx, int mouseX, int mouseY) {
+        int left = this.leftPos;
+        int top  = this.topPos;
 
         // dim background
-        ctx.fill(left, top, left + backgroundWidth, top + backgroundHeight, 0xAA000000);
+        ctx.fill(left, top, left + imageWidth, top + imageHeight, 0xAA000000);
 
         // panel geometry
         int ox = left + PAD;
         int oy = top + PAD + 10;
-        int ow = backgroundWidth - PAD * 2;
+        int ow = imageWidth - PAD * 2;
 
         scry_ox = ox;
         scry_oy = oy;
@@ -892,22 +895,22 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         ctx.fill(ox + 1, oy + 1, ox + ow - 1, oy + oh - 1, 0xDD202020);
 
         String title = (overlay == OverlayMode.SCRY) ? "Scry" : "Surveil";
-        ctx.drawText(textRenderer, Text.literal("Resolving: " + title + " (x" + overlayN + ")"),
+        ctx.drawString(font, Component.literal("Resolving: " + title + " (x" + overlayN + ")"),
                 ox + 8, oy + 8, 0xFFFFFFFF, false);
-        ctx.drawText(textRenderer, Text.literal("Click and drag cards."),
+        ctx.drawString(font, Component.literal("Click and drag cards."),
                 ox + 8, oy + 22, 0xFFCFCFCF, false);
 
         // dividers + labels
         ctx.fill(ox + 6, lineY1, ox + ow - 6, lineY1 + 1, 0x80383838);
 
-        ctx.drawText(textRenderer, Text.literal("Top of Library:"), labelX, topLabelY, 0xFFD0D0D0, false);
+        ctx.drawString(font, Component.literal("Top of Library:"), labelX, topLabelY, 0xFFD0D0D0, false);
         ctx.fill(ox + 6, lineY2, ox + ow - 6, lineY2 + 1, 0x80383838);
 
-        Text bottomLabel = (overlay == OverlayMode.SURVEIL)
-                ? Text.literal("Graveyard:")
-                : Text.literal("Bottom of Library:");
+        Component bottomLabel = (overlay == OverlayMode.SURVEIL)
+                ? Component.literal("Graveyard:")
+                : Component.literal("Bottom of Library:");
 
-        ctx.drawText(textRenderer, bottomLabel, labelX, botLabelY, 0xFFD0D0D0, false);
+        ctx.drawString(font, bottomLabel, labelX, botLabelY, 0xFFD0D0D0, false);
         ctx.fill(ox + 6, lineY3, ox + ow - 6, lineY3 + 1, 0x80383838);
 
         hoverTopX = scry_areaX;
@@ -945,13 +948,13 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
     }
 
     // --- Your cleaned Place overlay stays as-is (already matches what you pasted) ---
-    private void drawPlaceOverlay(DrawContext ctx) {
-        int left = this.x;
-        int top  = this.y;
+    private void drawPlaceOverlay(GuiGraphics ctx) {
+        int left = this.leftPos;
+        int top  = this.topPos;
 
         int ox = left + PAD;
         int oy = top + PAD + 10;
-        int ow = backgroundWidth - PAD * 2;
+        int ow = imageWidth - PAD * 2;
         int oh = 140;
 
         ctx.fill(ox, oy, ox + ow, oy + oh, 0xDD151515);
@@ -1025,22 +1028,22 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
             btnPlacePlus.active = !placeBottom && placeFromTop < 99;
         }
 
-        Text placedText = placeBottom
-                ? Text.literal("Placed: Bottom")
-                : Text.literal("Placed: From top " + placeFromTop);
+        Component placedText = placeBottom
+                ? Component.literal("Placed: Bottom")
+                : Component.literal("Placed: From top " + placeFromTop);
 
-        int placedW = textRenderer.getWidth(placedText);
+        int placedW = font.width(placedText);
         int placedX = cx + (cw - placedW) / 2;
         placedX = Math.max(cx, Math.min(placedX, (cx + cw) - placedW));
 
-        ctx.drawText(textRenderer, placedText, placedX, row3Y + 2, 0xFFD0D0D0, false);
+        ctx.drawString(font, placedText, placedX, row3Y + 2, 0xFFD0D0D0, false);
 
-        Text hint = Text.literal("Enter = Place   Esc = Cancel");
-        int hintW = textRenderer.getWidth(hint);
+        Component hint = Component.literal("Enter = Place   Esc = Cancel");
+        int hintW = font.width(hint);
         int hintX = cx + (cw - hintW) / 2;
         hintX = Math.max(cx, Math.min(hintX, (cx + cw) - hintW));
 
-        ctx.drawText(textRenderer, hint, hintX, row4Y + 2, 0xFFB0B0B0, false);
+        ctx.drawString(font, hint, hintX, row4Y + 2, 0xFFB0B0B0, false);
 
         if (overlayCancel != null) {
             overlayCancel.setX(cx);
@@ -1060,18 +1063,18 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean doubled) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
         int mx = (int) click.x();
         int my = (int) click.y();
 
-        Slot slot = this.focusedSlot;
-        if (slot != null && slot.hasStack()
-                && handler.isPlayerInventorySlot(slot)
+        Slot slot = this.hoveredSlot;
+        if (slot != null && slot.hasItem()
+                && menu.isPlayerInventorySlot(slot)
                 && isMouseOverSlotArea(slot, mx, my)
-                && handler.isCardItem(slot.getStack())) {
+                && menu.isCardItem(slot.getItem())) {
 
-            selectedPlayerCard = slot.getStack();
-            selectedPlayerInvIndex = slot.getIndex();
+            selectedPlayerCard = slot.getItem();
+            selectedPlayerInvIndex = slot.getContainerSlot();
             cascadeSourceMv = CardMeta.read(selectedPlayerCard).mv();
             return true;
         }
@@ -1096,7 +1099,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
     }
 
     @Override
-    public boolean keyPressed(KeyInput input) {
+    public boolean keyPressed(KeyEvent input) {
         int keyCode = input.key();
 
         // PLACE overlay keys
@@ -1137,7 +1140,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         // Other overlays: Esc closes
         if (keyCode == GLFW.GLFW_KEY_ESCAPE && overlay != OverlayMode.NONE) {
             if (overlay == OverlayMode.CASCADE && cascadePendingClient) {
-                ClientPlayNetworking.send(new DeckControlPackets.CascadeResolveC2S(handler.getPos(), false));
+                ClientPlayNetworking.send(new DeckControlPackets.CascadeResolveC2S(menu.getPos(), false));
                 cascadePendingClient = false;
             }
             overlay = OverlayMode.NONE;
@@ -1152,7 +1155,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
     public void removed() {
         super.removed();
         if (cascadePendingClient) {
-            ClientPlayNetworking.send(new DeckControlPackets.CascadeResolveC2S(handler.getPos(), false));
+            ClientPlayNetworking.send(new DeckControlPackets.CascadeResolveC2S(menu.getPos(), false));
             cascadePendingClient = false;
         }
     }
@@ -1161,27 +1164,27 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         hoveredPlayerCard = ItemStack.EMPTY;
         hoveredPlayerInvIndex = -1;
 
-        Slot slot = this.focusedSlot;
-        if (slot == null || !slot.hasStack()) return;
+        Slot slot = this.hoveredSlot;
+        if (slot == null || !slot.hasItem()) return;
 
-        if (!handler.isPlayerInventorySlot(slot)) return;
+        if (!menu.isPlayerInventorySlot(slot)) return;
         if (!isMouseOverSlotArea(slot, mouseX, mouseY)) return;
 
-        hoveredPlayerCard = slot.getStack();
-        hoveredPlayerInvIndex = slot.getIndex();
+        hoveredPlayerCard = slot.getItem();
+        hoveredPlayerInvIndex = slot.getContainerSlot();
     }
 
     private boolean isMouseOverSlotArea(Slot slot, int mouseX, int mouseY) {
-        int sx = this.x + slot.x;
-        int sy = this.y + slot.y;
+        int sx = this.leftPos + slot.x;
+        int sy = this.topPos + slot.y;
         return mouseX >= sx && mouseX < sx + 16 && mouseY >= sy && mouseY < sy + 16;
     }
 
     private boolean canUseSelectedCard() {
-        return handler.isLinked()
+        return menu.isLinked()
                 && selectedPlayerInvIndex >= 0
                 && !selectedPlayerCard.isEmpty()
-                && handler.isCardItem(selectedPlayerCard);
+                && menu.isCardItem(selectedPlayerCard);
     }
 
     private int getCascadeSourceMv() {
@@ -1201,7 +1204,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
 
     private void sendDeckAction(DeckControlPackets.Action action, int a, int b) {
         ClientPlayNetworking.send(new DeckControlPackets.ActionC2S(
-                handler.getPos(),
+                menu.getPos(),
                 action.ordinal(),
                 a,
                 b
@@ -1225,7 +1228,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
     /* ---------------- Overlay payload hook ---------------- */
 
     public void onOverlayPayload(DeckControlPackets.OverlayS2C payload) {
-        if (!payload.pos().equals(this.handler.getPos())) return;
+        if (!payload.pos().equals(this.menu.getPos())) return;
 
         this.overlayKind = DeckControlPackets.OverlayKind.values()[payload.kindOrdinal()];
         this.overlayN = payload.n();
@@ -1263,15 +1266,15 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
     }
 
     private static int readFaceIndex(ItemStack st) {
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
-        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
+        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
         return meta.getInt("mtg_face").orElse(0);
     }
 
-    private void drawCardArtFit(DrawContext ctx, ItemStack st, int x, int y, int w, int h) {
+    private void drawCardArtFit(GuiGraphics ctx, ItemStack st, int x, int y, int w, int h) {
         if (st == null || st.isEmpty()) return;
-        if (!handler.isCardItem(st)) return;
+        if (!menu.isCardItem(st)) return;
 
         int face = readFaceIndex(st);
 
@@ -1298,7 +1301,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         int dx = x + (w - drawW) / 2;
         int dy = y + (h - drawH) / 2;
 
-        ctx.drawTexture(
+        ctx.blit(
                 RenderPipelines.GUI_TEXTURED,
                 ref.id(),
                 dx, dy,
@@ -1309,35 +1312,32 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         );
     }
 
-    private void drawCardBackFit(DrawContext ctx, int x, int y, int w, int h) {
-        final int texW = 16;
-        final int texH = 16;
-
-        float aspect = 1.0f;
+    private void drawCardBackFit(GuiGraphics ctx, int x, int y, int w, int h) {
+        float aspect = CARD_BACK_ASPECT;
 
         int drawW = w;
-        int drawH = (int) (drawW / aspect);
+        int drawH = Math.round(drawW / aspect);
         if (drawH > h) {
             drawH = h;
-            drawW = (int) (drawH * aspect);
+            drawW = Math.round(drawH * aspect);
         }
 
         int dx = x + (w - drawW) / 2;
         int dy = y + (h - drawH) / 2;
 
-        ctx.drawTexture(
+        ctx.blit(
                 RenderPipelines.GUI_TEXTURED,
                 CARD_BACK_TEX,
                 dx, dy,
                 0f, 0f,
                 drawW, drawH,
-                texW, texH,
-                texW, texH
+                CARD_BACK_TEX_W, CARD_BACK_TEX_H,
+                CARD_BACK_TEX_W, CARD_BACK_TEX_H
         );
     }
 
     public void onCascadePayload(DeckControlPackets.CascadeS2C payload) {
-        if (!payload.pos().equals(this.handler.getPos())) return;
+        if (!payload.pos().equals(this.menu.getPos())) return;
 
         this.cascadeSourceMvNet = payload.sourceMv();
         this.cascadeHitIndex = payload.hitIndex();
@@ -1347,7 +1347,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         this.cascadePendingClient = true;
     }
 
-    private void drawOverlayRow(DrawContext ctx, List<ItemStack> list, int startX, int startY, int cols, int mouseX, int mouseY) {
+    private void drawOverlayRow(GuiGraphics ctx, List<ItemStack> list, int startX, int startY, int cols, int mouseX, int mouseY) {
         for (int i = 0; i < list.size(); i++) {
             int col = i % cols;
             int row = i / cols;
@@ -1370,13 +1370,13 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
                 if (isMouseIn(mouseX, mouseY, cx, cy, OVER_CARD_W, OVER_CARD_H)) {
                     var info = CardMeta.read(st);
                     String nm = info.name().isEmpty() ? "(card)" : info.name();
-                    ctx.drawTooltip(textRenderer, Text.literal(nm + " | MV " + info.mv()), mouseX, mouseY);
+                    ctx.setTooltipForNextFrame(font, Component.literal(nm + " | MV " + info.mv()), mouseX, mouseY);
                 }
             }
         }
     }
 
-    private void drawOverlayCardsTopRow(DrawContext ctx, int startX, int startY, int cols, int mouseX, int mouseY) {
+    private void drawOverlayCardsTopRow(GuiGraphics ctx, int startX, int startY, int cols, int mouseX, int mouseY) {
         int shown = Math.min(overlayN, overlayCards.size());
 
         for (int i = 0; i < shown; i++) {
@@ -1403,12 +1403,12 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
                 if (isMouseIn(mouseX, mouseY, cx, cy, OVER_CARD_W, OVER_CARD_H)) {
                     var info = CardMeta.read(st);
                     String nm = info.name().isEmpty() ? "(card)" : info.name();
-                    ctx.drawTooltip(textRenderer, Text.literal(nm + " | MV " + info.mv()), mouseX, mouseY);
+                    ctx.setTooltipForNextFrame(font, Component.literal(nm + " | MV " + info.mv()), mouseX, mouseY);
                 }
             }
         }
     }
-    private void drawOverlayEmptySlotsRow(DrawContext ctx, int startX, int startY, int cols, int count) {
+    private void drawOverlayEmptySlotsRow(GuiGraphics ctx, int startX, int startY, int cols, int count) {
         int shown = Math.min(count, cols); // one row
 
         for (int i = 0; i < shown; i++) {
@@ -1420,7 +1420,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         }
     }
 
-    private void drawOrderRow(DrawContext ctx, List<Integer> order, int startX, int startY, int cols,
+    private void drawOrderRow(GuiGraphics ctx, List<Integer> order, int startX, int startY, int cols,
                               int mouseX, int mouseY, boolean isTopRow) {
         for (int pos = 0; pos < order.size(); pos++) {
             int col = pos % cols;
@@ -1448,14 +1448,14 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
             if (isMouseIn(mouseX, mouseY, cx, cy, OVER_CARD_W, OVER_CARD_H)) {
                 var info = CardMeta.read(st);
                 String nm = info.name().isEmpty() ? "(card)" : info.name();
-                ctx.drawTooltip(textRenderer, Text.literal(nm + " | MV " + info.mv()), mouseX, mouseY);
+                ctx.setTooltipForNextFrame(font, Component.literal(nm + " | MV " + info.mv()), mouseX, mouseY);
             }
         }
 
         // ghost render for the dragged card
     }
 
-    private void drawDragGhost(DrawContext ctx, int mouseX, int mouseY) {
+    private void drawDragGhost(GuiGraphics ctx, int mouseX, int mouseY) {
         if (!dragging || dragCardIdx < 0 || dragCardIdx >= overlayCards.size()) return;
 
         ItemStack st = overlayCards.get(dragCardIdx);
@@ -1467,7 +1467,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         drawCardArtFit(ctx, st, dx + 1, dy + 1, OVER_CARD_W - 2, OVER_CARD_H - 2);
     }
 
-    private void drawBottomSlotsRow(DrawContext ctx, List<Integer> bottom, int startX, int startY, int cols, int slotCount,
+    private void drawBottomSlotsRow(GuiGraphics ctx, List<Integer> bottom, int startX, int startY, int cols, int slotCount,
                                     int mouseX, int mouseY) {
         int shownSlots = Math.min(slotCount, cols); // one row
         for (int i = 0; i < shownSlots; i++) {
@@ -1532,7 +1532,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         dragMouseOffY = my - cy;
     }
     @Override
-    public boolean mouseReleased(Click click) {
+    public boolean mouseReleased(MouseButtonEvent click) {
         if ((overlay == OverlayMode.SCRY || overlay == OverlayMode.SURVEIL) && dragging) {
             int mx = (int) click.x();
             int my = (int) click.y();
@@ -1620,7 +1620,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         if (mouseX < cx || mouseX >= cx + OVER_CARD_W) return ItemStack.EMPTY;
 
         ItemStack st = stacks.get(col);
-        return (st != null && !st.isEmpty() && st.isOf(com.spider.mtgcard.item.ModItems.CARD)) ? st : ItemStack.EMPTY;
+        return (st != null && !st.isEmpty() && st.is(com.spider.mtgcard.item.ModItems.CARD)) ? st : ItemStack.EMPTY;
     }
 
     private ItemStack hoverRowByOrder(int mouseX, int mouseY, int startX, int startY, int cols, java.util.List<Integer> order) {
@@ -1646,22 +1646,22 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         if (idx < 0 || idx >= overlayCards.size()) return ItemStack.EMPTY;
 
         ItemStack st = overlayCards.get(idx);
-        return (st != null && !st.isEmpty() && st.isOf(com.spider.mtgcard.item.ModItems.CARD)) ? st : ItemStack.EMPTY;
+        return (st != null && !st.isEmpty() && st.is(com.spider.mtgcard.item.ModItems.CARD)) ? st : ItemStack.EMPTY;
     }
 
     private boolean isFoil(ItemStack st) {
         if (st == null || st.isEmpty()) return false;
-        Boolean glint = st.get(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE);
+        Boolean glint = st.get(DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
         boolean hasGlint = glint != null && glint;
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        var root = (comp == null) ? new NbtCompound() : comp.copyNbt();
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        var root = (comp == null) ? new CompoundTag() : comp.copyTag();
         boolean foilNbt = root.getBoolean("mtg_foil").orElse(false);
         return hasGlint || foilNbt;
     }
 
-    private void renderHoverPreview(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    private void renderHoverPreview(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
         ItemStack st = getHoveredCardForPreview(mouseX, mouseY);
-        if (st == null || st.isEmpty() || !st.isOf(com.spider.mtgcard.item.ModItems.CARD)) {
+        if (st == null || st.isEmpty() || !st.is(com.spider.mtgcard.item.ModItems.CARD)) {
             lastHoverStack = ItemStack.EMPTY;
             lastTexRef = null;
             return;
@@ -1670,7 +1670,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         long now = System.currentTimeMillis();
 
         // Track hover changes
-        if (!ItemStack.areEqual(st, lastHoverStack)) {
+        if (!ItemStack.matches(st, lastHoverStack)) {
             hoverSinceMs = now;
             lastHoverStack = st.copy();
             lastTexRef = null;
@@ -1693,17 +1693,17 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         lastTexRef = ref;
 
         // --- Layout (same idea as DeckboxScreen) ---
-        final int panelMaxH = Math.min(this.backgroundHeight - 8, 220);
+        final int panelMaxH = Math.min(this.imageHeight - 8, 220);
         final int panelMaxW = 180;
 
         int panelW = panelMaxW;
         int panelH = panelMaxH;
 
-        int panelX = this.x - (panelW + 12);
-        int panelY = this.y + 4;
+        int panelX = this.leftPos - (panelW + 12);
+        int panelY = this.topPos + 4;
 
         // if left side would go offscreen, put it to the right
-        if (panelX < 8) panelX = this.x + this.backgroundWidth + 12;
+        if (panelX < 8) panelX = this.leftPos + this.imageWidth + 12;
 
         final int texW = ref.texW();
         final int texH = ref.texH();
@@ -1739,7 +1739,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         float sx = (float) drawW / (float) texW;
         float sy = (float) drawH / (float) texH;
 
-        var m = ctx.getMatrices();
+        var m = ctx.pose();
         Matrix3x2f rot = new Matrix3x2f().rotate((float) Math.toRadians(angleDeg));
 
 // ---------- Shadow pass ----------
@@ -1751,7 +1751,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         m.translate(-texW / 2f, -texH / 2f);
         m.translate(2f, 3f);
 
-        ctx.drawTexture(
+        ctx.blit(
                 RenderPipelines.GUI_TEXTURED,
                 ref.id(),
                 0, 0,
@@ -1770,7 +1770,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         m.mul(rot);
         m.translate(-texW / 2f, -texH / 2f);
 
-        ctx.drawTexture(
+        ctx.blit(
                 RenderPipelines.GUI_TEXTURED,
                 ref.id(),
                 0, 0,
@@ -1795,7 +1795,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
                 int shimmerAlpha = (int) (0x88 + 0x2A * ease);
                 int colorShimmer = (shimmerAlpha << 24) | 0x00FFFFFF;
 
-                ctx.drawTexture(
+                ctx.blit(
                         RenderPipelines.GUI_TEXTURED,
                         ref.id(),
                         drawU, 0,
@@ -1819,13 +1819,13 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         cascadeThumbX = cascadeThumbY = cascadeThumbCols = 0;
     }
 
-    private void drawRevealOverlay(DrawContext ctx, int mouseX, int mouseY) {
-        int left = this.x;
-        int top  = this.y;
+    private void drawRevealOverlay(GuiGraphics ctx, int mouseX, int mouseY) {
+        int left = this.leftPos;
+        int top  = this.topPos;
 
         int ox = left + PAD;
         int oy = top + PAD + 10;
-        int ow = backgroundWidth - PAD * 2;
+        int ow = imageWidth - PAD * 2;
 
         // height: enough for 1–2 rows + buttons
         int btnW = 90;
@@ -1837,11 +1837,11 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
         ctx.fill(ox, oy, ox + ow, oy + oh, 0xDD151515);
         ctx.fill(ox + 1, oy + 1, ox + ow - 1, oy + oh - 1, 0xDD202020);
 
-        ctx.drawText(textRenderer,
-                Text.literal("Resolving: Peek (" + overlayN + ")"),
+        ctx.drawString(font,
+                Component.literal("Resolving: Peek (" + overlayN + ")"),
                 ox + 8, oy + 8, 0xFFFFFFFF, false);
-        ctx.drawText(textRenderer,
-                Text.literal("Private view — only you can see these."),
+        ctx.drawString(font,
+                Component.literal("Private view — only you can see these."),
                 ox + 8, oy + 22, 0xFFCFCFCF, false);
 
         int startX = ox + 10;
@@ -1883,7 +1883,7 @@ public class DeckControlScreen extends HandledScreen<DeckControlScreenHandler> {
             if (st != null && !st.isEmpty() && isMouseIn(mouseX, mouseY, cx, cy, OVER_CARD_W, OVER_CARD_H)) {
                 var info = CardMeta.read(st);
                 String nm = info.name().isEmpty() ? "(card)" : info.name();
-                ctx.drawTooltip(textRenderer, Text.literal(nm + " | MV " + info.mv()), mouseX, mouseY);
+                ctx.setTooltipForNextFrame(font, Component.literal(nm + " | MV " + info.mv()), mouseX, mouseY);
             }
         }
 

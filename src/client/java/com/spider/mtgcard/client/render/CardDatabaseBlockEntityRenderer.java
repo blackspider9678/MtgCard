@@ -3,21 +3,21 @@ package com.spider.mtgcard.client.render;
 import com.spider.mtgcard.client.render.tex.CardDbBinderOverlayTex;
 import com.spider.mtgcard.db.CardDatabaseBlock;
 import com.spider.mtgcard.db.CardDatabaseBlockEntity;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.render.OverlayTexture;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.RenderLayers;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.block.entity.BlockEntityRenderer;
-import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
-import net.minecraft.client.render.block.entity.state.BlockEntityRenderState;
-import net.minecraft.client.render.command.ModelCommandRenderer;
-import net.minecraft.client.render.command.OrderedRenderCommandQueue;
-import net.minecraft.client.render.state.CameraRenderState;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
+import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
+import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.resources.Identifier;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 
@@ -29,7 +29,7 @@ public class CardDatabaseBlockEntityRenderer
         public Direction frontDir, leftDir, rightDir, backDir;
     }
 
-    public CardDatabaseBlockEntityRenderer(BlockEntityRendererFactory.Context ctx) {}
+    public CardDatabaseBlockEntityRenderer(BlockEntityRendererProvider.Context ctx) {}
 
     @Override
     public State createRenderState() {
@@ -37,23 +37,23 @@ public class CardDatabaseBlockEntityRenderer
     }
 
     @Override
-    public void updateRenderState(
+    public void extractRenderState(
             CardDatabaseBlockEntity be,
             State s,
             float tickProgress,
-            Vec3d cameraPos,
-            @Nullable ModelCommandRenderer.CrumblingOverlayCommand crumblingOverlay
+            Vec3 cameraPos,
+            @Nullable ModelFeatureRenderer.CrumblingOverlay crumblingOverlay
     ) {
         s.frontFill = s.leftFill = s.rightFill = s.backFill = 0;
         s.frontDir = s.leftDir = s.rightDir = s.backDir = null;
 
-        if (be.getWorld() == null) return;
+        if (be.getLevel() == null) return;
 
         int binders = be.getClientBinderCount();
         if (binders <= 0) return;
 
-        BlockState bs = be.getCachedState();
-        if (!bs.contains(CardDatabaseBlock.FACING)) return;
+        BlockState bs = be.getBlockState();
+        if (!bs.hasProperty(CardDatabaseBlock.FACING)) return;
 
         // Your allocation rules:
         // front face has 7-wide shelves => 7 * 5 = 35 binders max
@@ -65,10 +65,10 @@ public class CardDatabaseBlockEntityRenderer
         int right = Math.min(rem, 70); rem -= right;
         int back  = Math.min(rem, 70);
 
-        Direction frontDir = bs.get(CardDatabaseBlock.FACING);
+        Direction frontDir = bs.getValue(CardDatabaseBlock.FACING);
         s.frontDir = frontDir;
-        s.leftDir  = frontDir.rotateYCounterclockwise();
-        s.rightDir = frontDir.rotateYClockwise();
+        s.leftDir  = frontDir.getCounterClockWise();
+        s.rightDir = frontDir.getClockWise();
         s.backDir  = frontDir.getOpposite();
 
         s.frontFill = front;
@@ -78,38 +78,38 @@ public class CardDatabaseBlockEntityRenderer
     }
 
     @Override
-    public void render(State s, MatrixStack matrices, OrderedRenderCommandQueue queue, CameraRenderState cameraState) {
+    public void submit(State s, PoseStack matrices, SubmitNodeCollector queue, CameraRenderState cameraState) {
         if (s.frontFill <= 0 && s.leftFill <= 0 && s.rightFill <= 0 && s.backFill <= 0) return;
 
         // Pick an order; 0 is fine for “simple overlay”
-        var batching = queue.getBatchingQueue(0);
+        var batching = queue.order(0);
 
-        if (s.frontFill > 0) submitFace(matrices, (OrderedRenderCommandQueue) batching, s.frontDir, CardDbBinderOverlayTex.front(s.frontFill));
-        if (s.leftFill  > 0) submitFace(matrices, (OrderedRenderCommandQueue) batching, s.leftDir,  CardDbBinderOverlayTex.side(s.leftFill));
-        if (s.rightFill > 0) submitFace(matrices, (OrderedRenderCommandQueue) batching, s.rightDir, CardDbBinderOverlayTex.side(s.rightFill));
-        if (s.backFill  > 0) submitFace(matrices, (OrderedRenderCommandQueue) batching, s.backDir,  CardDbBinderOverlayTex.side(s.backFill));
+        if (s.frontFill > 0) submitFace(matrices, (SubmitNodeCollector) batching, s.frontDir, CardDbBinderOverlayTex.front(s.frontFill));
+        if (s.leftFill  > 0) submitFace(matrices, (SubmitNodeCollector) batching, s.leftDir,  CardDbBinderOverlayTex.side(s.leftFill));
+        if (s.rightFill > 0) submitFace(matrices, (SubmitNodeCollector) batching, s.rightDir, CardDbBinderOverlayTex.side(s.rightFill));
+        if (s.backFill  > 0) submitFace(matrices, (SubmitNodeCollector) batching, s.backDir,  CardDbBinderOverlayTex.side(s.backFill));
     }
 
-    private static void submitFace(MatrixStack matrices, OrderedRenderCommandQueue queue, Direction dir, Identifier tex) {
+    private static void submitFace(PoseStack matrices, SubmitNodeCollector queue, Direction dir, Identifier tex) {
         if (dir == null) return;
 
-        RenderLayer layer = RenderLayers.entityCutoutNoCull(tex);
+        RenderType layer = RenderTypes.entityCutout(tex);
 
-        queue.submitCustom(matrices, layer, (MatrixStack.Entry entry, VertexConsumer vc) -> {
+        queue.submitCustomGeometry(matrices, layer, (PoseStack.Pose entry, VertexConsumer vc) -> {
             renderFace(entry, vc, dir);
         });
     }
 
-    private static void renderFace(MatrixStack.Entry entry, VertexConsumer vc, Direction dir) {
+    private static void renderFace(PoseStack.Pose entry, VertexConsumer vc, Direction dir) {
         final float eps = 0.001f;
-        Matrix4f mat = entry.getPositionMatrix();
+        Matrix4f mat = entry.pose();
 
         float u0 = 0f, v0 = 0f, u1 = 1f, v1 = 1f;
         float x0 = 0f, y0 = 0f, z0 = 0f;
         float x1 = 1f, y1 = 1f, z1 = 1f;
 
         int light = 0x00F000F0; // fullbright; replace if you want world lighting
-        int overlay = OverlayTexture.DEFAULT_UV;
+        int overlay = OverlayTexture.NO_OVERLAY;
 
         // NOTE: we’re not doing correct normals here because it’s a flat decal;
         // leaving normal (0,0,0) works fine for “no shading” with fullbright.
@@ -163,9 +163,9 @@ public class CardDatabaseBlockEntityRenderer
     ) {
         int r = 255, g = 255, b = 255, a = 255;
 
-        vc.vertex(mat, x0, y0, z0).color(r,g,b,a).texture(u0, v0).overlay(overlay).light(light).normal(0,0,0);
-        vc.vertex(mat, x1, y1, z1).color(r,g,b,a).texture(u1, v1).overlay(overlay).light(light).normal(0,0,0);
-        vc.vertex(mat, x2, y2, z2).color(r,g,b,a).texture(u2, v2).overlay(overlay).light(light).normal(0,0,0);
-        vc.vertex(mat, x3, y3, z3).color(r,g,b,a).texture(u3, v3).overlay(overlay).light(light).normal(0,0,0);
+        vc.addVertex(mat, x0, y0, z0).setColor(r,g,b,a).setUv(u0, v0).setOverlay(overlay).setLight(light).setNormal(0,0,0);
+        vc.addVertex(mat, x1, y1, z1).setColor(r,g,b,a).setUv(u1, v1).setOverlay(overlay).setLight(light).setNormal(0,0,0);
+        vc.addVertex(mat, x2, y2, z2).setColor(r,g,b,a).setUv(u2, v2).setOverlay(overlay).setLight(light).setNormal(0,0,0);
+        vc.addVertex(mat, x3, y3, z3).setColor(r,g,b,a).setUv(u3, v3).setOverlay(overlay).setLight(light).setNormal(0,0,0);
     }
 }

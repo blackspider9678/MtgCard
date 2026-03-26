@@ -3,13 +3,14 @@ package com.spider.mtgcard.deckcontrol;
 import com.spider.mtgcard.registry.ModRegistry;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload.Type;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.BlockPos;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -48,10 +49,10 @@ public final class DeckControlPackets {
         RESET_DECK
     }
 
-    public record ActionC2S(BlockPos pos, int actionOrdinal, int a, int b) implements CustomPayload {
-        public static final Id<ActionC2S> ID = new Id<>(ModRegistry.id("deck_action"));
-        public static final PacketCodec<RegistryByteBuf, ActionC2S> CODEC =
-                PacketCodec.ofStatic(
+    public record ActionC2S(BlockPos pos, int actionOrdinal, int a, int b) implements CustomPacketPayload {
+        public static final Type<ActionC2S> ID = new Type<>(ModRegistry.id("deck_action"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, ActionC2S> CODEC =
+                StreamCodec.of(
                         (buf, p) -> {
                             buf.writeBlockPos(p.pos());
                             buf.writeVarInt(p.actionOrdinal());
@@ -61,17 +62,17 @@ public final class DeckControlPackets {
                         (buf) -> new ActionC2S(buf.readBlockPos(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt())
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // -------------------- S2C: Show cards (for overlays) --------------------
 
 
-    public record OverlayS2C(BlockPos pos, int kindOrdinal, int n, List<ItemStack> cards) implements CustomPayload {
-        public static final Id<OverlayS2C> ID = new Id<>(ModRegistry.id("deck_overlay"));
+    public record OverlayS2C(BlockPos pos, int kindOrdinal, int n, List<ItemStack> cards) implements CustomPacketPayload {
+        public static final Type<OverlayS2C> ID = new Type<>(ModRegistry.id("deck_overlay"));
 
-        public static final PacketCodec<RegistryByteBuf, OverlayS2C> CODEC =
-                PacketCodec.ofStatic(
+        public static final StreamCodec<RegistryFriendlyByteBuf, OverlayS2C> CODEC =
+                StreamCodec.of(
                         (buf, p) -> {
                             buf.writeBlockPos(p.pos());
                             buf.writeVarInt(p.kindOrdinal());
@@ -80,7 +81,7 @@ public final class DeckControlPackets {
                             for (var st : p.cards()) {
                                 boolean present = (st != null && !st.isEmpty());
                                 buf.writeBoolean(present);
-                                if (present) ItemStack.PACKET_CODEC.encode(buf, st);
+                                if (present) ItemStack.STREAM_CODEC.encode(buf, st);
                             }
                         },
                         (buf) -> {
@@ -91,44 +92,44 @@ public final class DeckControlPackets {
                             var list = new ArrayList<ItemStack>(size);
                             for (int i = 0; i < size; i++) {
                                 boolean present = buf.readBoolean();
-                                list.add(present ? ItemStack.PACKET_CODEC.decode(buf) : ItemStack.EMPTY);
+                                list.add(present ? ItemStack.STREAM_CODEC.decode(buf) : ItemStack.EMPTY);
                             }
                             return new OverlayS2C(pos, k, n, list);
                         }
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // -------------------- C2S: Cascade start/resolve --------------------
-    public record CascadeStartC2S(BlockPos pos, int sourceMv) implements CustomPayload {
-        public static final Id<CascadeStartC2S> ID = new Id<>(ModRegistry.id("deck_cascade_start"));
-        public static final PacketCodec<RegistryByteBuf, CascadeStartC2S> CODEC =
-                PacketCodec.ofStatic(
+    public record CascadeStartC2S(BlockPos pos, int sourceMv) implements CustomPacketPayload {
+        public static final Type<CascadeStartC2S> ID = new Type<>(ModRegistry.id("deck_cascade_start"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, CascadeStartC2S> CODEC =
+                StreamCodec.of(
                         (buf, p) -> { buf.writeBlockPos(p.pos()); buf.writeVarInt(p.sourceMv()); },
                         (buf) -> new CascadeStartC2S(buf.readBlockPos(), buf.readVarInt())
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
-    public record CascadeResolveC2S(BlockPos pos, boolean cast) implements CustomPayload {
-        public static final Id<CascadeResolveC2S> ID = new Id<>(ModRegistry.id("deck_cascade_resolve"));
-        public static final PacketCodec<RegistryByteBuf, CascadeResolveC2S> CODEC =
-                PacketCodec.ofStatic(
+    public record CascadeResolveC2S(BlockPos pos, boolean cast) implements CustomPacketPayload {
+        public static final Type<CascadeResolveC2S> ID = new Type<>(ModRegistry.id("deck_cascade_resolve"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, CascadeResolveC2S> CODEC =
+                StreamCodec.of(
                         (buf, p) -> { buf.writeBlockPos(p.pos()); buf.writeBoolean(p.cast()); },
                         (buf) -> new CascadeResolveC2S(buf.readBlockPos(), buf.readBoolean())
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // -------------------- S2C: Cascade overlay --------------------
-    public record CascadeS2C(BlockPos pos, int sourceMv, int hitIndex, List<ItemStack> revealed) implements CustomPayload {
-        public static final Id<CascadeS2C> ID = new Id<>(ModRegistry.id("deck_cascade_overlay"));
+    public record CascadeS2C(BlockPos pos, int sourceMv, int hitIndex, List<ItemStack> revealed) implements CustomPacketPayload {
+        public static final Type<CascadeS2C> ID = new Type<>(ModRegistry.id("deck_cascade_overlay"));
 
-        public static final PacketCodec<RegistryByteBuf, CascadeS2C> CODEC =
-                PacketCodec.ofStatic(
+        public static final StreamCodec<RegistryFriendlyByteBuf, CascadeS2C> CODEC =
+                StreamCodec.of(
                         (buf, p) -> {
                             buf.writeBlockPos(p.pos());
                             buf.writeVarInt(p.sourceMv());
@@ -136,7 +137,7 @@ public final class DeckControlPackets {
                             buf.writeVarInt(p.revealed().size());
                             for (ItemStack st : p.revealed()) {
                                 // IMPORTANT: do not send empties here
-                                ItemStack.PACKET_CODEC.encode(buf, st);
+                                ItemStack.STREAM_CODEC.encode(buf, st);
                             }
                         },
                         (buf) -> {
@@ -145,24 +146,24 @@ public final class DeckControlPackets {
                             int hitIndex = buf.readVarInt();
                             int size = buf.readVarInt();
                             var list = new ArrayList<ItemStack>(size);
-                            for (int i = 0; i < size; i++) list.add(ItemStack.PACKET_CODEC.decode(buf));
+                            for (int i = 0; i < size; i++) list.add(ItemStack.STREAM_CODEC.decode(buf));
                             return new CascadeS2C(pos, mv, hitIndex, list);
                         }
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // -------------------- registration --------------------
     public static void registerTypes() {
-        PayloadTypeRegistry.playC2S().register(ActionC2S.ID, ActionC2S.CODEC);
-        PayloadTypeRegistry.playS2C().register(OverlayS2C.ID, OverlayS2C.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ActionC2S.ID, ActionC2S.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(OverlayS2C.ID, OverlayS2C.CODEC);
 
-        PayloadTypeRegistry.playC2S().register(CascadeStartC2S.ID, CascadeStartC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(CascadeResolveC2S.ID, CascadeResolveC2S.CODEC);
-        PayloadTypeRegistry.playS2C().register(CascadeS2C.ID, CascadeS2C.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CascadeStartC2S.ID, CascadeStartC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CascadeResolveC2S.ID, CascadeResolveC2S.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CascadeS2C.ID, CascadeS2C.CODEC);
 
-        PayloadTypeRegistry.playC2S().register(ResolveOrderedC2S.ID, ResolveOrderedC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ResolveOrderedC2S.ID, ResolveOrderedC2S.CODEC);
     }
 
     public static void registerReceivers() {
@@ -170,8 +171,8 @@ public final class DeckControlPackets {
         // --- base action receiver ---
         ServerPlayNetworking.registerGlobalReceiver(ActionC2S.ID, (payload, ctx) ->
                 ctx.server().execute(() -> {
-                    if (!(ctx.player() instanceof ServerPlayerEntity sp)) return;
-                    ServerWorld world = (ServerWorld) sp.getEntityWorld();
+                    if (!(ctx.player() instanceof ServerPlayer sp)) return;
+                    ServerLevel world = (ServerLevel) sp.level();
                     var be = world.getBlockEntity(payload.pos());
                     if (!(be instanceof DeckControlBlockEntity dc)) return;
 
@@ -195,7 +196,7 @@ public final class DeckControlPackets {
                             int n = Math.max(1, payload.a());
                             var cards = noEmptyCopies(dc.peekTopCopies(n), n);
                             int actual = cards.size();
-                            sp.networkHandler.sendPacket(ServerPlayNetworking.createS2CPacket(
+                            sp.connection.send(ServerPlayNetworking.createClientboundPacket(
                                     new OverlayS2C(payload.pos(), OverlayKind.REVEAL.ordinal(), actual, cards)
                             ));
                         }
@@ -204,7 +205,7 @@ public final class DeckControlPackets {
                             int n = Math.max(1, payload.a());
                             var cards = noEmptyCopies(dc.peekTopCopies(n), n);
                             int actual = cards.size();
-                            sp.networkHandler.sendPacket(ServerPlayNetworking.createS2CPacket(
+                            sp.connection.send(ServerPlayNetworking.createClientboundPacket(
                                     new OverlayS2C(payload.pos(), OverlayKind.SCRY.ordinal(), actual, cards)
                             ));
                         }
@@ -221,7 +222,7 @@ public final class DeckControlPackets {
                             int n = Math.max(1, payload.a());
                             var cards = noEmptyCopies(dc.peekTopCopies(n), n);
                             int actual = cards.size();
-                            sp.networkHandler.sendPacket(ServerPlayNetworking.createS2CPacket(
+                            sp.connection.send(ServerPlayNetworking.createClientboundPacket(
                                     new OverlayS2C(payload.pos(), OverlayKind.SURVEIL.ordinal(), actual, cards)
                             ));
                         }
@@ -255,8 +256,8 @@ public final class DeckControlPackets {
         // --- cascade dedicated packets (recommended) ---
         ServerPlayNetworking.registerGlobalReceiver(CascadeStartC2S.ID, (payload, ctx) ->
                 ctx.server().execute(() -> {
-                    if (!(ctx.player() instanceof ServerPlayerEntity sp)) return;
-                    var world = (ServerWorld) sp.getEntityWorld();
+                    if (!(ctx.player() instanceof ServerPlayer sp)) return;
+                    var world = (ServerLevel) sp.level();
                     var be = world.getBlockEntity(payload.pos());
                     if (!(be instanceof DeckControlBlockEntity dc)) return;
                     dc.startCascade(sp, payload.sourceMv());
@@ -265,8 +266,8 @@ public final class DeckControlPackets {
 
         ServerPlayNetworking.registerGlobalReceiver(CascadeResolveC2S.ID, (payload, ctx) ->
                 ctx.server().execute(() -> {
-                    if (!(ctx.player() instanceof ServerPlayerEntity sp)) return;
-                    var world = (ServerWorld) sp.getEntityWorld();
+                    if (!(ctx.player() instanceof ServerPlayer sp)) return;
+                    var world = (ServerLevel) sp.level();
                     var be = world.getBlockEntity(payload.pos());
                     if (!(be instanceof DeckControlBlockEntity dc)) return;
                     dc.resolveCascade(sp, payload.cast());
@@ -276,8 +277,8 @@ public final class DeckControlPackets {
         // --- ordered resolve receiver (drag/drop) ---
         ServerPlayNetworking.registerGlobalReceiver(ResolveOrderedC2S.ID, (payload, ctx) ->
                 ctx.server().execute(() -> {
-                    if (!(ctx.player() instanceof ServerPlayerEntity sp)) return;
-                    ServerWorld world = (ServerWorld) sp.getEntityWorld();
+                    if (!(ctx.player() instanceof ServerPlayer sp)) return;
+                    ServerLevel world = (ServerLevel) sp.level();
                     var be = world.getBlockEntity(payload.pos());
                     if (!(be instanceof DeckControlBlockEntity dc)) return;
 
@@ -334,12 +335,12 @@ public final class DeckControlPackets {
 
     // -------------------- C2S: Ordered resolve (drag/drop) --------------------
     public record ResolveOrderedC2S(BlockPos pos, int kindOrdinal, int n, int topCount, int size, int[] order)
-            implements CustomPayload {
+            implements CustomPacketPayload {
 
-        public static final Id<ResolveOrderedC2S> ID = new Id<>(ModRegistry.id("deck_resolve_ordered"));
+        public static final Type<ResolveOrderedC2S> ID = new Type<>(ModRegistry.id("deck_resolve_ordered"));
 
-        public static final PacketCodec<RegistryByteBuf, ResolveOrderedC2S> CODEC =
-                PacketCodec.ofStatic(
+        public static final StreamCodec<RegistryFriendlyByteBuf, ResolveOrderedC2S> CODEC =
+                StreamCodec.of(
                         (buf, p) -> {
                             buf.writeBlockPos(p.pos());
                             buf.writeVarInt(p.kindOrdinal());
@@ -360,7 +361,7 @@ public final class DeckControlPackets {
                         }
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     private static List<ItemStack> noEmptyCopies(List<ItemStack> in, int max) {

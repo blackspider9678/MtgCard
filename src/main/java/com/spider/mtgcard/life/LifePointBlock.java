@@ -3,48 +3,49 @@ package com.spider.mtgcard.life;
 import com.mojang.serialization.MapCodec;
 import com.spider.mtgcard.displayblock.DisplayBlockEntity;
 import com.spider.mtgcard.registry.ModBlockEntities;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.BlockWithEntity;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.BlockEntityTicker;
-import net.minecraft.block.entity.BlockEntityType;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemPlacementContext;
-import net.minecraft.item.ItemStack;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.state.StateManager;
-import net.minecraft.state.property.EnumProperty;
-import net.minecraft.state.property.Properties;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.world.World;
-import net.minecraft.world.block.WireOrientation;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockBehaviour.Properties;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.BaseEntityBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.EnumProperty;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.redstone.Orientation;
 import org.jetbrains.annotations.Nullable;
 
-public class LifePointBlock extends BlockWithEntity {
-    public static final EnumProperty<Direction> FACING = Properties.HORIZONTAL_FACING;
-    public static final MapCodec<LifePointBlock> CODEC = createCodec(LifePointBlock::new);
+public class LifePointBlock extends BaseEntityBlock {
+    public static final EnumProperty<Direction> FACING = BlockStateProperties.HORIZONTAL_FACING;
+    public static final MapCodec<LifePointBlock> CODEC = simpleCodec(LifePointBlock::new);
 
-    public LifePointBlock(Settings settings) {
+    public LifePointBlock(Properties settings) {
         super(settings);
-        this.setDefaultState(getStateManager().getDefaultState().with(FACING, Direction.NORTH));
+        this.registerDefaultState(getStateDefinition().any().setValue(FACING, Direction.NORTH));
     }
 
     @Override
     @Nullable
     public <T extends BlockEntity> BlockEntityTicker<T> getTicker(
-            World world,
+            Level world,
             BlockState state,
             BlockEntityType<T> type
     ) {
-        if (world.isClient()) return null;
+        if (world.isClientSide()) return null;
 
         // Manual equivalent of checkType(...)
         if (type == ModBlockEntities.LIFE_POINT) {
@@ -55,62 +56,62 @@ public class LifePointBlock extends BlockWithEntity {
     }
 
     @Override
-    protected MapCodec<? extends BlockWithEntity> getCodec() {
+    protected MapCodec<? extends BaseEntityBlock> codec() {
         return CODEC;
     }
 
     @Override
-    protected void appendProperties(StateManager.Builder<net.minecraft.block.Block, BlockState> builder) {
+    protected void createBlockStateDefinition(StateDefinition.Builder<net.minecraft.world.level.block.Block, BlockState> builder) {
         builder.add(FACING);
     }
 
     @Override
-    public BlockState getPlacementState(ItemPlacementContext ctx) {
-        return getDefaultState().with(FACING, ctx.getHorizontalPlayerFacing().getOpposite());
+    public BlockState getStateForPlacement(BlockPlaceContext ctx) {
+        return defaultBlockState().setValue(FACING, ctx.getHorizontalDirection().getOpposite());
     }
 
     @Nullable
     @Override
-    public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
+    public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
         return new LifePointBlockEntity(pos, state);
     }
 
     @Override
-    protected ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player, BlockHitResult hit) {
-        if (world.isClient()) return ActionResult.SUCCESS;
+    protected InteractionResult useWithoutItem(BlockState state, Level world, BlockPos pos, Player player, BlockHitResult hit) {
+        if (world.isClientSide()) return InteractionResult.SUCCESS;
 
         var be = world.getBlockEntity(pos);
-        if (!(be instanceof LifePointBlockEntity lp)) return ActionResult.PASS;
+        if (!(be instanceof LifePointBlockEntity lp)) return InteractionResult.PASS;
 
-        LifePointPackets.openScreen((ServerWorld) world, player, pos, lp);
-        return ActionResult.SUCCESS;
+        LifePointPackets.openScreen((ServerLevel) world, player, pos, lp);
+        return InteractionResult.SUCCESS;
     }
 
     @Override
-    protected boolean hasComparatorOutput(BlockState state) {
+    protected boolean hasAnalogOutputSignal(BlockState state) {
         return true;
     }
 
     @Override
-    protected int getComparatorOutput(BlockState state, World world, BlockPos pos, Direction direction) {
+    protected int getAnalogOutputSignal(BlockState state, Level world, BlockPos pos, Direction direction) {
         var be = world.getBlockEntity(pos);
         return (be instanceof LifePointBlockEntity lp && lp.isTurnActive()) ? 15 : 0;
     }
 
     @Override
-    protected void neighborUpdate(BlockState state, World world, BlockPos pos,
-                                  net.minecraft.block.Block neighborBlock,
-                                  WireOrientation wireOrientation,
-                                  boolean notify) {
-        if (!world.isClient()) {
+    protected void neighborChanged(BlockState state, Level world, BlockPos pos,
+                                   net.minecraft.world.level.block.Block neighborBlock,
+                                   Orientation wireOrientation,
+                                   boolean notify) {
+        if (!world.isClientSide()) {
             var be = world.getBlockEntity(pos);
             if (be instanceof LifePointBlockEntity lp) {
-                boolean poweredNow = world.isReceivingRedstonePower(pos);
+                boolean poweredNow = world.hasNeighborSignal(pos);
                 boolean poweredBefore = lp.getLastPowered();
 
                 if (!poweredBefore && poweredNow) {
                     if (lp.isTurnActive()) {
-                        LifePlayGroups.passTurn((ServerWorld) world, pos);
+                        LifePlayGroups.passTurn((ServerLevel) world, pos);
                     }
                 }
 
@@ -118,11 +119,11 @@ public class LifePointBlock extends BlockWithEntity {
             }
         }
 
-        super.neighborUpdate(state, world, pos, neighborBlock, wireOrientation, notify);
+        super.neighborChanged(state, world, pos, neighborBlock, wireOrientation, notify);
     }
 
     @Override
-    protected void onStateReplaced(BlockState state, ServerWorld world, BlockPos pos, boolean moved) {
+    protected void affectNeighborsAfterRemoval(BlockState state, ServerLevel world, BlockPos pos, boolean moved) {
         if (world.getBlockState(pos).getBlock() != this) {
             BlockEntity be = world.getBlockEntity(pos);
             if (be instanceof LifePointBlockEntity lp) {
@@ -131,14 +132,14 @@ public class LifePointBlock extends BlockWithEntity {
             LifePlayGroups.onMemberBroken(world, pos);
         }
 
-        super.onStateReplaced(state, world, pos, moved);
+        super.affectNeighborsAfterRemoval(state, world, pos, moved);
     }
 
     @Override
-    public void onPlaced(World world, BlockPos pos, BlockState state, LivingEntity placer, ItemStack itemStack) {
-        super.onPlaced(world, pos, state, placer, itemStack);
+    public void setPlacedBy(Level world, BlockPos pos, BlockState state, LivingEntity placer, ItemStack itemStack) {
+        super.setPlacedBy(world, pos, state, placer, itemStack);
 
-        if (world instanceof ServerWorld sw) {
+        if (world instanceof ServerLevel sw) {
             var be = sw.getBlockEntity(pos);
             if (be instanceof LifePointBlockEntity lp) {
                 lp.ensureDefaultName(sw);

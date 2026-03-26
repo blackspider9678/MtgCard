@@ -3,11 +3,12 @@ package com.spider.mtgcard.net;
 import com.spider.mtgcard.net.payload.XmlArtUploadPayload;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload.Type;
+import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,9 +18,9 @@ public final class CustomCardPackets {
     // =========================
     // IDs
     // =========================
-    public static final Identifier BATCH_CREATE_ID = Identifier.of("mtgcard","custom_batch_create");
-    public static final Identifier SYNC_FULL_ID    = Identifier.of("mtgcard","custom_sync_full");
-    public static final Identifier SYNC_DELTA_ID   = Identifier.of("mtgcard","custom_sync_delta");
+    public static final Identifier BATCH_CREATE_ID = Identifier.fromNamespaceAndPath("mtgcard","custom_batch_create");
+    public static final Identifier SYNC_FULL_ID    = Identifier.fromNamespaceAndPath("mtgcard","custom_sync_full");
+    public static final Identifier SYNC_DELTA_ID   = Identifier.fromNamespaceAndPath("mtgcard","custom_sync_delta");
 
     // =========================
     // C2S: batch create
@@ -37,59 +38,59 @@ public final class CustomCardPackets {
             String artKeyBack
     ) {}
 
-    public static final Identifier ART_BEGIN_ID  = Identifier.of("mtgcard","custom_art_begin");
-    public static final Identifier ART_CHUNK_ID  = Identifier.of("mtgcard","custom_art_chunk");
-    public static final Identifier ART_FINISH_ID = Identifier.of("mtgcard","custom_art_finish");
+    public static final Identifier ART_BEGIN_ID  = Identifier.fromNamespaceAndPath("mtgcard","custom_art_begin");
+    public static final Identifier ART_CHUNK_ID  = Identifier.fromNamespaceAndPath("mtgcard","custom_art_chunk");
+    public static final Identifier ART_FINISH_ID = Identifier.fromNamespaceAndPath("mtgcard","custom_art_finish");
 
     // Manual codec for BatchEntry (explicit order)
     // Manual codec for BatchEntry (explicit order)
-    private static PacketCodec<RegistryByteBuf, BatchEntry> batchEntryCodec() {
-        return PacketCodec.of(
-                (BatchEntry e, RegistryByteBuf buf) -> {
+    private static StreamCodec<RegistryFriendlyByteBuf, BatchEntry> batchEntryCodec() {
+        return StreamCodec.ofMember(
+                (BatchEntry e, RegistryFriendlyByteBuf buf) -> {
                     // ✅ NEW: id first
-                    buf.writeString(e.id());
+                    buf.writeUtf(e.id());
 
-                    buf.writeString(e.name());
-                    buf.writeString(e.manaCost());
-                    buf.writeString(e.typeLine());
-                    buf.writeString(e.rarity());
-                    buf.writeString(e.set());
-                    buf.writeString(e.oracleText());
-                    buf.writeString(e.power());
-                    buf.writeString(e.toughness());
-                    buf.writeString(e.loyalty());
+                    buf.writeUtf(e.name());
+                    buf.writeUtf(e.manaCost());
+                    buf.writeUtf(e.typeLine());
+                    buf.writeUtf(e.rarity());
+                    buf.writeUtf(e.set());
+                    buf.writeUtf(e.oracleText());
+                    buf.writeUtf(e.power());
+                    buf.writeUtf(e.toughness());
+                    buf.writeUtf(e.loyalty());
                     buf.writeBoolean(e.doubleFaced());
-                    buf.writeString(e.backName());
-                    buf.writeString(e.backTypeLine());
-                    buf.writeString(e.backOracleText());
-                    buf.writeString(e.backPower());
-                    buf.writeString(e.backToughness());
-                    buf.writeString(e.backLoyalty());
-                    buf.writeString(e.artKeyFront());
-                    buf.writeString(e.artKeyBack());
+                    buf.writeUtf(e.backName());
+                    buf.writeUtf(e.backTypeLine());
+                    buf.writeUtf(e.backOracleText());
+                    buf.writeUtf(e.backPower());
+                    buf.writeUtf(e.backToughness());
+                    buf.writeUtf(e.backLoyalty());
+                    buf.writeUtf(e.artKeyFront());
+                    buf.writeUtf(e.artKeyBack());
                 },
-                (RegistryByteBuf buf) -> {
+                (RegistryFriendlyByteBuf buf) -> {
                     // ✅ NEW: id first
-                    String id = buf.readString();
+                    String id = buf.readUtf();
 
-                    String name = buf.readString();
-                    String manaCost = buf.readString();
-                    String typeLine = buf.readString();
-                    String rarity = buf.readString();
-                    String set = buf.readString();
-                    String oracleText = buf.readString();
-                    String power = buf.readString();
-                    String toughness = buf.readString();
-                    String loyalty = buf.readString();
+                    String name = buf.readUtf();
+                    String manaCost = buf.readUtf();
+                    String typeLine = buf.readUtf();
+                    String rarity = buf.readUtf();
+                    String set = buf.readUtf();
+                    String oracleText = buf.readUtf();
+                    String power = buf.readUtf();
+                    String toughness = buf.readUtf();
+                    String loyalty = buf.readUtf();
                     boolean doubleFaced = buf.readBoolean();
-                    String backName = buf.readString();
-                    String backTypeLine = buf.readString();
-                    String backOracleText = buf.readString();
-                    String backPower = buf.readString();
-                    String backToughness = buf.readString();
-                    String backLoyalty = buf.readString();
-                    String artKeyFront = buf.readString();
-                    String artKeyBack  = buf.readString();
+                    String backName = buf.readUtf();
+                    String backTypeLine = buf.readUtf();
+                    String backOracleText = buf.readUtf();
+                    String backPower = buf.readUtf();
+                    String backToughness = buf.readUtf();
+                    String backLoyalty = buf.readUtf();
+                    String artKeyFront = buf.readUtf();
+                    String artKeyBack  = buf.readUtf();
 
                     // ✅ constructor args must match record field order
                     return new BatchEntry(
@@ -105,33 +106,33 @@ public final class CustomCardPackets {
     }
 
 
-    public record CustomArtUpload(String key, byte[] data) implements CustomPayload {
-        public static final Id<CustomArtUpload> ID = new Id<>(Identifier.of("mtgcard", "custom_art_upload"));
+    public record CustomArtUpload(String key, byte[] data) implements CustomPacketPayload {
+        public static final Type<CustomArtUpload> ID = new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "custom_art_upload"));
 
-        public static final PacketCodec<RegistryByteBuf, CustomArtUpload> CODEC =
-                PacketCodec.tuple(
-                        PacketCodecs.STRING, CustomArtUpload::key,
-                        PacketCodecs.BYTE_ARRAY, CustomArtUpload::data,
+        public static final StreamCodec<RegistryFriendlyByteBuf, CustomArtUpload> CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.STRING_UTF8, CustomArtUpload::key,
+                        ByteBufCodecs.BYTE_ARRAY, CustomArtUpload::data,
                         CustomArtUpload::new
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
-    private static final PacketCodec<RegistryByteBuf, List<BatchEntry>> BATCH_LIST_CODEC =
-            PacketCodecs.collection(ArrayList::new, batchEntryCodec());
+    private static final StreamCodec<RegistryFriendlyByteBuf, List<BatchEntry>> BATCH_LIST_CODEC =
+            ByteBufCodecs.collection(ArrayList::new, batchEntryCodec());
 
-    public record CustomBatchCreate(List<BatchEntry> entries) implements CustomPayload {
-        public static final Id<CustomBatchCreate> ID = new Id<>(BATCH_CREATE_ID);
+    public record CustomBatchCreate(List<BatchEntry> entries) implements CustomPacketPayload {
+        public static final Type<CustomBatchCreate> ID = new Type<>(BATCH_CREATE_ID);
 
-        public static final PacketCodec<RegistryByteBuf, CustomBatchCreate> CODEC =
-                PacketCodec.tuple(
+        public static final StreamCodec<RegistryFriendlyByteBuf, CustomBatchCreate> CODEC =
+                StreamCodec.composite(
                         BATCH_LIST_CODEC,
                         CustomBatchCreate::entries,
                         CustomBatchCreate::new
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // =========================
@@ -145,63 +146,63 @@ public final class CustomCardPackets {
             String backName, String backTypeLine, String backOracleText, String backPower, String backToughness, String backLoyalty
     ) {}
 
-    private static PacketCodec<RegistryByteBuf, WireMeta> wireMetaCodec() {
-        return PacketCodec.of(
-                (WireMeta m, RegistryByteBuf buf) -> {
-                    buf.writeString(m.id());
-                    buf.writeString(m.name());
-                    buf.writeString(m.manaCost());
-                    buf.writeString(m.typeLine());
-                    buf.writeString(m.rarity());
-                    buf.writeString(m.set());
-                    buf.writeString(m.oracleText());
-                    buf.writeString(m.power());
-                    buf.writeString(m.toughness());
-                    buf.writeString(m.loyalty());
+    private static StreamCodec<RegistryFriendlyByteBuf, WireMeta> wireMetaCodec() {
+        return StreamCodec.ofMember(
+                (WireMeta m, RegistryFriendlyByteBuf buf) -> {
+                    buf.writeUtf(m.id());
+                    buf.writeUtf(m.name());
+                    buf.writeUtf(m.manaCost());
+                    buf.writeUtf(m.typeLine());
+                    buf.writeUtf(m.rarity());
+                    buf.writeUtf(m.set());
+                    buf.writeUtf(m.oracleText());
+                    buf.writeUtf(m.power());
+                    buf.writeUtf(m.toughness());
+                    buf.writeUtf(m.loyalty());
                     buf.writeBoolean(m.doubleFaced());
-                    buf.writeString(m.backName());
-                    buf.writeString(m.backTypeLine());
-                    buf.writeString(m.backOracleText());
-                    buf.writeString(m.backPower());
-                    buf.writeString(m.backToughness());
-                    buf.writeString(m.backLoyalty());
+                    buf.writeUtf(m.backName());
+                    buf.writeUtf(m.backTypeLine());
+                    buf.writeUtf(m.backOracleText());
+                    buf.writeUtf(m.backPower());
+                    buf.writeUtf(m.backToughness());
+                    buf.writeUtf(m.backLoyalty());
                 },
-                (RegistryByteBuf buf) -> new WireMeta(
-                        buf.readString(), buf.readString(), buf.readString(), buf.readString(), buf.readString(), buf.readString(),
-                        buf.readString(), buf.readString(), buf.readString(), buf.readString(),
+                (RegistryFriendlyByteBuf buf) -> new WireMeta(
+                        buf.readUtf(), buf.readUtf(), buf.readUtf(), buf.readUtf(), buf.readUtf(), buf.readUtf(),
+                        buf.readUtf(), buf.readUtf(), buf.readUtf(), buf.readUtf(),
                         buf.readBoolean(),
-                        buf.readString(), buf.readString(), buf.readString(), buf.readString(), buf.readString(), buf.readString()
+                        buf.readUtf(), buf.readUtf(), buf.readUtf(), buf.readUtf(), buf.readUtf(), buf.readUtf()
                 )
         );
     }
 
-    private static final PacketCodec<RegistryByteBuf, List<WireMeta>> WIREMETA_LIST_CODEC =
-            PacketCodecs.collection(ArrayList::new, wireMetaCodec());
+    private static final StreamCodec<RegistryFriendlyByteBuf, List<WireMeta>> WIREMETA_LIST_CODEC =
+            ByteBufCodecs.collection(ArrayList::new, wireMetaCodec());
 
-    public record CustomSyncFull(List<WireMeta> entries) implements CustomPayload {
-        public static final Id<CustomSyncFull> ID = new Id<>(SYNC_FULL_ID);
+    public record CustomSyncFull(List<WireMeta> entries) implements CustomPacketPayload {
+        public static final Type<CustomSyncFull> ID = new Type<>(SYNC_FULL_ID);
 
-        public static final PacketCodec<RegistryByteBuf, CustomSyncFull> CODEC =
-                PacketCodec.tuple(
+        public static final StreamCodec<RegistryFriendlyByteBuf, CustomSyncFull> CODEC =
+                StreamCodec.composite(
                         WIREMETA_LIST_CODEC,
                         CustomSyncFull::entries,
                         CustomSyncFull::new
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
-    public record CustomSyncDelta(WireMeta entry) implements CustomPayload {
-        public static final Id<CustomSyncDelta> ID = new Id<>(SYNC_DELTA_ID);
+    public record CustomSyncDelta(WireMeta entry) implements CustomPacketPayload {
+        public static final Type<CustomSyncDelta> ID = new Type<>(SYNC_DELTA_ID);
 
-        public static final PacketCodec<RegistryByteBuf, CustomSyncDelta> CODEC =
-                PacketCodec.tuple(
+        public static final StreamCodec<RegistryFriendlyByteBuf, CustomSyncDelta> CODEC =
+                StreamCodec.composite(
                         wireMetaCodec(),
                         CustomSyncDelta::entry,
                         CustomSyncDelta::new
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // =========================
@@ -209,18 +210,18 @@ public final class CustomCardPackets {
     // =========================
     public static void registerTypes() {
         // C2S
-        PayloadTypeRegistry.playC2S().register(CustomBatchCreate.ID, CustomBatchCreate.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CustomBatchCreate.ID, CustomBatchCreate.CODEC);
 
         // S2C
-        PayloadTypeRegistry.playS2C().register(CustomSyncFull.ID,  CustomSyncFull.CODEC);
-        PayloadTypeRegistry.playS2C().register(CustomSyncDelta.ID, CustomSyncDelta.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CustomSyncFull.ID,  CustomSyncFull.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CustomSyncDelta.ID, CustomSyncDelta.CODEC);
 
-        PayloadTypeRegistry.playS2C().register(CustomArtReady.ID,  CustomArtReady.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CustomArtReady.ID,  CustomArtReady.CODEC);
 
         // C2S art upload
-        PayloadTypeRegistry.playC2S().register(CustomArtBegin.ID,  CustomArtBegin.CODEC);
-        PayloadTypeRegistry.playC2S().register(CustomArtChunk.ID,  CustomArtChunk.CODEC);
-        PayloadTypeRegistry.playC2S().register(CustomArtFinish.ID, CustomArtFinish.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CustomArtBegin.ID,  CustomArtBegin.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CustomArtChunk.ID,  CustomArtChunk.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CustomArtFinish.ID, CustomArtFinish.CODEC);
     }
 
 
@@ -258,81 +259,81 @@ public final class CustomCardPackets {
             int totalBytes,    // total expected
             int chunkSize,     // client chosen
             int totalChunks    // client chosen
-    ) implements CustomPayload {
-        public static final Id<CustomArtBegin> ID = new Id<>(ART_BEGIN_ID);
+    ) implements CustomPacketPayload {
+        public static final Type<CustomArtBegin> ID = new Type<>(ART_BEGIN_ID);
 
-        public static final PacketCodec<RegistryByteBuf, CustomArtBegin> CODEC =
-                PacketCodec.of(
+        public static final StreamCodec<RegistryFriendlyByteBuf, CustomArtBegin> CODEC =
+                StreamCodec.ofMember(
                         (p, buf) -> {
-                            buf.writeString(p.uploadId());
-                            buf.writeString(p.artKey());
-                            buf.writeString(p.ext());
+                            buf.writeUtf(p.uploadId());
+                            buf.writeUtf(p.artKey());
+                            buf.writeUtf(p.ext());
                             buf.writeVarInt(p.totalBytes());
                             buf.writeVarInt(p.chunkSize());
                             buf.writeVarInt(p.totalChunks());
                         },
                         (buf) -> new CustomArtBegin(
-                                buf.readString(),
-                                buf.readString(),
-                                buf.readString(),
+                                buf.readUtf(),
+                                buf.readUtf(),
+                                buf.readUtf(),
                                 buf.readVarInt(),
                                 buf.readVarInt(),
                                 buf.readVarInt()
                         )
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     public record CustomArtChunk(
             String uploadId,
             int chunkIndex,
             byte[] bytes
-    ) implements CustomPayload {
-        public static final Id<CustomArtChunk> ID = new Id<>(ART_CHUNK_ID);
+    ) implements CustomPacketPayload {
+        public static final Type<CustomArtChunk> ID = new Type<>(ART_CHUNK_ID);
 
-        public static final PacketCodec<RegistryByteBuf, CustomArtChunk> CODEC =
-                PacketCodec.of(
+        public static final StreamCodec<RegistryFriendlyByteBuf, CustomArtChunk> CODEC =
+                StreamCodec.ofMember(
                         (p, buf) -> {
-                            buf.writeString(p.uploadId());
+                            buf.writeUtf(p.uploadId());
                             buf.writeVarInt(p.chunkIndex());
                             buf.writeByteArray(p.bytes());
                         },
                         (buf) -> new CustomArtChunk(
-                                buf.readString(),
+                                buf.readUtf(),
                                 buf.readVarInt(),
                                 buf.readByteArray()
                         )
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
-    public record CustomArtFinish(String uploadId) implements CustomPayload {
-        public static final Id<CustomArtFinish> ID = new Id<>(ART_FINISH_ID);
+    public record CustomArtFinish(String uploadId) implements CustomPacketPayload {
+        public static final Type<CustomArtFinish> ID = new Type<>(ART_FINISH_ID);
 
-        public static final PacketCodec<RegistryByteBuf, CustomArtFinish> CODEC =
-                PacketCodec.tuple(
-                        PacketCodecs.STRING,
+        public static final StreamCodec<RegistryFriendlyByteBuf, CustomArtFinish> CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.STRING_UTF8,
                         CustomArtFinish::uploadId,
                         CustomArtFinish::new
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
-    public static final Identifier ART_READY_ID = Identifier.of("mtgcard","custom_art_ready");
+    public static final Identifier ART_READY_ID = Identifier.fromNamespaceAndPath("mtgcard","custom_art_ready");
 
-    public record CustomArtReady(String artKey) implements CustomPayload {
-        public static final Id<CustomArtReady> ID = new Id<>(ART_READY_ID);
+    public record CustomArtReady(String artKey) implements CustomPacketPayload {
+        public static final Type<CustomArtReady> ID = new Type<>(ART_READY_ID);
 
-        public static final PacketCodec<RegistryByteBuf, CustomArtReady> CODEC =
-                PacketCodec.tuple(
-                        PacketCodecs.STRING, CustomArtReady::artKey,
+        public static final StreamCodec<RegistryFriendlyByteBuf, CustomArtReady> CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.STRING_UTF8, CustomArtReady::artKey,
                         CustomArtReady::new
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     private CustomCardPackets() {}

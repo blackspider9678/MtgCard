@@ -1,9 +1,9 @@
 package com.spider.mtgcard.client.render.tex;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.texture.NativeImageBackedTexture;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.resources.Identifier;
 
 // client-only
 public final class CardDbBinderOverlayTex {
@@ -17,20 +17,20 @@ public final class CardDbBinderOverlayTex {
             // transparent background
             for (int y = 0; y < 16; y++) {
                 for (int x = 0; x < 16; x++) {
-                    img.setColorArgb(x, y, 0x00000000);
+                    img.setPixel(x, y, 0x00000000);
                 }
             }
 
             drawBinders(img, front, k);
 
             var name = "mtgcard/carddb_binders_" + (front ? "front_" : "side_") + k;
-            var tex = new NativeImageBackedTexture(() -> name, img);
+            var tex = new DynamicTexture(() -> name, img);
 
-            var id = Identifier.of("mtgcard", "carddb_binders/" + (front ? "front_" : "side_") + k);
+            var id = Identifier.fromNamespaceAndPath("mtgcard", "carddb_binders/" + (front ? "front_" : "side_") + k);
 
-            MinecraftClient.getInstance()
+            Minecraft.getInstance()
                     .getTextureManager()
-                    .registerTexture(id, tex);
+                    .register(id, tex);
 
             return id;
         });
@@ -54,8 +54,8 @@ public final class CardDbBinderOverlayTex {
             int x = x0 + col;
             int y = shelfY[shelf];
 
-            img.setColorArgb(x, y, color);
-            if (y + 1 < 16) img.setColorArgb(x, y + 1, color);
+            img.setPixel(x, y, color);
+            if (y + 1 < 16) img.setPixel(x, y + 1, color);
         }
     }
 

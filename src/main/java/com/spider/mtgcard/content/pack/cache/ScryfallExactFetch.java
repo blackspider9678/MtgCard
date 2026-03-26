@@ -3,7 +3,7 @@ package com.spider.mtgcard.content.pack.cache;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.spider.mtgcard.config.MtgcardConfig;
-import net.minecraft.server.world.ServerWorld;
+import net.minecraft.server.level.ServerLevel;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -18,7 +18,7 @@ public final class ScryfallExactFetch {
         return URLEncoder.encode(s, StandardCharsets.UTF_8);
     }
 
-    public static CompletableFuture<ScryfallModels.Card> fetchBySetCollectorAsync(ServerWorld world, String setCode, String collectorNumber) {
+    public static CompletableFuture<ScryfallModels.Card> fetchBySetCollectorAsync(ServerLevel world, String setCode, String collectorNumber) {
         String set = (setCode == null) ? "" : setCode.trim().toLowerCase(Locale.ROOT);
 
         // ✅ DO NOT lowercase collector number
@@ -70,7 +70,7 @@ public final class ScryfallExactFetch {
     // in ScryfallHttp
 
     public static CompletableFuture<List<ScryfallModels.Card>> fetchCollectionBySetCollectorAsync(
-            ServerWorld world,
+            ServerLevel world,
             List<ScryfallCardSearchFetch.Hit> hits
     ) {
         if (hits == null || hits.isEmpty()) return CompletableFuture.completedFuture(List.of());
@@ -84,6 +84,47 @@ public final class ScryfallExactFetch {
             for (int i = 0; i < hits.size(); i += CHUNK) {
                 int end = Math.min(hits.size(), i + CHUNK);
                 List<ScryfallCardSearchFetch.Hit> slice = hits.subList(i, end);
+
+                JsonArray identifiers = new JsonArray();
+                for (var h : slice) {
+                    JsonObject id = new JsonObject();
+                    id.addProperty("set", (h.set() == null ? "" : h.set().trim().toLowerCase(Locale.ROOT)));
+                    id.addProperty("collector_number", (h.collectorNumber() == null ? "" : h.collectorNumber().trim()));
+                    identifiers.add(id);
+                }
+
+                JsonObject body = new JsonObject();
+                body.add("identifiers", identifiers);
+
+                String resp;
+                try {
+                    resp = ScryfallHttp.postJson(url, body.toString());
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+
+                List<ScryfallModels.Card> got = ScryfallJson.parseCollection(resp);
+                if (got != null && !got.isEmpty()) all.addAll(got);
+            }
+
+            return all;
+        });
+    }
+
+    public static CompletableFuture<List<ScryfallModels.Card>> fetchCollectionByPrintHitsAsync(
+            List<ScryfallPrintSearchFetch.PrintHit> hits
+    ) {
+        if (hits == null || hits.isEmpty()) return CompletableFuture.completedFuture(List.of());
+
+        final int CHUNK = 75;
+        final String url = "https://api.scryfall.com/cards/collection";
+
+        return ScryfallService.supplyAsync(() -> {
+            ArrayList<ScryfallModels.Card> all = new ArrayList<>();
+
+            for (int i = 0; i < hits.size(); i += CHUNK) {
+                int end = Math.min(hits.size(), i + CHUNK);
+                List<ScryfallPrintSearchFetch.PrintHit> slice = hits.subList(i, end);
 
                 JsonArray identifiers = new JsonArray();
                 for (var h : slice) {

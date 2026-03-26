@@ -1,106 +1,107 @@
 package com.spider.mtgcard.net.payload;
 
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload.Type;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
 
 public final class CardDisplayPayloads {
 
     // ---------- S2C: open large view ----------
-    public record OpenDisplayViewS2C(int entityId, ItemStack stack) implements CustomPayload {
-        public static final CustomPayload.Id<OpenDisplayViewS2C> ID =
-                new CustomPayload.Id<>(Identifier.of("mtgcard", "card_display_open"));
+    public record OpenDisplayViewS2C(int entityId, ItemStack stack) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<OpenDisplayViewS2C> ID =
+                new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath("mtgcard", "card_display_open"));
 
-        public static final PacketCodec<RegistryByteBuf, OpenDisplayViewS2C> CODEC =
-                PacketCodec.tuple(
-                        PacketCodecs.VAR_INT, OpenDisplayViewS2C::entityId,
-                        ItemStack.PACKET_CODEC, OpenDisplayViewS2C::stack,
+        public static final StreamCodec<RegistryFriendlyByteBuf, OpenDisplayViewS2C> CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.VAR_INT, OpenDisplayViewS2C::entityId,
+                        ItemStack.STREAM_CODEC, OpenDisplayViewS2C::stack,
                         OpenDisplayViewS2C::new
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // ---------- C2S: set face ----------
-    public record DisplaySetFaceC2S(int entityId, int face) implements CustomPayload {
-        public static final CustomPayload.Id<DisplaySetFaceC2S> ID =
-                new CustomPayload.Id<>(Identifier.of("mtgcard", "card_display_set_face"));
+    public record DisplaySetFaceC2S(int entityId, int face) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<DisplaySetFaceC2S> ID =
+                new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath("mtgcard", "card_display_set_face"));
 
-        public static final PacketCodec<RegistryByteBuf, DisplaySetFaceC2S> CODEC =
-                PacketCodec.tuple(
-                        PacketCodecs.VAR_INT, DisplaySetFaceC2S::entityId,
-                        PacketCodecs.VAR_INT, DisplaySetFaceC2S::face,
+        public static final StreamCodec<RegistryFriendlyByteBuf, DisplaySetFaceC2S> CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.VAR_INT, DisplaySetFaceC2S::entityId,
+                        ByteBufCodecs.VAR_INT, DisplaySetFaceC2S::face,
                         DisplaySetFaceC2S::new
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // ---------- C2S: set counter value ----------
-    public record DisplaySetCounterValueC2S(int entityId, String key, int value) implements CustomPayload {
-        public static final CustomPayload.Id<DisplaySetCounterValueC2S> ID =
-                new CustomPayload.Id<>(Identifier.of("mtgcard", "card_display_set_counter_value"));
+    public record DisplaySetCounterValueC2S(int entityId, String key, int value) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<DisplaySetCounterValueC2S> ID =
+                new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath("mtgcard", "card_display_set_counter_value"));
 
-        public static final PacketCodec<RegistryByteBuf, DisplaySetCounterValueC2S> CODEC =
-                PacketCodec.tuple(
-                        PacketCodecs.VAR_INT, DisplaySetCounterValueC2S::entityId,
-                        PacketCodecs.STRING, DisplaySetCounterValueC2S::key,
-                        PacketCodecs.VAR_INT, DisplaySetCounterValueC2S::value,
+        public static final StreamCodec<RegistryFriendlyByteBuf, DisplaySetCounterValueC2S> CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.VAR_INT, DisplaySetCounterValueC2S::entityId,
+                        ByteBufCodecs.STRING_UTF8, DisplaySetCounterValueC2S::key,
+                        ByteBufCodecs.VAR_INT, DisplaySetCounterValueC2S::value,
                         DisplaySetCounterValueC2S::new
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // ---------- C2S: delete counter key ----------
-    public record DisplayDeleteCounterC2S(int entityId, String key) implements CustomPayload {
-        public static final CustomPayload.Id<DisplayDeleteCounterC2S> ID =
-                new CustomPayload.Id<>(Identifier.of("mtgcard", "card_display_delete_counter"));
+    public record DisplayDeleteCounterC2S(int entityId, String key) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<DisplayDeleteCounterC2S> ID =
+                new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath("mtgcard", "card_display_delete_counter"));
 
-        public static final PacketCodec<RegistryByteBuf, DisplayDeleteCounterC2S> CODEC =
-                PacketCodec.tuple(
-                        PacketCodecs.VAR_INT, DisplayDeleteCounterC2S::entityId,
-                        PacketCodecs.STRING,  DisplayDeleteCounterC2S::key,
+        public static final StreamCodec<RegistryFriendlyByteBuf, DisplayDeleteCounterC2S> CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.VAR_INT, DisplayDeleteCounterC2S::entityId,
+                        ByteBufCodecs.STRING_UTF8,  DisplayDeleteCounterC2S::key,
                         DisplayDeleteCounterC2S::new
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // ---------- C2S: set hidden ----------
-    public record DisplaySetHiddenC2S(int entityId, boolean hidden) implements CustomPayload {
-        public static final CustomPayload.Id<DisplaySetHiddenC2S> ID =
-                new CustomPayload.Id<>(Identifier.of("mtgcard", "card_display_set_hidden"));
+    public record DisplaySetHiddenC2S(int entityId, boolean hidden) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<DisplaySetHiddenC2S> ID =
+                new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath("mtgcard", "card_display_set_hidden"));
 
-        public static final PacketCodec<RegistryByteBuf, DisplaySetHiddenC2S> CODEC =
-                PacketCodec.tuple(
-                        PacketCodecs.VAR_INT, DisplaySetHiddenC2S::entityId,
-                        PacketCodecs.BOOLEAN,    DisplaySetHiddenC2S::hidden,
+        public static final StreamCodec<RegistryFriendlyByteBuf, DisplaySetHiddenC2S> CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.VAR_INT, DisplaySetHiddenC2S::entityId,
+                        ByteBufCodecs.BOOL,    DisplaySetHiddenC2S::hidden,
                         DisplaySetHiddenC2S::new
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
 
     // ---------- C2S: set counter meta ----------
-    public record DisplaySetCounterMetaC2S(int entityId, String key, String displayName, String iconKey) implements CustomPayload {
-        public static final CustomPayload.Id<DisplaySetCounterMetaC2S> ID =
-                new CustomPayload.Id<>(Identifier.of("mtgcard", "card_display_set_counter_meta"));
+    public record DisplaySetCounterMetaC2S(int entityId, String key, String displayName, String iconKey) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<DisplaySetCounterMetaC2S> ID =
+                new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath("mtgcard", "card_display_set_counter_meta"));
 
-        public static final PacketCodec<RegistryByteBuf, DisplaySetCounterMetaC2S> CODEC =
-                PacketCodec.tuple(
-                        PacketCodecs.VAR_INT, DisplaySetCounterMetaC2S::entityId,
-                        PacketCodecs.STRING,  DisplaySetCounterMetaC2S::key,
-                        PacketCodecs.STRING,  DisplaySetCounterMetaC2S::displayName,
-                        PacketCodecs.STRING,  DisplaySetCounterMetaC2S::iconKey,
+        public static final StreamCodec<RegistryFriendlyByteBuf, DisplaySetCounterMetaC2S> CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.VAR_INT, DisplaySetCounterMetaC2S::entityId,
+                        ByteBufCodecs.STRING_UTF8,  DisplaySetCounterMetaC2S::key,
+                        ByteBufCodecs.STRING_UTF8,  DisplaySetCounterMetaC2S::displayName,
+                        ByteBufCodecs.STRING_UTF8,  DisplaySetCounterMetaC2S::iconKey,
                         DisplaySetCounterMetaC2S::new
                 );
 
-        @Override public Id<? extends CustomPayload> getId() { return ID; }
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     private CardDisplayPayloads() {}

@@ -1,82 +1,83 @@
-// com/spider/mtgcard/db/CardDatabaseBlock.java
 package com.spider.mtgcard.db;
 
 import com.mojang.serialization.MapCodec;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.BlockWithEntity;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.ItemPlacementContext;
-import net.minecraft.screen.NamedScreenHandlerFactory;
-import net.minecraft.state.StateManager;
-import net.minecraft.state.property.EnumProperty;
-import net.minecraft.state.property.Properties;
-import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.SimpleMenuProvider;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BaseEntityBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.EnumProperty;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.block.state.BlockBehaviour.Properties;
+import net.minecraft.world.phys.BlockHitResult;
 
-public class CardDatabaseBlock extends BlockWithEntity {
-    public static final MapCodec<CardDatabaseBlock> CODEC = createCodec(CardDatabaseBlock::new);
+public class CardDatabaseBlock extends BaseEntityBlock {
+    public static final MapCodec<CardDatabaseBlock> CODEC = simpleCodec(CardDatabaseBlock::new);
 
-    // ✅ add facing property to match blockstates/card_database.json
-    public static final EnumProperty<Direction> FACING = Properties.HORIZONTAL_FACING;
+    public static final EnumProperty<Direction> FACING = BlockStateProperties.HORIZONTAL_FACING;
 
-
-    public CardDatabaseBlock(Settings settings) {
+    public CardDatabaseBlock(Properties settings) {
         super(settings);
-        // ✅ default state must include FACING
-        this.setDefaultState(this.getStateManager().getDefaultState().with(FACING, Direction.NORTH));
+        this.registerDefaultState(this.getStateDefinition().any().setValue(FACING, Direction.NORTH));
     }
 
-    @Override public MapCodec<? extends BlockWithEntity> getCodec() { return CODEC; }
-
-    // ✅ ensure the property exists on the block state
     @Override
-    protected void appendProperties(StateManager.Builder<net.minecraft.block.Block, BlockState> builder) {
+    public MapCodec<? extends BaseEntityBlock> codec() {
+        return CODEC;
+    }
+
+    @Override
+    protected void createBlockStateDefinition(StateDefinition.Builder<net.minecraft.world.level.block.Block, BlockState> builder) {
         builder.add(FACING);
     }
 
-    // ✅ set facing on placement
     @Override
-    public BlockState getPlacementState(ItemPlacementContext ctx) {
-        // common: block faces player
-        return this.getDefaultState().with(FACING, ctx.getHorizontalPlayerFacing().getOpposite());
+    public BlockState getStateForPlacement(BlockPlaceContext ctx) {
+        return this.defaultBlockState().setValue(FACING, ctx.getHorizontalDirection().getOpposite());
     }
 
     @Override
-    public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
+    public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
         return new CardDatabaseBlockEntity(pos, state);
     }
 
     @Override
-    public ActionResult onUse(BlockState state, World world, BlockPos pos,
-                              PlayerEntity player, BlockHitResult hit) {
-        if (world.isClient()) return ActionResult.SUCCESS;
-        NamedScreenHandlerFactory factory = createScreenHandlerFactory(state, world, pos);
-        if (factory != null) player.openHandledScreen(factory);
-        return ActionResult.CONSUME;
+    protected InteractionResult useWithoutItem(BlockState state, Level world, BlockPos pos,
+                                               Player player, BlockHitResult hit) {
+        if (world.isClientSide()) {
+            return InteractionResult.SUCCESS;
+        }
+
+        MenuProvider factory = getMenuProvider(state, world, pos);
+        if (factory != null) {
+            player.openMenu(factory);
+        }
+
+        return InteractionResult.CONSUME;
     }
 
     @Override
-    public NamedScreenHandlerFactory createScreenHandlerFactory(BlockState state, World world, BlockPos pos) {
-        return new net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory<BlockPos>() {
-            @Override public Text getDisplayName() {
-                return Text.translatable("screen.mtgcard.card_database");
-            }
-            @Override public BlockPos getScreenOpeningData(net.minecraft.server.network.ServerPlayerEntity player) {
-                return pos;
-            }
-            @Override public net.minecraft.screen.ScreenHandler createMenu(int syncId, PlayerInventory playerInv, PlayerEntity player) {
-                var sp = (net.minecraft.server.network.ServerPlayerEntity) player;
-                var session = CardDBSession.forPlayer(sp);
-                session.ensureLoaded(sp);
-                session.setWindowOffset(0);
-                return new CardDatabaseScreenHandler(syncId, playerInv, session, pos);
-            }
-        };
+    public MenuProvider getMenuProvider(BlockState state, Level world, BlockPos pos) {
+        return new SimpleMenuProvider(
+                (int syncId, Inventory playerInv, Player player) -> {
+                    ServerPlayer sp = (ServerPlayer) player;
+                    CardDBSession session = CardDBSession.forPlayer(sp);
+                    session.ensureLoaded(sp);
+                    session.setWindowOffset(0);
+                    return new CardDatabaseScreenHandler(syncId, playerInv, session, pos);
+                },
+                Component.translatable("screen.mtgcard.card_database")
+        );
     }
 }

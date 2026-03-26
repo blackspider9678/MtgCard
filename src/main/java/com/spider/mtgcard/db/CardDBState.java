@@ -2,16 +2,16 @@ package com.spider.mtgcard.db;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.Dynamic;
-import net.minecraft.datafixer.DataFixTypes;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtList;
+import net.minecraft.util.datafix.DataFixTypes;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
-import net.minecraft.registry.RegistryWrapper;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.PersistentStateManager;
-import net.minecraft.world.PersistentStateType;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.saveddata.SavedDataType;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -24,59 +24,59 @@ import java.util.Map;
  *
  * This stays mapping-agnostic by using a passthrough DFU codec that stores an NBT blob.
  */
-public final class CardDBState extends net.minecraft.world.PersistentState {
+public final class CardDBState extends net.minecraft.world.level.saveddata.SavedData {
     public static final String NAME = "mtgcard_card_db";
 
     /** pos -> (variantKey -> count) */
     private final Map<BlockPos, Map<String, Long>> storeData = new HashMap<>();
     /** pos -> serialized intake snapshot (list of slot compounds) */
-    private final Map<BlockPos, NbtList> intakeData = new HashMap<>();
+    private final Map<BlockPos, ListTag> intakeData = new HashMap<>();
 
     /* ---------- Store (virtual) ---------- */
 
     public Map<String, Long> getStore(BlockPos pos) {
-        return storeData.computeIfAbsent(pos.toImmutable(), p -> new HashMap<>());
+        return storeData.computeIfAbsent(pos.immutable(), p -> new HashMap<>());
     }
 
     public void putStore(BlockPos pos, Map<String, Long> snapshot) {
-        storeData.put(pos.toImmutable(), new HashMap<>(snapshot));
-        markDirty();
+        storeData.put(pos.immutable(), new HashMap<>(snapshot));
+        setDirty();
     }
 
     /* ---------- Intake (inventory/list snapshot) ---------- */
 
     /** Save a snapshot of the intake inventory (or list) for a block. */
-    public void putIntake(BlockPos pos, NbtList intakeList) {
+    public void putIntake(BlockPos pos, ListTag intakeList) {
         // store a shallow copy to avoid outside mutations
-        NbtList copy = new NbtList();
+        ListTag copy = new ListTag();
         if (intakeList != null) {
             for (int i = 0; i < intakeList.size(); i++) {
                 var c = intakeList.getCompound(i).orElse(null);
                 if (c != null) copy.add(c.copy());
             }
         }
-        intakeData.put(pos.toImmutable(), copy);
-        markDirty();
+        intakeData.put(pos.immutable(), copy);
+        setDirty();
     }
 
     /** Retrieve previously saved intake list for a block, or null. */
-    public NbtList getIntake(BlockPos pos) {
-        return intakeData.get(pos.toImmutable());
+    public ListTag getIntake(BlockPos pos) {
+        return intakeData.get(pos.immutable());
     }
 
     /** Remove everything for a block (when block is broken). */
     public void remove(BlockPos pos) {
-        var p = pos.toImmutable();
+        var p = pos.immutable();
         storeData.remove(p);
         intakeData.remove(p);
-        markDirty();
+        setDirty();
     }
 
     /* ---------- NBT I/O (no @Override to keep mapping-agnostic) ---------- */
 
     /** Writes both store and intake maps under a single "blocks" list. */
-    public NbtCompound writeNbt(NbtCompound nbt) {
-        NbtList blocks = new NbtList();
+    public CompoundTag writeNbt(CompoundTag nbt) {
+        ListTag blocks = new ListTag();
 
         // union of all positions present in either map
         Map<BlockPos, Boolean> allPositions = new HashMap<>();
@@ -84,7 +84,7 @@ public final class CardDBState extends net.minecraft.world.PersistentState {
         intakeData.keySet().forEach(p -> allPositions.put(p, true));
 
         for (var pos : allPositions.keySet()) {
-            NbtCompound be = new NbtCompound();
+            CompoundTag be = new CompoundTag();
             be.putInt("x", pos.getX());
             be.putInt("y", pos.getY());
             be.putInt("z", pos.getZ());
@@ -92,9 +92,9 @@ public final class CardDBState extends net.minecraft.world.PersistentState {
             // store entries
             var map = storeData.get(pos);
             if (map != null && !map.isEmpty()) {
-                NbtList entries = new NbtList();
+                ListTag entries = new ListTag();
                 for (var se : map.entrySet()) {
-                    NbtCompound c = new NbtCompound();
+                    CompoundTag c = new CompoundTag();
                     c.putString("k", se.getKey());
                     c.putLong("c", se.getValue());
                     entries.add(c);
@@ -105,9 +105,9 @@ public final class CardDBState extends net.minecraft.world.PersistentState {
             // intake entries
             var intake = intakeData.get(pos);
             if (intake != null && !intake.isEmpty()) {
-                NbtList copy = new NbtList();
+                ListTag copy = new ListTag();
                 for (int i = 0; i < intake.size(); i++) {
-                    copy.add(intake.getCompound(i).orElse(new NbtCompound()).copy());
+                    copy.add(intake.getCompound(i).orElse(new CompoundTag()).copy());
                 }
                 be.put("intake", copy);
             }
@@ -115,10 +115,10 @@ public final class CardDBState extends net.minecraft.world.PersistentState {
             blocks.add(be);
         }
 
-        var ui = new NbtList();
+        var ui = new ListTag();
         for (var e : uiPrefs.entrySet()) {
             var p = e.getKey(); var t = e.getValue();
-            var c = new NbtCompound();
+            var c = new CompoundTag();
             c.putInt("x", p.getX()); c.putInt("y", p.getY()); c.putInt("z", p.getZ());
             c.put("v", t.copy());
             ui.add(c);
@@ -130,7 +130,7 @@ public final class CardDBState extends net.minecraft.world.PersistentState {
     }
 
     /** Reader used by the PersistentStateType. */
-    public static CardDBState readFromNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup lookup) {
+    public static CardDBState readFromNbt(CompoundTag nbt, HolderLookup.Provider lookup) {
         CardDBState s = new CardDBState();
 
         var blocksOpt = nbt.getList("blocks");
@@ -143,7 +143,7 @@ public final class CardDBState extends net.minecraft.world.PersistentState {
                 int x = be.getInt("x").orElse(0);
                 int y = be.getInt("y").orElse(0);
                 int z = be.getInt("z").orElse(0);
-                BlockPos pos = new BlockPos(x, y, z).toImmutable();
+                BlockPos pos = new BlockPos(x, y, z).immutable();
 
                 // store
                 Map<String, Long> map = new HashMap<>();
@@ -179,7 +179,7 @@ public final class CardDBState extends net.minecraft.world.PersistentState {
                 int y = c.getInt("y").orElse(0);
                 int z = c.getInt("z").orElse(0);
                 var v = c.getCompound("v").orElse(null);
-                if (v != null) uiPrefs.put(new BlockPos(x,y,z).toImmutable(), v.copy());
+                if (v != null) uiPrefs.put(new BlockPos(x,y,z).immutable(), v.copy());
             }
         }
         return s;
@@ -195,19 +195,19 @@ public final class CardDBState extends net.minecraft.world.PersistentState {
             dyn -> {
                 // Convert whatever DFU hands us into NBT, then read
                 Object val = dyn.convert(NbtOps.INSTANCE).getValue();
-                NbtCompound root;
-                if (val instanceof NbtCompound c) {
+                CompoundTag root;
+                if (val instanceof CompoundTag c) {
                     root = c;
-                } else if (val instanceof NbtElement el) {
+                } else if (val instanceof Tag el) {
                     // not expected, but stay safe
-                    root = new NbtCompound();
+                    root = new CompoundTag();
                 } else {
-                    root = new NbtCompound();
+                    root = new CompoundTag();
                 }
                 return CardDBState.readFromNbt(root, null);
             },
             state -> {
-                NbtCompound out = state.writeNbt(new NbtCompound());
+                CompoundTag out = state.writeNbt(new CompoundTag());
                 return new Dynamic<>(NbtOps.INSTANCE, out);
             }
     );
@@ -216,13 +216,18 @@ public final class CardDBState extends net.minecraft.world.PersistentState {
      * PersistentStateType constructor in 1.21.10:
      * (name, Supplier<T>, Codec<T>, DataFixTypes)
      */
-    public static final PersistentStateType<CardDBState> TYPE =
-            new PersistentStateType<>(NAME, CardDBState::new, CODEC, DataFixTypes.SAVED_DATA_RANDOM_SEQUENCES);
+    public static final SavedDataType<CardDBState> TYPE =
+            new SavedDataType<>(
+                    Identifier.withDefaultNamespace(NAME),
+                    CardDBState::new,
+                    CODEC,
+                    DataFixTypes.SAVED_DATA_RANDOM_SEQUENCES
+            );
 
     /** Accessor used by server code. */
-    public static CardDBState get(ServerWorld world) {
-        PersistentStateManager mgr = world.getPersistentStateManager();
-        return mgr.getOrCreate(TYPE);
+    public static CardDBState get(ServerLevel world) {
+        var mgr = world.getDataStorage();
+        return mgr.computeIfAbsent(TYPE);
     }
 
     /* ---------- Convenience helpers for BlockEntity ---------- */
@@ -237,23 +242,23 @@ public final class CardDBState extends net.minecraft.world.PersistentState {
      *  - "name_raw" (string, optional) plain custom name
      *  - "gl" (boolean, optional) enchantment glint override
      */
-    public static NbtList snapshotIntake(net.minecraft.inventory.Inventory inv) {
-        NbtList list = new NbtList();
-        for (int i = 0; i < inv.size(); i++) {
-            var st = inv.getStack(i);
+    public static ListTag snapshotIntake(net.minecraft.world.Container inv) {
+        ListTag list = new ListTag();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            var st = inv.getItem(i);
             if (st.isEmpty()) continue;
 
-            NbtCompound e = new NbtCompound();
+            CompoundTag e = new CompoundTag();
             e.putInt("i", i);
             e.putInt("c", st.getCount());
 
-            var cd = st.get(net.minecraft.component.DataComponentTypes.CUSTOM_DATA);
-            if (cd != null) e.put("cd", cd.copyNbt());
+            var cd = st.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
+            if (cd != null) e.put("cd", cd.copyTag());
 
-            var name = st.get(net.minecraft.component.DataComponentTypes.CUSTOM_NAME);
+            var name = st.get(net.minecraft.core.component.DataComponents.CUSTOM_NAME);
             if (name != null) e.putString("name_raw", name.getString());
 
-            var gl = st.get(net.minecraft.component.DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE);
+            var gl = st.get(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
             if (gl != null && gl) e.putBoolean("gl", true);
 
             list.add(e);
@@ -262,61 +267,61 @@ public final class CardDBState extends net.minecraft.world.PersistentState {
     }
 
     /** Restore a snapshot into the given inventory (clears it first). */
-    public static void applyIntakeSnapshot(net.minecraft.inventory.Inventory inv, NbtList list) {
-        for (int i = 0; i < inv.size(); i++) inv.setStack(i, net.minecraft.item.ItemStack.EMPTY);
+    public static void applyIntakeSnapshot(net.minecraft.world.Container inv, ListTag list) {
+        for (int i = 0; i < inv.getContainerSize(); i++) inv.setItem(i, net.minecraft.world.item.ItemStack.EMPTY);
         if (list == null) return;
 
         for (int k = 0; k < list.size(); k++) {
             var e = list.getCompound(k).orElse(null);
             if (e == null) continue;
 
-            int slot  = Math.max(0, Math.min(inv.size() - 1, e.getInt("i").orElse(0)));
+            int slot  = Math.max(0, Math.min(inv.getContainerSize() - 1, e.getInt("i").orElse(0)));
             int count = Math.max(1, e.getInt("c").orElse(1));
 
-            var st = new net.minecraft.item.ItemStack(com.spider.mtgcard.item.ModItems.CARD, count);
+            var st = new net.minecraft.world.item.ItemStack(com.spider.mtgcard.item.ModItems.CARD, count);
 
             var cd = e.getCompound("cd").orElse(null);
             if (cd != null) {
-                st.set(net.minecraft.component.DataComponentTypes.CUSTOM_DATA,
-                        net.minecraft.component.type.NbtComponent.of(cd));
+                st.set(net.minecraft.core.component.DataComponents.CUSTOM_DATA,
+                        net.minecraft.world.item.component.CustomData.of(cd));
             }
 
             String nameRaw = e.getString("name_raw").orElse("");
             if (!nameRaw.isEmpty()) {
-                st.set(net.minecraft.component.DataComponentTypes.CUSTOM_NAME,
-                        net.minecraft.text.Text.literal(nameRaw));
+                st.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+                        net.minecraft.network.chat.Component.literal(nameRaw));
             }
 
             if (e.getBoolean("gl").orElse(false)) {
-                st.set(net.minecraft.component.DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, true);
+                st.set(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
             }
 
-            inv.setStack(slot, st);
+            inv.setItem(slot, st);
         }
     }
 
     // B) Unbounded list snapshot (used by the new virtual/paged intake)
 
     /** Serialize an arbitrary List<ItemStack> into the same compact entry format. */
-    public static NbtList snapshotFromList(java.util.List<net.minecraft.item.ItemStack> list) {
-        NbtList out = new NbtList();
+    public static ListTag snapshotFromList(java.util.List<net.minecraft.world.item.ItemStack> list) {
+        ListTag out = new ListTag();
         if (list == null) return out;
 
         for (int i = 0; i < list.size(); i++) {
             var st = list.get(i);
             if (st == null || st.isEmpty()) continue;
 
-            var e = new NbtCompound();
+            var e = new CompoundTag();
             e.putInt("i", i);
             e.putInt("c", st.getCount());
 
-            var cd = st.get(net.minecraft.component.DataComponentTypes.CUSTOM_DATA);
-            if (cd != null) e.put("cd", cd.copyNbt());
+            var cd = st.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
+            if (cd != null) e.put("cd", cd.copyTag());
 
-            var name = st.get(net.minecraft.component.DataComponentTypes.CUSTOM_NAME);
+            var name = st.get(net.minecraft.core.component.DataComponents.CUSTOM_NAME);
             if (name != null) e.putString("name_raw", name.getString());
 
-            var gl = st.get(net.minecraft.component.DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE);
+            var gl = st.get(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
             if (gl != null && gl) e.putBoolean("gl", true);
 
             out.add(e);
@@ -324,22 +329,22 @@ public final class CardDBState extends net.minecraft.world.PersistentState {
         return out;
     }
 
-    private static final Map<BlockPos, NbtCompound> uiPrefs = new HashMap<>();
+    private static final Map<BlockPos, CompoundTag> uiPrefs = new HashMap<>();
 
     public void putUiPrefs(BlockPos pos, String q, String order, String dir) {
-        var tag = new NbtCompound();
+        var tag = new CompoundTag();
         tag.putString("q", q == null ? "" : q);
         tag.putString("order", order == null ? "name" : order);
         tag.putString("dir", dir == null ? "asc" : dir);
-        uiPrefs.put(pos.toImmutable(), tag);
-        markDirty();
+        uiPrefs.put(pos.immutable(), tag);
+        setDirty();
     }
-    public NbtCompound getUiPrefs(BlockPos pos) {
-        return uiPrefs.get(pos.toImmutable());
+    public CompoundTag getUiPrefs(BlockPos pos) {
+        return uiPrefs.get(pos.immutable());
     }
 
     /** Populate a List<ItemStack> from our compact entry format. */
-    public static void applyIntakeToList(java.util.List<net.minecraft.item.ItemStack> dst, NbtList list) {
+    public static void applyIntakeToList(java.util.List<net.minecraft.world.item.ItemStack> dst, ListTag list) {
         dst.clear();
         if (list == null) return;
 
@@ -350,24 +355,24 @@ public final class CardDBState extends net.minecraft.world.PersistentState {
             int i = Math.max(0, e.getInt("i").orElse(0));
             int count = Math.max(1, e.getInt("c").orElse(1));
 
-            while (dst.size() <= i) dst.add(net.minecraft.item.ItemStack.EMPTY);
+            while (dst.size() <= i) dst.add(net.minecraft.world.item.ItemStack.EMPTY);
 
-            var st = new net.minecraft.item.ItemStack(com.spider.mtgcard.item.ModItems.CARD, count);
+            var st = new net.minecraft.world.item.ItemStack(com.spider.mtgcard.item.ModItems.CARD, count);
 
             var cd = e.getCompound("cd").orElse(null);
             if (cd != null) {
-                st.set(net.minecraft.component.DataComponentTypes.CUSTOM_DATA,
-                        net.minecraft.component.type.NbtComponent.of(cd));
+                st.set(net.minecraft.core.component.DataComponents.CUSTOM_DATA,
+                        net.minecraft.world.item.component.CustomData.of(cd));
             }
 
             String nameRaw = e.getString("name_raw").orElse("");
             if (!nameRaw.isEmpty()) {
-                st.set(net.minecraft.component.DataComponentTypes.CUSTOM_NAME,
-                        net.minecraft.text.Text.literal(nameRaw));
+                st.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+                        net.minecraft.network.chat.Component.literal(nameRaw));
             }
 
             if (e.getBoolean("gl").orElse(false)) {
-                st.set(net.minecraft.component.DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, true);
+                st.set(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
             }
 
             dst.set(i, st);

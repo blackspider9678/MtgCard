@@ -1,9 +1,9 @@
 package com.spider.mtgcard.content.pack.cache;
 
 import com.spider.mtgcard.util.StackData;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtList;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 
 import java.util.UUID;
 
@@ -16,10 +16,10 @@ public final class CardNBTUtil {
      */
     public static void populateCardNbt(ItemStack st, ScryfallModels.Card rec, UUID instanceUuid, boolean foil) {
         // Read current CUSTOM_DATA (mutable copy)
-        NbtCompound root = StackData.readCustom(st);
+        CompoundTag root = StackData.readCustom(st);
 
         // Ensure/obtain mtg_meta subcompound (Optionals in your mappings)
-        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
 
         // ---------- Identity ----------
         putStr(meta, "id",          rec.id);
@@ -36,16 +36,16 @@ public final class CardNBTUtil {
         meta.putInt("cmc",           rec.manaValue);
 
         // ---------- Colors ----------
-        NbtList colors = new NbtList();
-        if (rec.colors != null) for (String c : rec.colors) colors.add(net.minecraft.nbt.NbtString.of(c));
+        ListTag colors = new ListTag();
+        if (rec.colors != null) for (String c : rec.colors) colors.add(net.minecraft.nbt.StringTag.valueOf(c));
         meta.put("colors", colors);
 
-        NbtList cids = new NbtList();
-        if (rec.colorIdentity != null) for (String c : rec.colorIdentity) cids.add(net.minecraft.nbt.NbtString.of(c));
+        ListTag cids = new ListTag();
+        if (rec.colorIdentity != null) for (String c : rec.colorIdentity) cids.add(net.minecraft.nbt.StringTag.valueOf(c));
         meta.put("color_identity", cids);
 
         // ---------- Legalities ----------
-        NbtCompound leg = new NbtCompound();
+        CompoundTag leg = new CompoundTag();
         if (rec.legalities != null) {
             for (var e : rec.legalities.entrySet()) {
                 putStr(leg, e.getKey(), e.getValue());
@@ -55,12 +55,12 @@ public final class CardNBTUtil {
 
         // ---------- Images (faces or single) ----------
         if (rec.faces != null && !rec.faces.isEmpty()) {
-            NbtList faceList = new NbtList();
+            ListTag faceList = new ListTag();
             for (var f : rec.faces) {
-                NbtCompound fn = new NbtCompound();
+                CompoundTag fn = new CompoundTag();
                 putStr(fn, "name", nz(f.name));
 
-                NbtCompound uris = new NbtCompound();
+                CompoundTag uris = new CompoundTag();
                 if (f.imageUris != null) {
                     for (var e : f.imageUris.entrySet()) putStr(uris, e.getKey(), e.getValue());
                 }
@@ -76,7 +76,7 @@ public final class CardNBTUtil {
             }
             meta.put("card_faces", faceList);
         } else {
-            NbtCompound uris = new NbtCompound();
+            CompoundTag uris = new CompoundTag();
             if (rec.imageUris != null) {
                 for (var e : rec.imageUris.entrySet()) putStr(uris, e.getKey(), e.getValue());
             }
@@ -85,7 +85,7 @@ public final class CardNBTUtil {
 
         // ---------- Prices ----------
         // ---------- Prices (strings like Scryfall, "—" means missing) ----------
-        NbtCompound prices = new NbtCompound();
+        CompoundTag prices = new CompoundTag();
         if (rec.price != null) {
             putPriceStr(prices, "usd",        rec.price.usd);
             putPriceStr(prices, "usd_foil",   rec.price.usdFoil);
@@ -114,7 +114,7 @@ public final class CardNBTUtil {
         StackData.writeCustom(st, root);
     }
 
-    private static void putPriceStr(NbtCompound tag, String key, String value) {
+    private static void putPriceStr(CompoundTag tag, String key, String value) {
         if (value == null) return;
         String v = value.trim();
         if (v.isEmpty() || v.equals("—") || v.equals("-")) return;
@@ -122,7 +122,7 @@ public final class CardNBTUtil {
     }
 
     // ----------------- helpers -----------------
-    private static void putStr(NbtCompound tag, String key, String value) {
+    private static void putStr(CompoundTag tag, String key, String value) {
         tag.putString(key, value == null ? "" : value);
     }
     private static String nz(String s) { return s == null ? "" : s; }

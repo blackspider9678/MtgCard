@@ -2,9 +2,9 @@
 package com.spider.mtgcard.command;
 
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.minecraft.text.Text;
+import net.minecraft.network.chat.Component;
 
-import static net.minecraft.server.command.CommandManager.literal;
+import static net.minecraft.commands.Commands.literal;
 
 public final class MtgRootCommand {
     public static void register() {
@@ -12,7 +12,7 @@ public final class MtgRootCommand {
             var root = literal("mtg")
                     .requires(src -> true)
                     .executes(ctx -> {
-                        ctx.getSource().sendFeedback(() -> Text.literal(
+                        ctx.getSource().sendSuccess(() -> Component.literal(
                                 "§a/mtg commands:\n" +
                                         "§e/mtg art <find|rebuild|purge>\n" +
                                         "§e/mtg custom <import|sets|card|remove>\n" +

@@ -3,12 +3,12 @@ package com.spider.mtgcard.db;
 
 import com.spider.mtgcard.db.search.SearchEngine;
 import com.spider.mtgcard.item.ModItems;
-import net.minecraft.component.type.NbtComponent;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtList;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.Container;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,7 +18,7 @@ import java.util.UUID;
 public final class CardDBSession implements CardDBView {
     private static final int ROWS=6, COLS=9, PAGE=ROWS*COLS;
 
-    private final ServerWorld world;
+    private final ServerLevel world;
     private final UUID playerId;
 
     private final List<ItemStack> intakeAll = new ArrayList<>();
@@ -36,7 +36,7 @@ public final class CardDBSession implements CardDBView {
 
     public List<ItemStack> getIntakeAll() { return intakeAll; }
 
-    public net.minecraft.inventory.SimpleInventory getWindow() {
+    public net.minecraft.world.SimpleContainer getWindow() {
         return window;
     }
 
@@ -48,19 +48,19 @@ public final class CardDBSession implements CardDBView {
         try {
             final ArrayList<ItemStack> kept = new ArrayList<>(PAGE);
             for (int i = 0; i < PAGE; i++) {
-                ItemStack st = window.getStack(i);
+                ItemStack st = window.getItem(i);
                 if (st != null && !st.isEmpty()) kept.add(st);
             }
 
-            for (int i = 0; i < PAGE; i++) window.setStack(i, ItemStack.EMPTY);
+            for (int i = 0; i < PAGE; i++) window.setItem(i, ItemStack.EMPTY);
 
             int pos = 0;
-            for (ItemStack st : kept) window.setStack(pos++, st);
+            for (ItemStack st : kept) window.setItem(pos++, st);
 
             int startIdx = windowOffset + kept.size();
             while (pos < PAGE) {
                 ItemStack src = (startIdx < intakeAll.size()) ? intakeAll.get(startIdx++).copy() : ItemStack.EMPTY;
-                window.setStack(pos++, src);
+                window.setItem(pos++, src);
             }
         } finally {
             syncingWindow = false;                  // re-enable markDirty
@@ -77,17 +77,17 @@ public final class CardDBSession implements CardDBView {
             applyBackingToWindow();          // redraw now that we’re unfrozen
             // do a notify without side effects
             suppressPersistOnce = true;
-            window.markDirty();
+            window.setChanged();
         }
     }
 
-    private final net.minecraft.inventory.SimpleInventory window =
-            new net.minecraft.inventory.SimpleInventory(54) {
-                @Override public boolean isValid(int slot, ItemStack stack) {
-                    return stack.isOf(ModItems.CARD);
+    private final net.minecraft.world.SimpleContainer window =
+            new net.minecraft.world.SimpleContainer(54) {
+                @Override public boolean canPlaceItem(int slot, ItemStack stack) {
+                    return stack.is(ModItems.CARD);
                 }
                 @Override
-                public void markDirty() {
+                public void setChanged() {
                     // 1) Ignore during bulk programmatic writes
                     if (syncingWindow) {
                         return;
@@ -96,15 +96,15 @@ public final class CardDBSession implements CardDBView {
                     // 2) One-shot suppression: skip side-effects but STILL notify listeners to refresh UI
                     if (suppressPersistOnce) {
                         suppressPersistOnce = false;
-                        super.markDirty();       // <-- this notifies the client to redraw
+                        super.setChanged();       // <-- this notifies the client to redraw
                         return;
                     }
 
                     // 3) Normal: view-only window, never mirror window -> backing here
-                    super.markDirty();
+                    super.setChanged();
                 }
 
-                @Override public boolean canPlayerUse(net.minecraft.entity.player.PlayerEntity player) { return true; }
+                @Override public boolean stillValid(net.minecraft.world.entity.player.Player player) { return true; }
             };
 
     // Project rows at [windowOffset .. windowOffset+53] into window
@@ -116,14 +116,14 @@ public final class CardDBSession implements CardDBView {
             for (int i = 0; i < 54; i++) {
                 int idx = windowOffset + i;
                 var st = (idx >= 0 && idx < view.size()) ? view.get(idx).stack : ItemStack.EMPTY;
-                window.setStack(i, st.isEmpty() ? ItemStack.EMPTY : st.copy());
+                window.setItem(i, st.isEmpty() ? ItemStack.EMPTY : st.copy());
             }
         } finally {
             syncingWindow = false;
         }
         // notify the client without any write-back side effects
         suppressPersistOnce = true;
-        window.markDirty();
+        window.setChanged();
     }
 
 
@@ -147,11 +147,11 @@ public final class CardDBSession implements CardDBView {
             for (int i = 0; i < PAGE; i++) {
                 int idx = windowOffset + i;
                 ItemStack st = (idx >= 0 && idx < intakeAll.size()) ? intakeAll.get(idx) : ItemStack.EMPTY;
-                window.setStack(i, st.copy());
+                window.setItem(i, st.copy());
             }
             // prevent markDirty side-effects once
             suppressPersistOnce = true;
-            window.markDirty();
+            window.setChanged();
         } finally {
             syncingWindow = false;
         }
@@ -164,28 +164,28 @@ public final class CardDBSession implements CardDBView {
         if (st == null || st.isEmpty()) return;
 
         // Read current CUSTOM_DATA (don’t lose other fields the preview/manager needs!)
-        var comp = st.getOrDefault(net.minecraft.component.DataComponentTypes.CUSTOM_DATA, null);
+        var comp = st.getOrDefault(net.minecraft.core.component.DataComponents.CUSTOM_DATA, null);
         String uid = "";
-        net.minecraft.nbt.NbtCompound nbtExisting = null;
+        net.minecraft.nbt.CompoundTag nbtExisting = null;
         if (comp != null) {
-            nbtExisting = comp.copyNbt();
+            nbtExisting = comp.copyTag();
             uid = nbtExisting.getString("mtg_uid").orElse("");
         }
 
         if (uid == null || uid.isBlank()) {
             // MERGE: reuse existing NBT if present, otherwise start new
-            net.minecraft.nbt.NbtCompound nbt = (nbtExisting != null) ? nbtExisting : new net.minecraft.nbt.NbtCompound();
+            net.minecraft.nbt.CompoundTag nbt = (nbtExisting != null) ? nbtExisting : new net.minecraft.nbt.CompoundTag();
             nbt.putString("mtg_uid", UUID.randomUUID().toString());
-            st.set(net.minecraft.component.DataComponentTypes.CUSTOM_DATA,
-                    NbtComponent.of(nbt));
+            st.set(net.minecraft.core.component.DataComponents.CUSTOM_DATA,
+                    CustomData.of(nbt));
         }
     }
 
 
     private static String readUid(ItemStack st) {
-        var comp = st.getOrDefault(net.minecraft.component.DataComponentTypes.CUSTOM_DATA, null);
+        var comp = st.getOrDefault(net.minecraft.core.component.DataComponents.CUSTOM_DATA, null);
         if (comp == null) return "";
-        var nbt = comp.copyNbt();
+        var nbt = comp.copyTag();
         return nbt.getString("mtg_uid").orElse("");
     }
 
@@ -196,16 +196,16 @@ public final class CardDBSession implements CardDBView {
             // 1) collect non-empty in order
             ArrayList<ItemStack> kept = new ArrayList<>(54);
             for (int i = 0; i < 54; i++) {
-                var st = window.getStack(i);
+                var st = window.getItem(i);
                 if (st != null && !st.isEmpty()) kept.add(st);
             }
 
             // 2) clear
-            for (int i = 0; i < 54; i++) window.setStack(i, ItemStack.EMPTY);
+            for (int i = 0; i < 54; i++) window.setItem(i, ItemStack.EMPTY);
 
             // 3) put back kept first
             int pos = 0;
-            for (var st : kept) window.setStack(pos++, st);
+            for (var st : kept) window.setItem(pos++, st);
 
             // 4) top-up from backing view so page stays continuous
             int startIdx = windowOffset + kept.size();
@@ -217,10 +217,10 @@ public final class CardDBSession implements CardDBView {
                         fill = row.stack.copy();
                     }
                 }
-                window.setStack(pos++, fill);
+                window.setItem(pos++, fill);
             }
 
-            window.markDirty();
+            window.setChanged();
         } finally {
             syncingWindow = false;
         }
@@ -239,15 +239,15 @@ public final class CardDBSession implements CardDBView {
         return false;
     }
 
-    public static CardDBSession forPlayer(ServerPlayerEntity player) {
-        var sw = player.getEntityWorld();
-        var s = new CardDBSession(sw, player.getUuid());
+    public static CardDBSession forPlayer(ServerPlayer player) {
+        var sw = player.level();
+        var s = new CardDBSession(sw, player.getUUID());
         s.load();
         s.applyBackingToWindow();
         return s;
     }
 
-    private CardDBSession(ServerWorld world, UUID playerId) {
+    private CardDBSession(ServerLevel world, UUID playerId) {
         this.world = world;
         this.playerId = playerId;
     }
@@ -263,10 +263,10 @@ public final class CardDBSession implements CardDBView {
         this.projectingSearch = false;
     }
 
-    public void ensureLoaded(ServerPlayerEntity sp) {
-        if (!(world instanceof ServerWorld sw)) return;
+    public void ensureLoaded(ServerPlayer sp) {
+        if (!(world instanceof ServerLevel sw)) return;
 
-        this.owner = sp.getUuid();
+        this.owner = sp.getUUID();
         var st = PlayerCardDBState.get(sw);
         var saved = st.getIntake(owner);
 
@@ -275,12 +275,12 @@ public final class CardDBSession implements CardDBView {
         this.windowOffset = 0;
         this.projectingSearch = false;
         applyBackingToWindow();
-        this.window.markDirty();
+        this.window.setChanged();
     }
 
     private void persist() {
         var state = PlayerCardDBState.get(world);
-        NbtList snap = CardDBState.snapshotFromList(this.intakeAll);
+        ListTag snap = CardDBState.snapshotFromList(this.intakeAll);
         state.putIntake(playerId, snap);
     }
 
@@ -310,11 +310,11 @@ public final class CardDBSession implements CardDBView {
     }
 
     @Override public void shiftWindow(int delta) { setWindowOffset(windowOffset + delta); }
-    @Override public Inventory getWindowInventory() { return window; }
+    @Override public Container getWindowInventory() { return window; }
 
     @Override
     public void appendToIntake(ItemStack stack) {
-        if (stack.isEmpty() || !stack.isOf(ModItems.CARD)) return;
+        if (stack.isEmpty() || !stack.is(ModItems.CARD)) return;
 
         // Ensure unique identity for reliable remove-by-UID later
         ensureUid(stack);
@@ -325,7 +325,7 @@ public final class CardDBSession implements CardDBView {
 
         if (!projectingSearch) applyBackingToWindow();
         persist();
-        window.markDirty();
+        window.setChanged();
     }
 
     /** Remove by UID then redraw same page. */
@@ -371,7 +371,7 @@ public final class CardDBSession implements CardDBView {
     public void clearSearchProjection() {
         projectingSearch = false;
         applyBackingToWindow();
-        window.markDirty();
+        window.setChanged();
     }
 
     /* ---------- Internal helpers ---------- */
@@ -382,14 +382,14 @@ public final class CardDBSession implements CardDBView {
             for (int i=0;i<PAGE;i++) {
                 int idx = windowOffset + i;
                 ItemStack st = (idx>=0 && idx<intakeAll.size()) ? intakeAll.get(idx) : ItemStack.EMPTY;
-                window.setStack(i, st.copy());
+                window.setItem(i, st.copy());
             }
         } finally {
             syncingWindow = false;
         }
         // notify the client; no persistence
         suppressPersistOnce = true;
-        window.markDirty();
+        window.setChanged();
     }
 
 
@@ -398,7 +398,7 @@ public final class CardDBSession implements CardDBView {
         while (intakeAll.size() < need) intakeAll.add(ItemStack.EMPTY);
         for (int i=0;i<PAGE;i++) {
             int idx = windowOffset + i;
-            intakeAll.set(idx, window.getStack(i).copy());
+            intakeAll.set(idx, window.getItem(i).copy());
         }
         int trim = intakeAll.size()-1;
         while (trim >= 0 && intakeAll.get(trim).isEmpty()) trim--;
@@ -416,13 +416,13 @@ public final class CardDBSession implements CardDBView {
         try {
             for (int i = 0; i < 54; i++) {
                 var st = (i < results.size()) ? results.get(i) : ItemStack.EMPTY;
-                window.setStack(i, st.isEmpty() ? ItemStack.EMPTY : st.copy());
+                window.setItem(i, st.isEmpty() ? ItemStack.EMPTY : st.copy());
             }
         } finally {
             syncingWindow = false;
         }
         suppressPersistOnce = true;  // consume next markDirty
-        window.markDirty();          // notify GUI, no writeback/persist
+        window.setChanged();          // notify GUI, no writeback/persist
     }
 
 

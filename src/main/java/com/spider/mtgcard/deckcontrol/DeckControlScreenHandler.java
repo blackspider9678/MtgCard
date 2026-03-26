@@ -1,65 +1,62 @@
 package com.spider.mtgcard.deckcontrol;
 
 import com.spider.mtgcard.screen.ModScreenHandlers;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.screen.ArrayPropertyDelegate;
-import net.minecraft.screen.PropertyDelegate;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.ScreenHandlerContext;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.world.inventory.SimpleContainerData;
+import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerLevelAccess;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.core.BlockPos;
 
 import java.util.List;
 
-public class DeckControlScreenHandler extends ScreenHandler {
+public class DeckControlScreenHandler extends AbstractContainerMenu {
 
-    // synced indices
-    public static final int P_LINKED  = 0; // 0/1
-    public static final int P_LIBRARY = 2; // 0..99
+    public static final int P_LINKED  = 0;
+    public static final int P_LIBRARY = 2;
     public static final int PROP_COUNT = 3;
 
-    private final PlayerInventory playerInv;
-
-    private final ScreenHandlerContext context;
+    private final Inventory playerInv;
+    private final ContainerLevelAccess context;
     private final BlockPos pos;
-
-    // store the delegate so we can read it
-    private final PropertyDelegate props;
+    private final ContainerData props;
 
     public static final int GUI_W = 360;
     public static final int GUI_H = 340;
 
-    // ✅ Client ctor (Extended screen): use a plain delegate that receives sync updates
-    // ✅ Client ctor (Extended): Fabric already decoded BlockPos for us
-    public DeckControlScreenHandler(int syncId, PlayerInventory inv, BlockPos pos) {
+    public DeckControlScreenHandler(int syncId, Inventory inv) {
+        this(syncId, inv, BlockPos.ZERO);
+    }
+
+    public DeckControlScreenHandler(int syncId, Inventory inv, BlockPos pos) {
         super(ModScreenHandlers.DECKCONTROL, syncId);
         this.playerInv = inv;
         this.pos = pos;
-        this.context = ScreenHandlerContext.EMPTY;
+        this.context = ContainerLevelAccess.NULL;
 
-        this.props = new ArrayPropertyDelegate(PROP_COUNT);
-        this.addProperties(this.props);
+        this.props = new SimpleContainerData(PROP_COUNT);
+        this.addDataSlots(this.props);
 
         addPlayerInventory(inv);
     }
 
-    // ✅ Server ctor: provide computed delegate
-    public DeckControlScreenHandler(int syncId, PlayerInventory inv, BlockPos pos, ScreenHandlerContext context) {
+    public DeckControlScreenHandler(int syncId, Inventory inv, BlockPos pos, ContainerLevelAccess context) {
         super(ModScreenHandlers.DECKCONTROL, syncId);
         this.playerInv = inv;
         this.pos = pos;
         this.context = context;
 
-        this.props = new PropertyDelegate() {
-            @Override public int size() { return PROP_COUNT; }
+        this.props = new ContainerData() {
+            @Override public int getCount() { return PROP_COUNT; }
 
             @Override
             public int get(int index) {
                 final int[] out = new int[]{0};
-                DeckControlScreenHandler.this.context.run((world, p) -> {
+                DeckControlScreenHandler.this.context.execute((world, p) -> {
                     if (!(world.getBlockEntity(p) instanceof DeckControlBlockEntity dc)) return;
                     out[0] = switch (index) {
                         case P_LINKED  -> dc.hasLinkedDeckbox() ? 1 : 0;
@@ -72,15 +69,14 @@ public class DeckControlScreenHandler extends ScreenHandler {
 
             @Override
             public void set(int index, int value) {
-                // no client->server property writes
             }
         };
 
-        this.addProperties(this.props);
+        this.addDataSlots(this.props);
         addPlayerInventory(inv);
     }
 
-    private void addPlayerInventory(PlayerInventory inv) {
+    private void addPlayerInventory(Inventory inv) {
         final int SLOT = 18;
 
         // Center the 9-slot-wide inventory
@@ -116,9 +112,9 @@ public class DeckControlScreenHandler extends ScreenHandler {
 
 
     @Override
-    public boolean canUse(PlayerEntity player) {
+    public boolean stillValid(Player player) {
         // distance-only is fine for this UI (no internal slots)
-        return player.squaredDistanceTo(
+        return player.distanceToSqr(
                 pos.getX() + 0.5,
                 pos.getY() + 0.5,
                 pos.getZ() + 0.5
@@ -126,13 +122,13 @@ public class DeckControlScreenHandler extends ScreenHandler {
     }
 
     @Override
-    public ItemStack quickMove(PlayerEntity player, int slotIndex) {
+    public ItemStack quickMoveStack(Player player, int slotIndex) {
         return ItemStack.EMPTY;
     }
 
     public boolean isCardItem(ItemStack st) {
         return st != null && !st.isEmpty()
-                && st.isOf(com.spider.mtgcard.item.ModItems.CARD);
+                && st.is(com.spider.mtgcard.item.ModItems.CARD);
     }
 
     public BlockPos getPos() {
@@ -148,6 +144,6 @@ public class DeckControlScreenHandler extends ScreenHandler {
     }
 
     public boolean isPlayerInventorySlot(Slot slot) {
-        return slot.inventory == this.playerInv;
+        return slot.container == this.playerInv;
     }
 }

@@ -3,7 +3,7 @@ package com.spider.mtgcard.client.life;
 import com.google.gson.*;
 import com.google.gson.reflect.TypeToken;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 import java.io.IOException;
 import java.lang.reflect.Type;

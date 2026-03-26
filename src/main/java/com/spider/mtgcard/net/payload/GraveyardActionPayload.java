@@ -1,24 +1,25 @@
 // com/spider/mtgcard/net/payload/GraveyardActionPayload.java
 package com.spider.mtgcard.net.payload;
 
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload.Type;
+import net.minecraft.resources.Identifier;
+import net.minecraft.core.BlockPos;
 
-public record GraveyardActionPayload(BlockPos pos, int syncId, Action action) implements CustomPayload {
+public record GraveyardActionPayload(BlockPos pos, int syncId, Action action) implements CustomPacketPayload {
 
-    public static final Id<GraveyardActionPayload> ID =
-            new Id<>(Identifier.of("mtgcard", "graveyard_action"));
+    public static final Type<GraveyardActionPayload> ID =
+            new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "graveyard_action"));
 
     public enum Action {
         EXILE_ALL,
         RETURN_ALL
     }
 
-    public static final PacketCodec<RegistryByteBuf, GraveyardActionPayload> CODEC =
-            PacketCodec.of(
+    public static final StreamCodec<RegistryFriendlyByteBuf, GraveyardActionPayload> CODEC =
+            StreamCodec.ofMember(
                     (payload, buf) -> {
                         buf.writeBlockPos(payload.pos());
                         buf.writeVarInt(payload.syncId());
@@ -32,7 +33,7 @@ public record GraveyardActionPayload(BlockPos pos, int syncId, Action action) im
             );
 
     @Override
-    public Id<? extends CustomPayload> getId() {
+    public Type<? extends CustomPacketPayload> type() {
         return ID;
     }
 }

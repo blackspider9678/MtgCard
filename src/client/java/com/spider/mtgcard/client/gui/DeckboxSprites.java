@@ -1,14 +1,14 @@
 package com.spider.mtgcard.client.gui;
 
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public final class DeckboxSprites {
-    private static final Identifier ATLAS = Identifier.of("mtg", "textures/gui/mana_pips.png");
+    private static final Identifier ATLAS = Identifier.fromNamespaceAndPath("mtg", "textures/gui/mana_pips.png");
     private static final int CELL = 16, ATLAS_COLS = 8, ATLAS_W = ATLAS_COLS * CELL, ATLAS_H = 3 * CELL;
 
     private record Pip(int u, int v) {}
@@ -44,12 +44,12 @@ public final class DeckboxSprites {
         return out;
     }
 
-    public static int drawManaCost(DrawContext ctx, String mana, int x, int y){
+    public static int drawManaCost(GuiGraphics ctx, String mana, int x, int y){
         List<Pip> p = parse(mana);
         int dx = x;
         for (Pip pip : p) {
             // NOTE: pipeline first, u/v are floats
-            ctx.drawTexture(
+            ctx.blit(
                     RenderPipelines.GUI_TEXTURED,
                     ATLAS,
                     dx, y,

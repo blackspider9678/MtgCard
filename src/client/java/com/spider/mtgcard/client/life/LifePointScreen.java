@@ -1,25 +1,25 @@
 package com.spider.mtgcard.client.life;
 
+import com.spider.mtgcard.client.compat.LegacyScreen;
 import com.spider.mtgcard.life.LifePointPackets;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.sound.PositionedSoundInstance;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.sound.SoundEvent;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.core.BlockPos;
 import org.joml.Vector2f;
 import org.lwjgl.glfw.GLFW;
 
-import net.minecraft.client.util.InputUtil;
+import com.mojang.blaze3d.platform.InputConstants;
 
 import java.util.*;
 
@@ -44,24 +44,24 @@ import java.util.*;
  *
  * Cleaned: removed unused modal/preset-id widgets, duplicate click handlers, unused fields/helpers.
  */
-public final class LifePointScreen extends Screen {
+public final class LifePointScreen extends LegacyScreen {
     private enum Tab { LIFE, COUNTERS, GROUPS, EDIT }
 
     private final BlockPos pos;
     private Tab tab = Tab.LIFE;
 
     // top HUD
-    private TextFieldWidget nameField;
+    private EditBox nameField;
 
     // shared editor field (life or counter value)
-    private TextFieldWidget valueField;
+    private EditBox valueField;
 
     // Counters tab state
     private String counterKey = "poison";
-    private TextFieldWidget addCounterField;
+    private EditBox addCounterField;
 
     // Commander damage
-    private final Map<TextFieldWidget, BlockPos> cmdFieldToOther = new HashMap<>();
+    private final Map<EditBox, BlockPos> cmdFieldToOther = new HashMap<>();
     private final Map<BlockPos, Integer> cmdCache = new HashMap<>();
     private boolean settingCmdProgrammatically = false;
     private BlockPos selectedCmdTarget = null;
@@ -74,7 +74,7 @@ public final class LifePointScreen extends Screen {
     private String groupNameOriginal = "";
     private String groupNameCurrent = "";
     private boolean settingGroupNameProgrammatically = false;
-    private TextFieldWidget groupNameField;
+    private EditBox groupNameField;
 
     private boolean groupDirty = false;
 
@@ -182,7 +182,7 @@ public final class LifePointScreen extends Screen {
     private final List<Rect> editPaletteRectsPlayer = new ArrayList<>();
     private final List<Rect> editPaletteRectsLife = new ArrayList<>();
 
-    private TextFieldWidget editPresetNameField;
+    private EditBox editPresetNameField;
     private String selectedPresetKey = null;
     private boolean includeCustomCounters = false;
     private final Set<String> includedCustomCounterKeys = new HashSet<>();
@@ -196,15 +196,15 @@ public final class LifePointScreen extends Screen {
     private int editCmdLethal = 21;
 
     // EDIT tab: hex editors
-    private TextFieldWidget editPlayerHexField;
-    private TextFieldWidget editLifeHexField;
+    private EditBox editPlayerHexField;
+    private EditBox editLifeHexField;
     private boolean settingHexProgrammatically = false;
 
     // appearance values (cached)
     private int editIconSwapColor = 0xFF0000; // default: original red
 
     // EDIT tab: icon swap hex editor
-    private TextFieldWidget editIconHexField;
+    private EditBox editIconHexField;
     private boolean iconHexWasFocused = false;
 
     // focus tracking for "normalize on blur"
@@ -260,13 +260,13 @@ public final class LifePointScreen extends Screen {
         if (cached != null) return cached;
 
         try {
-            var rm = MinecraftClient.getInstance().getResourceManager();
+            var rm = Minecraft.getInstance().getResourceManager();
             var resOpt = rm.getResource(src);
             if (resOpt.isEmpty()) return src;
 
-            net.minecraft.client.texture.NativeImage img;
-            try (var in = resOpt.get().getInputStream()) {
-                img = net.minecraft.client.texture.NativeImage.read(in);
+            com.mojang.blaze3d.platform.NativeImage img;
+            try (var in = resOpt.get().open()) {
+                img = com.mojang.blaze3d.platform.NativeImage.read(in);
             }
 
             // recolor in-place
@@ -277,7 +277,7 @@ public final class LifePointScreen extends Screen {
             int w = img.getWidth(), h = img.getHeight();
             for (int y = 0; y < h; y++) {
                 for (int x = 0; x < w; x++) {
-                    int argb = img.getColorArgb(x, y);
+                    int argb = img.getPixel(x, y);
                     int a = (argb >>> 24) & 0xFF;
                     if (a == 0) continue;
 
@@ -293,24 +293,24 @@ public final class LifePointScreen extends Screen {
                         int nb = clamp((int)(tgtB * f), 0, 255);
 
                         int nargb = (a << 24) | (nr << 16) | (ng << 8) | nb;
-                        img.setColorArgb(x, y, nargb);
+                        img.setPixel(x, y, nargb);
                     }
                 }
             }
 
-            var tex = new net.minecraft.client.texture.NativeImageBackedTexture(
+            var tex = new net.minecraft.client.renderer.texture.DynamicTexture(
                     () -> "mtgcard_icon_" + Integer.toHexString(k.hashCode()),
                     img
             );
             // img is owned by texture now
 
-            var tm = MinecraftClient.getInstance().getTextureManager();
+            var tm = Minecraft.getInstance().getTextureManager();
 
             // path must be lowercase-ish and valid for Identifiers
-            Identifier id = Identifier.of("mtgcard", "dynamic/icon/" + Integer.toHexString(k.hashCode()));
+            Identifier id = Identifier.fromNamespaceAndPath("mtgcard", "dynamic/icon/" + Integer.toHexString(k.hashCode()));
 
             // registers (and replaces if already registered)
-            tm.registerTexture(id, tex);
+            tm.register(id, tex);
 
             recolorTexCache.put(k, id);
             return id;
@@ -338,7 +338,7 @@ public final class LifePointScreen extends Screen {
         return true;
     }
 
-    private void drawIconSwapped(DrawContext ctx, Identifier tex, int x, int y, int w, int h) {
+    private void drawIconSwapped(GuiGraphics ctx, Identifier tex, int x, int y, int w, int h) {
         Identifier use = recolored(tex, editIconSwapColor);
         drawIcon(ctx, use, x, y, w, h);
     }
@@ -411,7 +411,7 @@ public final class LifePointScreen extends Screen {
 
     private int clamp(int v, int lo, int hi) { return Math.max(lo, Math.min(hi, v)); }
 
-    private void drawScrollbar(DrawContext ctx, ScrollId id, Rect vp, int contentH, int scroll) {
+    private void drawScrollbar(GuiGraphics ctx, ScrollId id, Rect vp, int contentH, int scroll) {
         scrollTrackRects.remove(id);
         scrollThumbRects.remove(id);
 
@@ -452,9 +452,9 @@ public final class LifePointScreen extends Screen {
     }
 
     // counter icons
-    private static final Identifier ICON_POISON     = Identifier.of("mtgcard", "textures/gui/counters/poison.png");
-    private static final Identifier ICON_ENERGY     = Identifier.of("mtgcard", "textures/gui/counters/energy.png");
-    private static final Identifier ICON_EXPERIENCE = Identifier.of("mtgcard", "textures/gui/counters/experience.png");
+    private static final Identifier ICON_POISON     = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/poison.png");
+    private static final Identifier ICON_ENERGY     = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/energy.png");
+    private static final Identifier ICON_EXPERIENCE = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/experience.png");
 
     private final Map<String, Identifier> iconIdCache = new HashMap<>();
     private final Map<Identifier, int[]> texDims = new HashMap<>();
@@ -462,11 +462,11 @@ public final class LifePointScreen extends Screen {
     private List<String> cachedCounterIcons = null;
 
     private LifePointScreen(BlockPos pos) {
-        super(Text.translatable("screen.mtgcard.life_point"));
+        super(Component.translatable("screen.mtgcard.life_point"));
         this.pos = pos;
     }
 
-    public static void open(BlockPos pos, NbtCompound state) {
+    public static void open(BlockPos pos, CompoundTag state) {
         LifePointClientState.onSync(pos, state);
 
         var s = new LifePointScreen(pos);
@@ -477,7 +477,7 @@ public final class LifePointScreen extends Screen {
         var gv = (gid != null) ? LifePointClientState.getGroup(gid) : null;
         s.lastStarted = (gv != null && gv.started);
 
-        MinecraftClient.getInstance().setScreen(s);
+        Minecraft.getInstance().setScreen(s);
     }
 
     // -------------------------------------------------------------------------
@@ -486,7 +486,7 @@ public final class LifePointScreen extends Screen {
 
     @Override
     protected void init() {
-        clearChildren();
+        clearWidgets();
 
         // NEW: compute design-space scaling and origin
         recomputeLayoutScale();
@@ -609,7 +609,7 @@ public final class LifePointScreen extends Screen {
         buildBottomHudScaled(st);
     }
 
-    private void buildTopHudScaled(NbtCompound st) {
+    private void buildTopHudScaled(CompoundTag st) {
         int margin = ps(12);
         int y = py(12);
 
@@ -624,16 +624,16 @@ public final class LifePointScreen extends Screen {
         int nameW = editX - nameX - gap;
         if (nameW < ps(80)) nameW = ps(80);
 
-        var nameLabel = ButtonWidget.builder(Text.literal("Name:"), b -> {})
-                .dimensions(px(12), y, labelW, rowH)
+        var nameLabel = Button.builder(Component.literal("Name:"), b -> {})
+                .bounds(px(12), y, labelW, rowH)
                 .build();
         nameLabel.active = false;
-        addDrawableChild(nameLabel);
+        addRenderableWidget(nameLabel);
 
-        nameField = new TextFieldWidget(textRenderer, nameX, y, nameW, rowH, Text.literal(""));
-        nameField.setText(st.getString("DisplayName").orElse(""));
-        nameField.setChangedListener(s -> ClientPlayNetworking.send(new LifePointPackets.SetNameC2S(pos, s)));
-        addDrawableChild(nameField);
+        nameField = new EditBox(font, nameX, y, nameW, rowH, Component.literal(""));
+        nameField.setValue(st.getString("DisplayName").orElse(""));
+        nameField.setResponder(s -> ClientPlayNetworking.send(new LifePointPackets.SetNameC2S(pos, s)));
+        addRenderableWidget(nameField);
 
         // tabs
         y += ps(24);
@@ -641,27 +641,27 @@ public final class LifePointScreen extends Screen {
         int tabW = ps(90);
         int tabX = px(12);
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Life"), b -> { tab = Tab.LIFE; init(); })
-                .dimensions(tabX, y, tabW, tabH).build());
+        addRenderableWidget(Button.builder(Component.literal("Life"), b -> { tab = Tab.LIFE; init(); })
+                .bounds(tabX, y, tabW, tabH).build());
         tabX += tabW + gap;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Counters"), b -> { tab = Tab.COUNTERS; init(); })
-                .dimensions(tabX, y, tabW, tabH).build());
+        addRenderableWidget(Button.builder(Component.literal("Counters"), b -> { tab = Tab.COUNTERS; init(); })
+                .bounds(tabX, y, tabW, tabH).build());
         tabX += tabW + gap;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Pods"), b -> {
+        addRenderableWidget(Button.builder(Component.literal("Pods"), b -> {
             tab = Tab.GROUPS;
             scanRequested = false;
             podsAutoScrollPending = true;
             init();
-        }).dimensions(tabX, y, tabW, tabH).build());
+        }).bounds(tabX, y, tabW, tabH).build());
         tabX += tabW + gap;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Edit"), b -> { tab = Tab.EDIT; init(); })
-                .dimensions(tabX, y, tabW, tabH).build());
+        addRenderableWidget(Button.builder(Component.literal("Edit"), b -> { tab = Tab.EDIT; init(); })
+                .bounds(tabX, y, tabW, tabH).build());
     }
 
-    private void buildBottomHudScaled(NbtCompound st) {
+    private void buildBottomHudScaled(CompoundTag st) {
         int btnY = py(DESIGN_H - 26);
         int btnH = ps(20);
         int gap = ps(10);
@@ -682,36 +682,36 @@ public final class LifePointScreen extends Screen {
         boolean isDead = false;
         if (gv != null && gv.dead != null) isDead = gv.dead.contains(pos);
 
-        var startBtn = ButtonWidget.builder(Text.literal("Start"), b -> {
+        var startBtn = Button.builder(Component.literal("Start"), b -> {
             b.active = false;
             ClientPlayNetworking.send(new LifePointPackets.StartGameC2S(pos));
-            MinecraftClient.getInstance().setScreen(null);
-        }).dimensions(startX + (btnW + gap) * 0, btnY, btnW, btnH).build();
+            Minecraft.getInstance().setScreen(null);
+        }).bounds(startX + (btnW + gap) * 0, btnY, btnW, btnH).build();
         startBtn.active = hasGroup && !started;
-        addDrawableChild(startBtn);
+        addRenderableWidget(startBtn);
 
-        var passBtn = ButtonWidget.builder(Text.literal("Pass"), b ->
+        var passBtn = Button.builder(Component.literal("Pass"), b ->
                 ClientPlayNetworking.send(new LifePointPackets.PassTurnC2S(pos))
-        ).dimensions(startX + (btnW + gap) * 1, btnY, btnW, btnH).build();
+        ).bounds(startX + (btnW + gap) * 1, btnY, btnW, btnH).build();
         passBtn.active = hasGroup && started && turnActive && !isDead;
-        addDrawableChild(passBtn);
+        addRenderableWidget(passBtn);
 
-        var resetBtn = ButtonWidget.builder(Text.literal("Reset"), b -> {
+        var resetBtn = Button.builder(Component.literal("Reset"), b -> {
             b.active = false;
             ClientPlayNetworking.send(new LifePointPackets.ResetGameC2S(pos));
-        }).dimensions(startX + (btnW + gap) * 2, btnY, btnW, btnH).build();
+        }).bounds(startX + (btnW + gap) * 2, btnY, btnW, btnH).build();
         resetBtn.active = hasGroup && started;
-        addDrawableChild(resetBtn);
+        addRenderableWidget(resetBtn);
 
         final boolean deadNow = isDead;
-        var aliveBtn = ButtonWidget.builder(Text.literal(deadNow ? "Dead" : "Alive"), b ->
+        var aliveBtn = Button.builder(Component.literal(deadNow ? "Dead" : "Alive"), b ->
                 ClientPlayNetworking.send(new LifePointPackets.SetDeadC2S(pos, !deadNow))
-        ).dimensions(startX + (btnW + gap) * 3, btnY, btnW, btnH).build();
+        ).bounds(startX + (btnW + gap) * 3, btnY, btnW, btnH).build();
         aliveBtn.active = hasGroup;
-        addDrawableChild(aliveBtn);
+        addRenderableWidget(aliveBtn);
     }
 
-    private void buildTopHud(NbtCompound st) {
+    private void buildTopHud(CompoundTag st) {
         int margin = 12;
         int y = 12;
 
@@ -726,16 +726,16 @@ public final class LifePointScreen extends Screen {
         int nameW = editX - nameX - gap;
         if (nameW < 80) nameW = 80;
 
-        var nameLabel = ButtonWidget.builder(Text.literal("Name:"), b -> {})
-                .dimensions(margin, y, labelW, rowH)
+        var nameLabel = Button.builder(Component.literal("Name:"), b -> {})
+                .bounds(margin, y, labelW, rowH)
                 .build();
         nameLabel.active = false;
-        addDrawableChild(nameLabel);
+        addRenderableWidget(nameLabel);
 
-        nameField = new TextFieldWidget(textRenderer, nameX, y, nameW, rowH, Text.literal(""));
-        nameField.setText(st.getString("DisplayName").orElse(""));
-        nameField.setChangedListener(s -> ClientPlayNetworking.send(new LifePointPackets.SetNameC2S(pos, s)));
-        addDrawableChild(nameField);
+        nameField = new EditBox(font, nameX, y, nameW, rowH, Component.literal(""));
+        nameField.setValue(st.getString("DisplayName").orElse(""));
+        nameField.setResponder(s -> ClientPlayNetworking.send(new LifePointPackets.SetNameC2S(pos, s)));
+        addRenderableWidget(nameField);
 
         // tabs
         y += 24;
@@ -743,27 +743,27 @@ public final class LifePointScreen extends Screen {
         int tabW = 90;
         int tabX = margin;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Life"), b -> { tab = Tab.LIFE; init(); })
-                .dimensions(tabX, y, tabW, tabH).build());
+        addRenderableWidget(Button.builder(Component.literal("Life"), b -> { tab = Tab.LIFE; init(); })
+                .bounds(tabX, y, tabW, tabH).build());
         tabX += tabW + gap;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Counters"), b -> { tab = Tab.COUNTERS; init(); })
-                .dimensions(tabX, y, tabW, tabH).build());
+        addRenderableWidget(Button.builder(Component.literal("Counters"), b -> { tab = Tab.COUNTERS; init(); })
+                .bounds(tabX, y, tabW, tabH).build());
         tabX += tabW + gap;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Pods"), b -> {
+        addRenderableWidget(Button.builder(Component.literal("Pods"), b -> {
             tab = Tab.GROUPS;
             scanRequested = false;
             podsAutoScrollPending = true;
             init();
-        }).dimensions(tabX, y, tabW, tabH).build());
+        }).bounds(tabX, y, tabW, tabH).build());
         tabX += tabW + gap;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Edit"), b -> { tab = Tab.EDIT; init(); })
-                .dimensions(tabX, y, tabW, tabH).build());
+        addRenderableWidget(Button.builder(Component.literal("Edit"), b -> { tab = Tab.EDIT; init(); })
+                .bounds(tabX, y, tabW, tabH).build());
     }
 
-    private void buildBottomHud(NbtCompound st) {
+    private void buildBottomHud(CompoundTag st) {
         int btnY = height - 26;
         int btnH = ps(20);
         int gap = ps(10);
@@ -782,49 +782,49 @@ public final class LifePointScreen extends Screen {
         boolean isDead = false;
         if (gv != null && gv.dead != null) isDead = gv.dead.contains(pos);
 
-        var startBtn = ButtonWidget.builder(Text.literal("Start"), b -> {
+        var startBtn = Button.builder(Component.literal("Start"), b -> {
             b.active = false;
             ClientPlayNetworking.send(new LifePointPackets.StartGameC2S(pos));
-            MinecraftClient.getInstance().setScreen(null);
-        }).dimensions(startX + (btnW + gap) * 0, btnY, btnW, btnH).build();
+            Minecraft.getInstance().setScreen(null);
+        }).bounds(startX + (btnW + gap) * 0, btnY, btnW, btnH).build();
         startBtn.active = hasGroup && !started;
-        addDrawableChild(startBtn);
+        addRenderableWidget(startBtn);
 
-        var passBtn = ButtonWidget.builder(Text.literal("Pass"), b ->
+        var passBtn = Button.builder(Component.literal("Pass"), b ->
                 ClientPlayNetworking.send(new LifePointPackets.PassTurnC2S(pos))
-        ).dimensions(startX + (btnW + gap) * 1, btnY, btnW, btnH).build();
+        ).bounds(startX + (btnW + gap) * 1, btnY, btnW, btnH).build();
         passBtn.active = hasGroup && started && turnActive && !isDead;
-        addDrawableChild(passBtn);
+        addRenderableWidget(passBtn);
 
-        var resetBtn = ButtonWidget.builder(Text.literal("Reset"), b -> {
+        var resetBtn = Button.builder(Component.literal("Reset"), b -> {
             b.active = false;
             ClientPlayNetworking.send(new LifePointPackets.ResetGameC2S(pos));
-        }).dimensions(startX + (btnW + gap) * 2, btnY, btnW, btnH).build();
+        }).bounds(startX + (btnW + gap) * 2, btnY, btnW, btnH).build();
         resetBtn.active = hasGroup && started;
-        addDrawableChild(resetBtn);
+        addRenderableWidget(resetBtn);
 
         final boolean deadNow = isDead;
-        var aliveBtn = ButtonWidget.builder(Text.literal(deadNow ? "Dead" : "Alive"), b ->
+        var aliveBtn = Button.builder(Component.literal(deadNow ? "Dead" : "Alive"), b ->
                 ClientPlayNetworking.send(new LifePointPackets.SetDeadC2S(pos, !deadNow))
-        ).dimensions(startX + (btnW + gap) * 3, btnY, btnW, btnH).build();
+        ).bounds(startX + (btnW + gap) * 3, btnY, btnW, btnH).build();
         aliveBtn.active = hasGroup;
-        addDrawableChild(aliveBtn);
+        addRenderableWidget(aliveBtn);
     }
 
     private void addHeader(int x, int y, int w, String txt) {
-        var b = ButtonWidget.builder(Text.literal(txt), bb -> {})
-                .dimensions(x, y, w, 18).build();
+        var b = Button.builder(Component.literal(txt), bb -> {})
+                .bounds(x, y, w, 18).build();
         b.active = false;
-        addDrawableChild(b);
+        addRenderableWidget(b);
     }
 
     private void addHintLabel(int x, int y, int w, String txt) {
         int ww = Math.max(40, w); // safety
-        var b = ButtonWidget.builder(Text.literal(txt), bb -> {})
-                .dimensions(x, y, ww, 18)
+        var b = Button.builder(Component.literal(txt), bb -> {})
+                .bounds(x, y, ww, 18)
                 .build();
         b.active = false;
-        addDrawableChild(b);
+        addRenderableWidget(b);
     }
 
     // Back-compat overload: old calls keep working.
@@ -850,7 +850,7 @@ public final class LifePointScreen extends Screen {
     // LIFE TAB
     // -------------------------------------------------------------------------
 
-    private void buildLifeTabWireframe(NbtCompound st, int x0, int y0, int w0, int h0) {
+    private void buildLifeTabWireframe(CompoundTag st, int x0, int y0, int w0, int h0) {
         UUID gid = LifePointClientState.getGroupIdFor(pos);
         var gv = (gid != null) ? LifePointClientState.getGroup(gid) : null;
 
@@ -901,22 +901,22 @@ public final class LifePointScreen extends Screen {
         int vpH = Math.max(40, vpBottom - vpY);
         lifeCounterViewport = new Rect(vpX, vpY, vpW, vpH);
 
-        valueField = new TextFieldWidget(textRenderer, boxX, boxY, box, box, Text.literal(""));
-        valueField.setText(Integer.toString(life));
-        valueField.setCursorToEnd(false);
+        valueField = new EditBox(font, boxX, boxY, box, box, Component.literal(""));
+        valueField.setValue(Integer.toString(life));
+        valueField.moveCursorToEnd(false);
         valueField.setMaxLength(5);
-        valueField.setChangedListener(s -> {
+        valueField.setResponder(s -> {
             try {
                 int v = Integer.parseInt(s.trim());
                 ClientPlayNetworking.send(new LifePointPackets.SetLifeC2S(pos, v));
             } catch (Exception ignored) {}
         });
-        addDrawableChild(valueField);
+        addRenderableWidget(valueField);
 
         // hide widget visuals (we render box + big number ourselves)
-        valueField.setDrawsBackground(false);
-        valueField.setEditableColor(0x00000000);
-        valueField.setUneditableColor(0x00000000);
+        valueField.setBordered(false);
+        valueField.setTextColor(0x00000000);
+        valueField.setTextColorUneditable(0x00000000);
 
         // Buttons to the right of square
         int btnW = ps(22);
@@ -931,24 +931,24 @@ public final class LifePointScreen extends Screen {
         lifeButtonsY = by;
         lifeButtonsCenterX = startBx + (stripW / 2);
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("--"), b ->
+        addRenderableWidget(Button.builder(Component.literal("--"), b ->
                 ClientPlayNetworking.send(new LifePointPackets.AddLifeC2S(pos, -10))
-        ).dimensions(bx, by, btnW + 10, btnH).build());
+        ).bounds(bx, by, btnW + 10, btnH).build());
         bx += (btnW + 10) + 4;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("-"), b ->
+        addRenderableWidget(Button.builder(Component.literal("-"), b ->
                 ClientPlayNetworking.send(new LifePointPackets.AddLifeC2S(pos, -1))
-        ).dimensions(bx, by, btnW, btnH).build());
+        ).bounds(bx, by, btnW, btnH).build());
         bx += btnW + 4;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("+"), b ->
+        addRenderableWidget(Button.builder(Component.literal("+"), b ->
                 ClientPlayNetworking.send(new LifePointPackets.AddLifeC2S(pos, +1))
-        ).dimensions(bx, by, btnW, btnH).build());
+        ).bounds(bx, by, btnW, btnH).build());
         bx += btnW + 4;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("++"), b ->
+        addRenderableWidget(Button.builder(Component.literal("++"), b ->
                 ClientPlayNetworking.send(new LifePointPackets.AddLifeC2S(pos, +10))
-        ).dimensions(bx, by, btnW + 10, btnH).build());
+        ).bounds(bx, by, btnW + 10, btnH).build());
 
         int hintY = boxY + box + 10;
         int hintW = (lifeHealthPanel != null) ? (lifeHealthPanel.w - ps(20)) : (colW - ps(20));
@@ -974,7 +974,7 @@ public final class LifePointScreen extends Screen {
         buildCommanderDamageWireframe(st, rightX, y0 + 26, colW, h0 - 26);
     }
 
-    private void buildCommanderDamageWireframe(NbtCompound st, int x, int y, int w, int h) {
+    private void buildCommanderDamageWireframe(CompoundTag st, int x, int y, int w, int h) {
         UUID gid = LifePointClientState.getGroupIdFor(pos);
         if (gid == null) { addHintLabel(x + 10, y, "No Pod linked"); return; }
 
@@ -1002,7 +1002,7 @@ public final class LifePointScreen extends Screen {
             v = st.getInt("CmdL_" + lk).orElse(0);
         } else {
             // LEGACY fallback (if you still have old worlds)
-            var cd = st.getCompound("CommanderDamage").orElse(new NbtCompound());
+            var cd = st.getCompound("CommanderDamage").orElse(new CompoundTag());
             String key = shortPos(selectedCmdTarget);
             v = cd.contains(key) ? cd.getInt(key).orElse(0) : 0;
         }
@@ -1019,14 +1019,14 @@ public final class LifePointScreen extends Screen {
 
         int fx = x + 10;
 
-        var field = new TextFieldWidget(textRenderer, fx, fy, fieldW, 18, Text.literal(""));
+        var field = new EditBox(font, fx, fy, fieldW, 18, Component.literal(""));
         settingCmdProgrammatically = true;
-        field.setText(Integer.toString(v));
+        field.setValue(Integer.toString(v));
         settingCmdProgrammatically = false;
 
         applyCommanderLethalStyle(field, v);
 
-        field.setChangedListener(s -> {
+        field.setResponder(s -> {
             if (settingCmdProgrammatically) return;
 
             int oldV = cmdCache.getOrDefault(selectedCmdTarget, 0);
@@ -1045,56 +1045,56 @@ public final class LifePointScreen extends Screen {
             ClientPlayNetworking.send(new LifePointPackets.AddCommanderDamageC2S(pos, selectedCmdTarget, delta));
         });
 
-        addDrawableChild(field);
+        addRenderableWidget(field);
         cmdFieldToOther.put(field, selectedCmdTarget);
 
         int minusX = fx + fieldW + gap;
         int plusX  = minusX + btnW + 2;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("-"), b -> {
+        addRenderableWidget(Button.builder(Component.literal("-"), b -> {
             int oldV = cmdCache.getOrDefault(selectedCmdTarget, 0);
             if (oldV <= 0) return;
             int newV = oldV - 1;
             cmdCache.put(selectedCmdTarget, newV);
 
             settingCmdProgrammatically = true;
-            field.setText(Integer.toString(newV));
+            field.setValue(Integer.toString(newV));
             settingCmdProgrammatically = false;
 
             applyCommanderLethalStyle(field, newV);
 
             ClientPlayNetworking.send(new LifePointPackets.AddLifeC2S(pos, +1));
             ClientPlayNetworking.send(new LifePointPackets.AddCommanderDamageC2S(pos, selectedCmdTarget, -1));
-        }).dimensions(minusX, fy, btnW, 18).build());
+        }).bounds(minusX, fy, btnW, 18).build());
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("+"), b -> {
+        addRenderableWidget(Button.builder(Component.literal("+"), b -> {
             int oldV = cmdCache.getOrDefault(selectedCmdTarget, 0);
             int newV = Math.min(9999, oldV + 1);
             cmdCache.put(selectedCmdTarget, newV);
 
             settingCmdProgrammatically = true;
-            field.setText(Integer.toString(newV));
+            field.setValue(Integer.toString(newV));
             settingCmdProgrammatically = false;
 
             applyCommanderLethalStyle(field, newV);
 
             ClientPlayNetworking.send(new LifePointPackets.AddLifeC2S(pos, -1));
             ClientPlayNetworking.send(new LifePointPackets.AddCommanderDamageC2S(pos, selectedCmdTarget, +1));
-        }).dimensions(plusX, fy, btnW, 18).build());
+        }).bounds(plusX, fy, btnW, 18).build());
     }
 
-    private void applyCommanderLethalStyle(TextFieldWidget field, int value) {
+    private void applyCommanderLethalStyle(EditBox field, int value) {
         int lethal = Math.max(1, editCmdLethal);
-        if (value >= lethal) field.setEditableColor(0xFFFF5555);
-        else field.setEditableColor(0xFFE0E0E0);
+        if (value >= lethal) field.setTextColor(0xFFFF5555);
+        else field.setTextColor(0xFFE0E0E0);
     }
 
     // -------------------------------------------------------------------------
     // COUNTERS TAB
     // -------------------------------------------------------------------------
 
-    private void buildCountersTabWireframe(NbtCompound st, int x0, int y0, int w0, int h0) {
-        var counters = st.getCompound("Counters").orElse(new NbtCompound());
+    private void buildCountersTabWireframe(CompoundTag st, int x0, int y0, int w0, int h0) {
+        var counters = st.getCompound("Counters").orElse(new CompoundTag());
 
         int gap = ps(10);
         int leftW = Math.min(260, (w0 - gap) / 2);
@@ -1115,7 +1115,7 @@ public final class LifePointScreen extends Screen {
         int rowH = 20;
 
         // build ordered key list
-        List<String> keys = new ArrayList<>(counters.getKeys());
+        List<String> keys = new ArrayList<>(counters.keySet());
         keys.replaceAll(LifePointScreen::normalizeCounterKey);
         keys.removeIf(String::isBlank);
 
@@ -1153,12 +1153,12 @@ public final class LifePointScreen extends Screen {
         // Add counter block under list
         int addY = countersListViewport.y + countersListViewport.h + 8;
 
-        addCounterField = new TextFieldWidget(textRenderer, leftX + 6, addY, leftW - 12, 18, Text.literal(""));
-        addCounterField.setPlaceholder(Text.literal("+ Add Counter"));
-        addDrawableChild(addCounterField);
+        addCounterField = new EditBox(font, leftX + 6, addY, leftW - 12, 18, Component.literal(""));
+        addCounterField.setHint(Component.literal("+ Add Counter"));
+        addRenderableWidget(addCounterField);
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Add"), b -> {
-            String k = addCounterField.getText();
+        addRenderableWidget(Button.builder(Component.literal("Add"), b -> {
+            String k = addCounterField.getValue();
             if (k == null) return;
             k = k.trim().toLowerCase(Locale.ROOT);
             if (k.isEmpty()) return;
@@ -1168,19 +1168,19 @@ public final class LifePointScreen extends Screen {
 
             counterKey = k;
             init();
-        }).dimensions(leftX + 6, addY + 22, 60, 18).build());
+        }).bounds(leftX + 6, addY + 22, 60, 18).build());
 
         // Right editor
         int cur = counters.contains(counterKey) ? counters.getInt(counterKey).orElse(0) : 0;
 
-        var title = ButtonWidget.builder(Text.literal(counterKey), bb -> {})
-                .dimensions(rightX + 6, listY, rightW - 12, 18).build();
+        var title = Button.builder(Component.literal(counterKey), bb -> {})
+                .bounds(rightX + 6, listY, rightW - 12, 18).build();
         title.active = false;
-        addDrawableChild(title);
+        addRenderableWidget(title);
 
-        valueField = new TextFieldWidget(textRenderer, rightX + (rightW / 2) - 40, listY + 28, 80, 18, Text.literal(""));
-        valueField.setText(Integer.toString(cur));
-        valueField.setChangedListener(s -> {
+        valueField = new EditBox(font, rightX + (rightW / 2) - 40, listY + 28, 80, 18, Component.literal(""));
+        valueField.setValue(Integer.toString(cur));
+        valueField.setResponder(s -> {
             try {
                 int v = Integer.parseInt(s.trim());
                 v = Math.max(0, v); // ✅ only minimum clamp
@@ -1190,14 +1190,14 @@ public final class LifePointScreen extends Screen {
 
                 // snap field back if user typed a negative
                 if (!Integer.toString(v).equals(s.trim())) {
-                    valueField.setText(Integer.toString(v));
-                    valueField.setCursorToEnd(false);
+                    valueField.setValue(Integer.toString(v));
+                    valueField.moveCursorToEnd(false);
                 }
             } catch (Exception ignored) {}
         });
 
 
-        addDrawableChild(valueField);
+        addRenderableWidget(valueField);
 
         addHintLabel(rightX + 10, listY + 52, "Scroll = ±1");
         addHintLabel(rightX + 10, listY + 68, "Shift + Scroll = ±10");
@@ -1205,10 +1205,10 @@ public final class LifePointScreen extends Screen {
         int resetX = rightX + 10;
         int resetY = listY + 92;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Reset"), b -> {
+        addRenderableWidget(Button.builder(Component.literal("Reset"), b -> {
             ClientPlayNetworking.send(new LifePointPackets.SetCounterC2S(pos, counterKey, 0));
             init();
-        }).dimensions(resetX, resetY, 80, 18).build());
+        }).bounds(resetX, resetY, 80, 18).build());
 
         // icon preview + picker
         int prevY = resetY + 26;
@@ -1225,7 +1225,7 @@ public final class LifePointScreen extends Screen {
     // PODS TAB
     // -------------------------------------------------------------------------
 
-    private void buildPodsTabWireframe(NbtCompound st, int x0, int y0, int w0, int h0) {
+    private void buildPodsTabWireframe(CompoundTag st, int x0, int y0, int w0, int h0) {
         requestGroupsIfNeeded();
         requestNearbyScanIfNeeded();
 
@@ -1370,14 +1370,14 @@ public final class LifePointScreen extends Screen {
             int by = listY + i * rowH;
             int bw = colW - 12;
 
-            var b = ButtonWidget.builder(Text.literal(label), bb -> {
+            var b = Button.builder(Component.literal(label), bb -> {
                 if (locked) return;
                 toggleMember(p);
                 init();
-            }).dimensions(bx, by, bw, 18).build();
+            }).bounds(bx, by, bw, 18).build();
 
             b.active = !locked && !full;
-            addDrawableChild(b);
+            addRenderableWidget(b);
 
             if (locked) {
                 Rect rr = new Rect(bx, by, bw, 18);
@@ -1405,48 +1405,48 @@ public final class LifePointScreen extends Screen {
 
             int mainW = totalW - (btnW * 2 + gapBtns * 2);
 
-            addDrawableChild(ButtonWidget.builder(Text.literal("☑ " + name), bb -> {
+            addRenderableWidget(Button.builder(Component.literal("☑ " + name), bb -> {
                 toggleMember(p);
                 init();
-            }).dimensions(baseX, rowY, mainW, 18).build());
+            }).bounds(baseX, rowY, mainW, 18).build());
 
-            addDrawableChild(ButtonWidget.builder(Text.literal("▲"), bb -> {
+            addRenderableWidget(Button.builder(Component.literal("▲"), bb -> {
                 moveMemberInOrder(p, -1);
                 init();
-            }).dimensions(baseX + mainW + gapBtns, rowY, btnW, 18).build());
+            }).bounds(baseX + mainW + gapBtns, rowY, btnW, 18).build());
 
-            addDrawableChild(ButtonWidget.builder(Text.literal("▼"), bb -> {
+            addRenderableWidget(Button.builder(Component.literal("▼"), bb -> {
                 moveMemberInOrder(p, +1);
                 init();
-            }).dimensions(baseX + mainW + gapBtns + btnW + gapBtns, rowY, btnW, 18).build());
+            }).bounds(baseX + mainW + gapBtns + btnW + gapBtns, rowY, btnW, 18).build());
         }
 
         // Bottom controls in right column
         int controlsY = y0 + h0 - 72;
 
-        groupNameField = new TextFieldWidget(textRenderer, inpodX + 6, controlsY, colW - 12, 18, Text.literal(""));
+        groupNameField = new EditBox(font, inpodX + 6, controlsY, colW - 12, 18, Component.literal(""));
         settingGroupNameProgrammatically = true;
-        groupNameField.setText(groupNameCurrent == null ? "" : groupNameCurrent);
+        groupNameField.setValue(groupNameCurrent == null ? "" : groupNameCurrent);
         settingGroupNameProgrammatically = false;
-        groupNameField.setChangedListener(s -> {
+        groupNameField.setResponder(s -> {
             if (settingGroupNameProgrammatically) return;
             groupNameCurrent = (s == null ? "" : s);
             groupDirty = true;
         });
-        addDrawableChild(groupNameField);
+        addRenderableWidget(groupNameField);
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Save Pod"), b -> {
+        addRenderableWidget(Button.builder(Component.literal("Save Pod"), b -> {
             var finalOrder = orderedMembers.stream().filter(selectedMembers::contains).distinct().toList();
             String nm = (groupNameCurrent == null ? "" : groupNameCurrent);
             ClientPlayNetworking.send(new LifePointPackets.SaveGroupC2S(selectedGroupId, nm, finalOrder));
             groupNameOriginal = groupNameCurrent;
             groupDirty = false;
             init();
-        }).dimensions(inpodX + 6, controlsY + 22, (colW - 12) / 2 - 4, 18).build());
+        }).bounds(inpodX + 6, controlsY + 22, (colW - 12) / 2 - 4, 18).build());
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Delete"), b ->
-                MinecraftClient.getInstance().setScreen(new ConfirmDeleteGroupScreen(this, selectedGroupId))
-        ).dimensions(inpodX + 6 + (colW - 12) / 2 + 4, controlsY + 22, (colW - 12) / 2 - 4, 18).build());
+        addRenderableWidget(Button.builder(Component.literal("Delete"), b ->
+                Minecraft.getInstance().setScreen(new ConfirmDeleteGroupScreen(this, selectedGroupId))
+        ).bounds(inpodX + 6 + (colW - 12) / 2 + 4, controlsY + 22, (colW - 12) / 2 - 4, 18).build());
     }
 
     private void moveMemberInOrder(BlockPos p, int dir) {
@@ -1469,7 +1469,7 @@ public final class LifePointScreen extends Screen {
     // EDIT TAB (kept; minimal cleanup)
     // -------------------------------------------------------------------------
 
-    private void buildEditTabWireframe(NbtCompound st, int x0, int y0, int w0, int h0) {
+    private void buildEditTabWireframe(CompoundTag st, int x0, int y0, int w0, int h0) {
         int gap = ps(10);
         int colW = (w0 - gap * 2) / 3;
 
@@ -1499,22 +1499,22 @@ public final class LifePointScreen extends Screen {
 
         // --- Preset name field (FIX: put it BELOW header, not above it) ---
         int presetFieldY = topY; // directly under the header
-        editPresetNameField = new TextFieldWidget(
-                textRenderer,
+        editPresetNameField = new EditBox(
+                font,
                 leftX + pad,
                 presetFieldY,
                 colW - pad * 2,
                 18,
-                Text.literal("")
+                Component.literal("")
         );
-        editPresetNameField.setPlaceholder(Text.literal("Preset name"));
+        editPresetNameField.setHint(Component.literal("Preset name"));
         editPresetNameField.setMaxLength(32);
-        editPresetNameField.setText(selectedPresetKey == null ? "" : selectedPresetKey);
-        editPresetNameField.setChangedListener(s -> {
+        editPresetNameField.setValue(selectedPresetKey == null ? "" : selectedPresetKey);
+        editPresetNameField.setResponder(s -> {
             if (s == null) return;
             selectedPresetKey = s.trim();
         });
-        addDrawableChild(editPresetNameField);
+        addRenderableWidget(editPresetNameField);
 
         // --- Preset list viewport (below name field) ---
         int listY = presetFieldY + 18 + 8;
@@ -1533,7 +1533,7 @@ public final class LifePointScreen extends Screen {
         int btnW = ps((colW - pad * 2 - 8 * 2) / 3);
         int bx = leftX + pad;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Apply"), b -> {
+        addRenderableWidget(Button.builder(Component.literal("Apply"), b -> {
             if (selectedPresetKey == null || selectedPresetKey.isBlank()) return;
             var p = LifePointPresetStore.get(selectedPresetKey);
             if (p == null) return;
@@ -1555,16 +1555,16 @@ public final class LifePointScreen extends Screen {
             }
 
             init();
-        }).dimensions(bx, footerY, btnW, footerBtnH).build());
+        }).bounds(bx, footerY, btnW, footerBtnH).build());
         bx += btnW + 8;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Save"), b -> {
+        addRenderableWidget(Button.builder(Component.literal("Save"), b -> {
             if (selectedPresetKey == null || selectedPresetKey.isBlank()) selectedPresetKey = "Preset";
 
             Map<String, Integer> custom = null;
             if (includeCustomCounters) {
                 custom = new LinkedHashMap<>();
-                var counters = st.getCompound("Counters").orElse(new NbtCompound());
+                var counters = st.getCompound("Counters").orElse(new CompoundTag());
                 for (String k : includedCustomCounterKeys) {
                     if (!counters.contains(k)) continue;
                     custom.put(k, counters.getInt(k).orElse(0));
@@ -1586,15 +1586,15 @@ public final class LifePointScreen extends Screen {
             }
 
             init();
-        }).dimensions(bx, footerY, btnW, footerBtnH).build());
+        }).bounds(bx, footerY, btnW, footerBtnH).build());
         bx += btnW + 8;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Delete"), b -> {
+        addRenderableWidget(Button.builder(Component.literal("Delete"), b -> {
             if (selectedPresetKey == null || selectedPresetKey.isBlank()) return;
             LifePointPresetStore.delete(selectedPresetKey);
             selectedPresetKey = null;
             init();
-        }).dimensions(bx, footerY, btnW, footerBtnH).build());
+        }).bounds(bx, footerY, btnW, footerBtnH).build());
 
         // Middle appearance viewport
         editAppearanceVp = new Rect(midX + pad, topY, colW - pad * 2, h0 - 26 - 10);
@@ -1616,26 +1616,12 @@ public final class LifePointScreen extends Screen {
         y += labelGap;                 // space after "Player Color" label (drawn)
         y += paletteH + hexGap;        // palette area + gap to hex
 
-        editPlayerHexField = new TextFieldWidget(textRenderer, ax, y, aw, hexH, Text.literal(""));
+        editPlayerHexField = new EditBox(font, ax, y, aw, hexH, Component.literal(""));
         editPlayerHexField.setMaxLength(7);
-        editPlayerHexField.setPlaceholder(Text.literal("#RRGGBB"));
-        editPlayerHexField.setText(String.format("#%06X", editPlayerColor & 0xFFFFFF));
-        editPlayerHexField.setTextPredicate(str -> {
-            if (str == null) return true;
-            String t = str.trim();
-            if (t.isEmpty()) return true;
-            if (t.startsWith("0x") || t.startsWith("0X")) t = t.substring(2);
-            if (t.startsWith("#")) t = t.substring(1);
-            if (t.length() > 6) return false;
-            for (int i = 0; i < t.length(); i++) {
-                char c = t.charAt(i);
-                boolean ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-                if (!ok) return false;
-            }
-            return true;
-        });
-        editPlayerHexField.setChangedListener(s -> onHexFieldChanged(editPlayerHexField, true, s));
-        addDrawableChild(editPlayerHexField);
+        editPlayerHexField.setHint(Component.literal("#RRGGBB"));
+        editPlayerHexField.setValue(String.format("#%06X", editPlayerColor & 0xFFFFFF));
+        editPlayerHexField.setResponder(s -> onHexFieldChanged(editPlayerHexField, true, s));
+        addRenderableWidget(editPlayerHexField);
 
         y += hexH + 6;
         editPlayerBarRect = new Rect(ax, y, aw, barH);
@@ -1645,36 +1631,19 @@ public final class LifePointScreen extends Screen {
         y += labelGap;                 // space after "Life Color" label (drawn)
         y += paletteH + hexGap;
 
-        editLifeHexField = new TextFieldWidget(textRenderer, ax, y, aw, hexH, Text.literal(""));
+        editLifeHexField = new EditBox(font, ax, y, aw, hexH, Component.literal(""));
         editLifeHexField.setMaxLength(7);
-        editLifeHexField.setPlaceholder(Text.literal("#RRGGBB"));
-        editLifeHexField.setText(String.format("#%06X", editLifeColor & 0xFFFFFF));
-        editLifeHexField.setTextPredicate(str -> {
-            if (str == null) return true;
-            String t = str.trim();
-            if (t.isEmpty()) return true;
-            if (t.startsWith("0x") || t.startsWith("0X")) t = t.substring(2);
-            if (t.startsWith("#")) t = t.substring(1);
-            if (t.length() > 6) return false;
-            for (int i = 0; i < t.length(); i++) {
-                char c = t.charAt(i);
-                boolean ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-                if (!ok) return false;
-            }
-            return true;
-        });
-        editLifeHexField.setChangedListener(s -> onHexFieldChanged(editLifeHexField, false, s));
-        addDrawableChild(editLifeHexField);
+        editLifeHexField.setHint(Component.literal("#RRGGBB"));
+        editLifeHexField.setValue(String.format("#%06X", editLifeColor & 0xFFFFFF));
+        editLifeHexField.setResponder(s -> onHexFieldChanged(editLifeHexField, false, s));
+        addRenderableWidget(editLifeHexField);
 
-        editIconHexField = new TextFieldWidget(textRenderer, 0, 0, 0, 18, Text.literal(""));
+        editIconHexField = new EditBox(font, 0, 0, 0, 18, Component.literal(""));
         editIconHexField.setMaxLength(7);
-        editIconHexField.setPlaceholder(Text.literal("#RRGGBB"));
-        editIconHexField.setText(String.format("#%06X", editIconSwapColor & 0xFFFFFF));
-        editPlayerHexField.setTextPredicate(LifePointScreen::isHexPartialOrEmpty);
-        editLifeHexField.setTextPredicate(LifePointScreen::isHexPartialOrEmpty);
-        editIconHexField.setTextPredicate(LifePointScreen::isHexPartialOrEmpty);
-        editIconHexField.setChangedListener(s -> onIconHexFieldChanged(editIconHexField, s));
-        addDrawableChild(editIconHexField);
+        editIconHexField.setHint(Component.literal("#RRGGBB"));
+        editIconHexField.setValue(String.format("#%06X", editIconSwapColor & 0xFFFFFF));
+        editIconHexField.setResponder(s -> onIconHexFieldChanged(editIconHexField, s));
+        addRenderableWidget(editIconHexField);
 
         y += hexH + 6;
         editLifeBarRect = new Rect(ax, y, aw, barH);
@@ -1691,7 +1660,7 @@ public final class LifePointScreen extends Screen {
         return r != null && mx >= r.x && mx < r.x + r.w && my >= r.y && my < r.y + r.h;
     }
 
-    private void onIconHexFieldChanged(TextFieldWidget field, String raw) {
+    private void onIconHexFieldChanged(EditBox field, String raw) {
         if (settingHexProgrammatically) return;
         if (field == null) return;
 
@@ -1709,8 +1678,8 @@ public final class LifePointScreen extends Screen {
             }
             if (ok) {
                 settingHexProgrammatically = true;
-                field.setText("#" + s);
-                field.setCursorToEnd(false);
+                field.setValue("#" + s);
+                field.moveCursorToEnd(false);
                 settingHexProgrammatically = false;
                 return;
             }
@@ -1724,7 +1693,7 @@ public final class LifePointScreen extends Screen {
         ClientPlayNetworking.send(new LifePointPackets.SetIconSwapColorC2S(pos, editIconSwapColor));
     }
 
-    private void drawHudStrips(DrawContext ctx) {
+    private void drawHudStrips(GuiGraphics ctx) {
         int topY1 = Math.min(height, TOP_HUD_STRIP_H);
         ctx.fill(0, 0, width, topY1, HUD_STRIP_BG);
         ctx.fill(0, topY1 - 1, width, topY1, HUD_STRIP_LINE);
@@ -1734,7 +1703,7 @@ public final class LifePointScreen extends Screen {
         ctx.fill(0, botY0, width, botY0 + 1, HUD_STRIP_LINE);
     }
 
-    private void drawMiddleColumnPanels(DrawContext ctx) {
+    private void drawMiddleColumnPanels(GuiGraphics ctx) {
         if (midCols == null) return;
         for (Rect r : midCols) {
             if (r == null) continue;
@@ -1743,7 +1712,7 @@ public final class LifePointScreen extends Screen {
         }
     }
 
-    private void drawLifeHealthPanel(DrawContext ctx) {
+    private void drawLifeHealthPanel(GuiGraphics ctx) {
         if (tab != Tab.LIFE || lifeHealthPanel == null) return;
 
         int x = lifeHealthPanel.x;
@@ -1761,7 +1730,7 @@ public final class LifePointScreen extends Screen {
         ctx.fill(x + w - 1, y, x + w, y + h, edge);
     }
 
-    private void drawBigLifeBox(DrawContext ctx) {
+    private void drawBigLifeBox(GuiGraphics ctx) {
         if (tab != Tab.LIFE || valueField == null) return;
 
         int x = valueField.getX();
@@ -1775,22 +1744,22 @@ public final class LifePointScreen extends Screen {
         ctx.fill(x, y, x + 1, y + h, LIFE_BOX_EDGE);
         ctx.fill(x + w - 1, y, x + w, y + h, LIFE_BOX_EDGE);
 
-        String s = valueField.getText();
+        String s = valueField.getValue();
         if (s == null || s.isBlank()) s = "0";
 
         float scale = 2.0f;
-        int tw = textRenderer.getWidth(s);
-        int th = textRenderer.fontHeight;
+        int tw = font.width(s);
+        int th = font.lineHeight;
 
-        var m = ctx.getMatrices();
+        var m = ctx.pose();
         m.pushMatrix();
         m.translate(new Vector2f(x + (w / 2f), y + (h / 2f)));
         m.scale(new Vector2f(scale, scale));
-        ctx.drawTextWithShadow(textRenderer, Text.literal(s), (int)(-tw / 2f), (int)(-th / 2f), 0xFFFFFFFF);
+        ctx.text(font, Component.literal(s), (int)(-tw / 2f), (int)(-th / 2f), 0xFFFFFFFF);
         m.popMatrix();
     }
 
-    private void drawFlatRow(DrawContext ctx, Rect r, boolean selected, boolean hovered) {
+    private void drawFlatRow(GuiGraphics ctx, Rect r, boolean selected, boolean hovered) {
         int bg = selected ? 0xFF1B1B1B : (hovered ? 0xFF161616 : 0xFF141414);
         ctx.fill(r.x, r.y, r.x + r.w, r.y + r.h, bg);
         ctx.fill(r.x, r.y, r.x + r.w, r.y + 1, 0xFF2C2C2C);
@@ -1800,14 +1769,14 @@ public final class LifePointScreen extends Screen {
     private void cacheDims(Identifier id) {
         if (texDims.containsKey(id)) return;
         try {
-            var rm = MinecraftClient.getInstance().getResourceManager();
+            var rm = Minecraft.getInstance().getResourceManager();
             var resOpt = rm.getResource(id);
             if (resOpt.isEmpty()) {
                 texDims.put(id, new int[]{16,16});
                 return;
             }
-            try (var in = resOpt.get().getInputStream()) {
-                var img = net.minecraft.client.texture.NativeImage.read(in);
+            try (var in = resOpt.get().open()) {
+                var img = com.mojang.blaze3d.platform.NativeImage.read(in);
                 texDims.put(id, new int[]{img.getWidth(), img.getHeight()});
                 img.close();
             }
@@ -1818,7 +1787,7 @@ public final class LifePointScreen extends Screen {
     private int texW(Identifier id) { return texDims.getOrDefault(id, new int[]{16,16})[0]; }
     private int texH(Identifier id) { return texDims.getOrDefault(id, new int[]{16,16})[1]; }
 
-    private void drawIcon(DrawContext ctx, Identifier tex, int x, int y, int w, int h) {
+    private void drawIcon(GuiGraphics ctx, Identifier tex, int x, int y, int w, int h) {
         cacheDims(tex);
         int tw = texW(tex);
         int th = texH(tex);
@@ -1831,7 +1800,7 @@ public final class LifePointScreen extends Screen {
         int dx = x + (w - dw) / 2;
         int dy = y + (h - dh) / 2;
 
-        ctx.drawTexture(
+        ctx.blit(
                 RenderPipelines.GUI_TEXTURED,
                 tex,
                 dx, dy,
@@ -1854,15 +1823,15 @@ public final class LifePointScreen extends Screen {
         Identifier cached = iconIdCache.get(key);
         if (cached != null) return cached;
 
-        var rm = MinecraftClient.getInstance().getResourceManager();
+        var rm = Minecraft.getInstance().getResourceManager();
 
-        Identifier a = Identifier.of("mtgcard", "textures/gui/counters/" + key + ".png");
+        Identifier a = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/" + key + ".png");
         if (rm.getResource(a).isPresent()) { iconIdCache.put(key, a); return a; }
 
-        Identifier b = Identifier.of("mtgcard", "textures/gui/set_icons/" + key + ".png");
+        Identifier b = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/set_icons/" + key + ".png");
         if (rm.getResource(b).isPresent()) { iconIdCache.put(key, b); return b; }
 
-        Identifier none = Identifier.of("mtgcard", "textures/gui/counters/none.png");
+        Identifier none = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/none.png");
         iconIdCache.put(key, none);
         return none;
     }
@@ -1870,9 +1839,9 @@ public final class LifePointScreen extends Screen {
     private List<String> loadCounterIconKeys() {
         if (cachedCounterIcons != null) return cachedCounterIcons;
 
-        var rm = MinecraftClient.getInstance().getResourceManager();
-        var foundCounters = rm.findResources("textures/gui/counters", id -> id.getPath().endsWith(".png"));
-        var foundSets     = rm.findResources("textures/gui/set_icons", id -> id.getPath().endsWith(".png"));
+        var rm = Minecraft.getInstance().getResourceManager();
+        var foundCounters = rm.listResources("textures/gui/counters", id -> id.getPath().endsWith(".png"));
+        var foundSets     = rm.listResources("textures/gui/set_icons", id -> id.getPath().endsWith(".png"));
 
         LinkedHashSet<String> keys = new LinkedHashSet<>();
 
@@ -1913,7 +1882,7 @@ public final class LifePointScreen extends Screen {
     // LIFE tab: counters HUD grid
     // -------------------------------------------------------------------------
 
-    private void drawLifeCounterBox(DrawContext ctx, int x, int y, int size, Identifier icon, int value, boolean hovered) {
+    private void drawLifeCounterBox(GuiGraphics ctx, int x, int y, int size, Identifier icon, int value, boolean hovered) {
         int bg = hovered ? 0xFF1A1A1A : 0xFF101010;
         int edge = 0xFF3A3A3A;
 
@@ -1932,20 +1901,20 @@ public final class LifePointScreen extends Screen {
         drawIcon(ctx, icon, ix, iy, iconSize, iconSize);
 
         String s = Integer.toString(Math.max(0, value));
-        int tw = textRenderer.getWidth(s);
+        int tw = font.width(s);
         int tx = x + (size - tw) / 2;
         int ty = y + size - 14;
-        ctx.drawTextWithShadow(textRenderer, Text.literal(s), tx, ty, 0xFFFFFFFF);
+        ctx.text(font, Component.literal(s), tx, ty, 0xFFFFFFFF);
     }
 
-    private void drawLifeCountersHud(DrawContext ctx, int mouseX, int mouseY) {
+    private void drawLifeCountersHud(GuiGraphics ctx, int mouseX, int mouseY) {
         if (tab != Tab.LIFE || lifeCounterViewport == null) return;
 
         var st = LifePointClientState.get(pos);
-        var counters = st.getCompound("Counters").orElse(new NbtCompound());
-        var icons = st.getCompound("CounterIcons").orElse(new NbtCompound());
+        var counters = st.getCompound("Counters").orElse(new CompoundTag());
+        var icons = st.getCompound("CounterIcons").orElse(new CompoundTag());
 
-        List<String> keys = new ArrayList<>(counters.getKeys());
+        List<String> keys = new ArrayList<>(counters.keySet());
         keys.replaceAll(LifePointScreen::normalizeCounterKey);
         keys.removeIf(String::isBlank);
 
@@ -2022,7 +1991,7 @@ public final class LifePointScreen extends Screen {
     // COUNTERS tab draw
     // -------------------------------------------------------------------------
 
-    private void drawCountersList(DrawContext ctx, int mouseX, int mouseY) {
+    private void drawCountersList(GuiGraphics ctx, int mouseX, int mouseY) {
         if (countersListViewport == null) return;
 
         Rect vp = countersListViewport;
@@ -2036,8 +2005,8 @@ public final class LifePointScreen extends Screen {
         int rowH = 20;
 
         var st = LifePointClientState.get(pos);
-        var counters = st.getCompound("Counters").orElse(new NbtCompound());
-        var icons = st.getCompound("CounterIcons").orElse(new NbtCompound());
+        var counters = st.getCompound("Counters").orElse(new CompoundTag());
+        var icons = st.getCompound("CounterIcons").orElse(new CompoundTag());
 
         for (int i = 0; i < countersListKeys.size(); i++) {
             String k = countersListKeys.get(i);
@@ -2070,7 +2039,7 @@ public final class LifePointScreen extends Screen {
             drawIcon(ctx, tex, ix, iy, iconSz, iconSz);
 
             String label = (sel ? "▶ " : "  ") + k + "   " + v;
-            ctx.drawTextWithShadow(textRenderer, Text.literal(label), rx + 6 + iconSz + 6, y + 5, 0xFFFFFFFF);
+            ctx.text(font, Component.literal(label), rx + 6 + iconSz + 6, y + 5, 0xFFFFFFFF);
         }
 
         ctx.disableScissor();
@@ -2092,7 +2061,7 @@ public final class LifePointScreen extends Screen {
         drawScrollbar(ctx, ScrollId.COUNTERS_LIST, vp, countersListContentH, countersListScroll);
     }
 
-    private void drawCounterIconPreviewAndPicker(DrawContext ctx, int mouseX, int mouseY) {
+    private void drawCounterIconPreviewAndPicker(GuiGraphics ctx, int mouseX, int mouseY) {
         if (counterIconPreviewRect == null || counterIconPickerViewport == null) return;
 
         // Preview
@@ -2102,7 +2071,7 @@ public final class LifePointScreen extends Screen {
         ctx.fill(p.x, p.y + p.h - 1, p.x + p.w, p.y + p.h, 0xFF3A3A3A);
 
         var st = LifePointClientState.get(pos);
-        var icons = st.getCompound("CounterIcons").orElse(new NbtCompound());
+        var icons = st.getCompound("CounterIcons").orElse(new CompoundTag());
 
         String ck = normalizeCounterKey(counterKey);
         String iconKey;
@@ -2119,7 +2088,7 @@ public final class LifePointScreen extends Screen {
         int iy = p.y + (p.h - size) / 2;
         drawIcon(ctx, tex, ix, iy, size, size);
 
-        ctx.drawTextWithShadow(textRenderer, Text.literal("Selected: " + iconKey), ix + size + 10, p.y + (p.h / 2) - 4, 0xFFB0B0B0);
+        ctx.text(font, Component.literal("Selected: " + iconKey), ix + size + 10, p.y + (p.h / 2) - 4, 0xFFB0B0B0);
 
         // Picker grid
         Rect vp = counterIconPickerViewport;
@@ -2194,7 +2163,7 @@ public final class LifePointScreen extends Screen {
     // LIFE tab: other players list
     // -------------------------------------------------------------------------
 
-    private void drawOtherPlayersFlat(DrawContext ctx, int mouseX, int mouseY) {
+    private void drawOtherPlayersFlat(GuiGraphics ctx, int mouseX, int mouseY) {
         if (otherPlayersViewport == null) return;
 
         Rect vp = otherPlayersViewport;
@@ -2224,7 +2193,7 @@ public final class LifePointScreen extends Screen {
             if (nm == null || nm.isBlank()) nm = LifePointClientState.get(other).getString("DisplayName").orElse("");
             if (nm == null || nm.isBlank()) nm = shortPos(other);
 
-            ctx.drawTextWithShadow(textRenderer, Text.literal((sel ? "▶ " : "  ") + nm), r.x + 6, r.y + 5, 0xFFFFFFFF);
+            ctx.text(font, Component.literal((sel ? "▶ " : "  ") + nm), r.x + 6, r.y + 5, 0xFFFFFFFF);
         }
 
         ctx.disableScissor();
@@ -2234,7 +2203,7 @@ public final class LifePointScreen extends Screen {
     // PODS tab: left pods list draw + tooltip
     // -------------------------------------------------------------------------
 
-    private void drawPodsFlat(DrawContext ctx, int mouseX, int mouseY) {
+    private void drawPodsFlat(GuiGraphics ctx, int mouseX, int mouseY) {
         if (podsListViewport == null) return;
         podsListScrollVp = null;
 
@@ -2288,7 +2257,7 @@ public final class LifePointScreen extends Screen {
             if (name == null || name.isBlank()) name = "Pod";
 
             String label = (sel ? "▶ " : "  ") + name + "  (" + size + "/" + MAX_GROUP_MEMBERS + ")";
-            ctx.drawTextWithShadow(textRenderer, Text.literal(label), r.x + 6, r.y + 5, 0xFFFFFFFF);
+            ctx.text(font, Component.literal(label), r.x + 6, r.y + 5, 0xFFFFFFFF);
         }
 
         ctx.disableScissor();
@@ -2299,12 +2268,12 @@ public final class LifePointScreen extends Screen {
 
         boolean hov = mouseX >= cr.x && mouseX < cr.x + cr.w && mouseY >= cr.y && mouseY < cr.y + cr.h;
         drawFlatRow(ctx, cr, false, hov);
-        ctx.drawTextWithShadow(textRenderer, Text.literal("+ Create"), cr.x + 6, cr.y + 5, 0xFFFFFFFF);
+        ctx.text(font, Component.literal("+ Create"), cr.x + 6, cr.y + 5, 0xFFFFFFFF);
 
         drawScrollbar(ctx, ScrollId.PODS_LIST, podsListScrollVp, podsListContentH, podsListScroll);
     }
 
-    private void drawPodsTooltips(DrawContext ctx, int mouseX, int mouseY) {
+    private void drawPodsTooltips(GuiGraphics ctx, int mouseX, int mouseY) {
         if (lockedAvailRects.isEmpty()) return;
 
         for (var e : lockedAvailRects.values()) {
@@ -2314,11 +2283,11 @@ public final class LifePointScreen extends Screen {
             boolean hov = mouseX >= r.x && mouseX < r.x + r.w && mouseY >= r.y && mouseY < r.y + r.h;
             if (!hov) continue;
 
-            ctx.drawTooltip(
-                    textRenderer,
+            ctx.setComponentTooltipForNextFrame(
+                    font,
                     List.of(
-                            Text.literal("This block is already in pod: " + e.podName),
-                            Text.literal("Remove it from that pod to add it here.")
+                            Component.literal("This block is already in pod: " + e.podName),
+                            Component.literal("Remove it from that pod to add it here.")
                     ),
                     mouseX, mouseY
             );
@@ -2330,7 +2299,7 @@ public final class LifePointScreen extends Screen {
     // EDIT tab drawing
     // -------------------------------------------------------------------------
 
-    private void drawCheckbox(DrawContext ctx, Rect box, boolean checked, String label, int labelX, int labelY) {
+    private void drawCheckbox(GuiGraphics ctx, Rect box, boolean checked, String label, int labelX, int labelY) {
         int bg = 0xFF101010;
         int edge = 0xFF3A3A3A;
         ctx.fill(box.x, box.y, box.x + box.w, box.y + box.h, bg);
@@ -2343,11 +2312,11 @@ public final class LifePointScreen extends Screen {
             ctx.fill(box.x + 3, box.y + 3, box.x + box.w - 3, box.y + box.h - 3, 0xFF2E8B57);
         }
         if (!label.isEmpty()) {
-            ctx.drawTextWithShadow(textRenderer, Text.literal(label), labelX, labelY, 0xFFFFFFFF);
+            ctx.text(font, Component.literal(label), labelX, labelY, 0xFFFFFFFF);
         }
     }
 
-    private void drawColorSwatch(DrawContext ctx, Rect r, int rgb, String label) {
+    private void drawColorSwatch(GuiGraphics ctx, Rect r, int rgb, String label) {
         int bg = 0xFF101010;
         int edge = 0xFF3A3A8A; // subtle tint
         ctx.fill(r.x, r.y, r.x + r.w, r.y + r.h, bg);
@@ -2360,11 +2329,11 @@ public final class LifePointScreen extends Screen {
         ctx.fill(r.x + 6, r.y + 6, r.x + r.w - 6, r.y + r.h - 6, c);
 
         // draw label + hex INSIDE the swatch (prevents scissor clipping)
-        ctx.drawTextWithShadow(textRenderer, Text.literal(label), r.x + 6, r.y + 4, 0xFFB0B0B0);
-        ctx.drawTextWithShadow(textRenderer, Text.literal(toHex(rgb)), r.x + 6, r.y + r.h - 12, 0xFFB0B0B0);
+        ctx.text(font, Component.literal(label), r.x + 6, r.y + 4, 0xFFB0B0B0);
+        ctx.text(font, Component.literal(toHex(rgb)), r.x + 6, r.y + r.h - 12, 0xFFB0B0B0);
     }
 
-    private int drawPaletteTiles(DrawContext ctx, int x, int y, int w, boolean forPlayer) {
+    private int drawPaletteTiles(GuiGraphics ctx, int x, int y, int w, boolean forPlayer) {
         int tile = 18;
         int gap = 6;
 
@@ -2391,13 +2360,13 @@ public final class LifePointScreen extends Screen {
                 int col = 0xFF000000 | (p.rgb & 0xFFFFFF);
                 ctx.fill(rr.x, rr.y, rr.x + rr.w, rr.y + rr.h, 0xFF101010);
                 ctx.fill(rr.x + 2, rr.y + 2, rr.x + rr.w - 2, rr.y + rr.h - 2, col);
-                ctx.drawTextWithShadow(textRenderer, Text.literal(p.label), rr.x + 5, rr.y + 5, 0xFFFFFFFF);
+                ctx.text(font, Component.literal(p.label), rr.x + 5, rr.y + 5, 0xFFFFFFFF);
             }
         }
         return y + rows * tile + (rows - 1) * gap;
     }
 
-    private void drawEditPresets(DrawContext ctx, int mouseX, int mouseY) {
+    private void drawEditPresets(GuiGraphics ctx, int mouseX, int mouseY) {
         if (editPresetListVp == null) return;
 
         Rect vp = editPresetListVp;
@@ -2428,7 +2397,7 @@ public final class LifePointScreen extends Screen {
             boolean hov = mouseX >= rr.x && mouseX < rr.x + rr.w && mouseY >= rr.y && mouseY < rr.y + rr.h;
             drawFlatRow(ctx, rr, sel, hov);
 
-            ctx.drawTextWithShadow(textRenderer, Text.literal((sel ? "▶ " : "  ") + k), rr.x + 6, rr.y + 5, 0xFFFFFFFF);
+            ctx.text(font, Component.literal((sel ? "▶ " : "  ") + k), rr.x + 6, rr.y + 5, 0xFFFFFFFF);
         }
 
         ctx.disableScissor();
@@ -2456,9 +2425,9 @@ public final class LifePointScreen extends Screen {
             ctx.fill(cvp.x, cvp.y, cvp.x + cvp.w, cvp.y + 1, 0xFF3A3A3A);
 
             var st = LifePointClientState.get(pos);
-            var counters = st.getCompound("Counters").orElse(new NbtCompound());
+            var counters = st.getCompound("Counters").orElse(new CompoundTag());
 
-            List<String> ckeys = new ArrayList<>(counters.getKeys());
+            List<String> ckeys = new ArrayList<>(counters.keySet());
             ckeys.replaceAll(LifePointScreen::normalizeCounterKey);
             ckeys.removeIf(String::isBlank);
             ckeys.sort(String::compareToIgnoreCase);
@@ -2492,7 +2461,7 @@ public final class LifePointScreen extends Screen {
                 Rect small = new Rect(rr.x + 4, rr.y + 3, 12, 12);
                 drawCheckbox(ctx, small, checked, "", 0, 0);
 
-                ctx.drawTextWithShadow(textRenderer, Text.literal(k), rr.x + 22, rr.y + 5, 0xFFFFFFFF);
+                ctx.text(font, Component.literal(k), rr.x + 22, rr.y + 5, 0xFFFFFFFF);
             }
 
             ctx.disableScissor();
@@ -2501,7 +2470,7 @@ public final class LifePointScreen extends Screen {
     }
 
 
-    private void drawEditAppearance(DrawContext ctx, int mouseX, int mouseY) {
+    private void drawEditAppearance(GuiGraphics ctx, int mouseX, int mouseY) {
         if (editAppearanceVp == null) return;
 
         Rect vp = editAppearanceVp;
@@ -2527,13 +2496,13 @@ public final class LifePointScreen extends Screen {
         ctx.enableScissor(vp.x, vp.y, vp.x + vp.w, vp.y + vp.h);
 
         // ---- Player Color ----
-        ctx.drawTextWithShadow(textRenderer, Text.literal("Player Color"), innerX, y, 0xFFB0B0B0);
+        ctx.text(font, Component.literal("Player Color"), innerX, y, 0xFFB0B0B0);
         y += 14;
 
         y = drawPaletteTiles(ctx, innerX, y, innerW, true);
         y += 6;
 
-        ctx.drawTextWithShadow(textRenderer, Text.literal("Hex"), innerX, y, 0xFF707070);
+        ctx.text(font, Component.literal("Hex"), innerX, y, 0xFF707070);
         y += 14;
 
         // Move the player hex field to match scrolled layout
@@ -2562,13 +2531,13 @@ public final class LifePointScreen extends Screen {
         y += 14 + 12; // bar + spacing
 
         // ---- Life Color ----
-        ctx.drawTextWithShadow(textRenderer, Text.literal("Life Color"), innerX, y, 0xFFB0B0B0);
+        ctx.text(font, Component.literal("Life Color"), innerX, y, 0xFFB0B0B0);
         y += 14;
 
         y = drawPaletteTiles(ctx, innerX, y, innerW, false);
         y += 6;
 
-        ctx.drawTextWithShadow(textRenderer, Text.literal("Hex"), innerX, y, 0xFF707070);
+        ctx.text(font, Component.literal("Hex"), innerX, y, 0xFF707070);
         y += 14;
 
         // Move the life hex field to match scrolled layout
@@ -2596,7 +2565,7 @@ public final class LifePointScreen extends Screen {
         y += 14 + 10;
 
         // ---- Format ----
-        ctx.drawTextWithShadow(textRenderer, Text.literal("Format"), innerX, y, 0xFFB0B0B0);
+        ctx.text(font, Component.literal("Format"), innerX, y, 0xFFB0B0B0);
         y += 14;
 
         int gridCols = 2;
@@ -2616,14 +2585,14 @@ public final class LifePointScreen extends Screen {
             boolean hov = mouseX >= r.x && mouseX < r.x + r.w && mouseY >= r.y && mouseY < r.y + r.h;
 
             drawFlatRow(ctx, r, sel, hov);
-            ctx.drawTextWithShadow(textRenderer, Text.literal(fk), r.x + 6, r.y + 5, 0xFFFFFFFF);
+            ctx.text(font, Component.literal(fk), r.x + 6, r.y + 5, 0xFFFFFFFF);
         }
         y += (int) Math.ceil(FORMAT_KEYS.size() / 2.0) * (cellH + cellGap);
         y += 10;
 
         // ---- Icon Key ----
         // ---- Icon Key ----
-        ctx.drawTextWithShadow(textRenderer, Text.literal("Icon Key"), innerX, y, 0xFFB0B0B0);
+        ctx.text(font, Component.literal("Icon Key"), innerX, y, 0xFFB0B0B0);
         y += 14;
 
 // Preview row
@@ -2634,14 +2603,14 @@ public final class LifePointScreen extends Screen {
 
         Identifier tex = counterIconId(editIconKey);
         drawIconSwapped(ctx, tex, prev.x + 6, prev.y + 4, 20, 20);
-        ctx.drawTextWithShadow(textRenderer, Text.literal("Selected: " + editIconKey),
+        ctx.text(font, Component.literal("Selected: " + editIconKey),
                 prev.x + 30, prev.y + 10, 0xFFB0B0B0);
 
         // ✅ move y BELOW the preview block before drawing hex stuff
         y += prevH + 8;
 
         // Hex label + field below preview
-        ctx.drawTextWithShadow(textRenderer, Text.literal("Hex"), innerX, y, 0xFF707070);
+        ctx.text(font, Component.literal("Hex"), innerX, y, 0xFF707070);
         y += 14;
 
         if (editIconHexField != null) {
@@ -2722,7 +2691,7 @@ public final class LifePointScreen extends Screen {
         drawScrollbar(ctx, ScrollId.EDIT_APPEARANCE, vp, editAppearanceContentH, editAppearanceScroll);
     }
 
-    private void drawEditPreview(DrawContext ctx) {
+    private void drawEditPreview(GuiGraphics ctx) {
         if (editPreviewRect == null) return;
 
         // Shared layout solve (NO HEADER)
@@ -2757,20 +2726,20 @@ public final class LifePointScreen extends Screen {
         String s = Integer.toString(life);
         float scale = L.lifeScale();
 
-        int tw = textRenderer.getWidth(s);
-        int th = textRenderer.fontHeight;
+        int tw = font.width(s);
+        int th = font.lineHeight;
 
-        var m = ctx.getMatrices();
+        var m = ctx.pose();
         m.pushMatrix();
         m.translate(new org.joml.Vector2f(L.lifeCenterX(), L.lifeCenterY()));
         m.scale(new org.joml.Vector2f(scale, scale));
         int lifeCol = 0xFF000000 | (editLifeColor & 0xFFFFFF);
-        ctx.drawTextWithShadow(textRenderer, Text.literal(s), (int)(-tw / 2f), (int)(-th / 2f), lifeCol);
+        ctx.text(font, Component.literal(s), (int)(-tw / 2f), (int)(-th / 2f), lifeCol);
         m.popMatrix();
 
         // Name pinned near bottom (use name baseline from layout)
         int nameCol = 0xFF000000 | (editPlayerColor & 0xFFFFFF);
-        ctx.drawCenteredTextWithShadow(textRenderer, Text.literal(nm), panel.cx(), L.nameBaselineY(), nameCol);
+        ctx.drawCenteredString(font, Component.literal(nm), panel.cx(), L.nameBaselineY(), nameCol);
     }
 
 
@@ -2779,13 +2748,13 @@ public final class LifePointScreen extends Screen {
     // -------------------------------------------------------------------------
 
     private boolean isShiftDownNow() {
-        var win = MinecraftClient.getInstance().getWindow();
-        return InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_LEFT_SHIFT)
-                || InputUtil.isKeyPressed(win, GLFW.GLFW_KEY_RIGHT_SHIFT);
+        var win = Minecraft.getInstance().getWindow();
+        return InputConstants.isKeyDown(win, GLFW.GLFW_KEY_LEFT_SHIFT)
+                || InputConstants.isKeyDown(win, GLFW.GLFW_KEY_RIGHT_SHIFT);
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean doubleClick) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubleClick) {
         final double mouseX = click.x();
         final double mouseY = click.y();
         final int button = click.button();
@@ -2854,7 +2823,7 @@ public final class LifePointScreen extends Screen {
 
 
     @Override
-    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         if (draggingScroll != null && click.button() == 0) {
             Rect track = scrollTrackRects.get(draggingScroll);
             Rect vp = getViewportFor(draggingScroll);
@@ -2874,7 +2843,7 @@ public final class LifePointScreen extends Screen {
     }
 
     @Override
-    public boolean mouseReleased(Click click) {
+    public boolean mouseReleased(MouseButtonEvent click) {
         if (click.button() == 0) draggingScroll = null;
         return super.mouseReleased(click);
     }
@@ -2941,7 +2910,7 @@ public final class LifePointScreen extends Screen {
         // commander fields scroll
         if (tab == Tab.LIFE) {
             for (var e : cmdFieldToOther.entrySet()) {
-                TextFieldWidget w = e.getKey();
+                EditBox w = e.getKey();
                 if (w != null && w.isMouseOver(mouseX, mouseY)) {
                     BlockPos other = e.getValue();
                     int oldV = cmdCache.getOrDefault(other, 0);
@@ -2951,7 +2920,7 @@ public final class LifePointScreen extends Screen {
                         cmdCache.put(other, newV);
 
                         settingCmdProgrammatically = true;
-                        w.setText(Integer.toString(newV));
+                        w.setValue(Integer.toString(newV));
                         settingCmdProgrammatically = false;
 
                         applyCommanderLethalStyle(w, newV);
@@ -3019,7 +2988,7 @@ public final class LifePointScreen extends Screen {
                 boolean hover = mouseX >= r.x && mouseX < r.x + r.w && mouseY >= r.y && mouseY < r.y + r.h;
                 if (hover) {
                     var st = LifePointClientState.get(pos);
-                    var counters = st.getCompound("Counters").orElse(new NbtCompound());
+                    var counters = st.getCompound("Counters").orElse(new CompoundTag());
 
                     int oldV = counters.contains(k) ? counters.getInt(k).orElse(0) : 0;
                     int newV = Math.max(0, oldV + d);
@@ -3053,7 +3022,7 @@ public final class LifePointScreen extends Screen {
             if (tab == Tab.LIFE) ClientPlayNetworking.send(new LifePointPackets.AddLifeC2S(pos, d));
             else if (tab == Tab.COUNTERS) {
                 var st = LifePointClientState.get(pos);
-                var counters = st.getCompound("Counters").orElse(new NbtCompound());
+                var counters = st.getCompound("Counters").orElse(new CompoundTag());
 
                 int oldV = counters.contains(counterKey)
                         ? counters.getInt(counterKey).orElse(0)
@@ -3065,7 +3034,7 @@ public final class LifePointScreen extends Screen {
                     ClientPlayNetworking.send(
                             new LifePointPackets.SetCounterC2S(pos, counterKey, newV)
                     );
-                    if (valueField != null) valueField.setText(Integer.toString(newV));
+                    if (valueField != null) valueField.setValue(Integer.toString(newV));
                 }
                 return true;
             }
@@ -3128,14 +3097,14 @@ public final class LifePointScreen extends Screen {
         return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
     }
 
-    @Override public boolean shouldPause() { return false; }
+    @Override public boolean isPauseScreen() { return false; }
 
     // -------------------------------------------------------------------------
     // RENDER
     // -------------------------------------------------------------------------
 
     @Override
-    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
         // background
         ctx.fill(0, 0, width, height, 0xAA000000);
 
@@ -3166,7 +3135,7 @@ public final class LifePointScreen extends Screen {
         }
 
         // titles / overlays that should be behind widgets (optional)
-        ctx.drawCenteredTextWithShadow(textRenderer, Text.literal("Life Point Block"), uiX + uiW / 2, py(6), 0xFFFFFF);
+        ctx.drawCenteredString(font, Component.literal("Life Point Block"), uiX + uiW / 2, py(6), 0xFFFFFF);
 
         // ACTIVE PLAYER pulse (still behind widgets)
         UUID gid = LifePointClientState.getGroupIdFor(pos);
@@ -3192,9 +3161,9 @@ public final class LifePointScreen extends Screen {
                 int col = (0xFF << 24) | (r << 16) | (g << 8) | b;
 
                 if (lifeButtonsCenterX > 0 && lifeButtonsY > 0) {
-                    ctx.drawCenteredTextWithShadow(
-                            textRenderer,
-                            Text.literal("ACTIVE PLAYER"),
+                    ctx.drawCenteredString(
+                            font,
+                            Component.literal("ACTIVE PLAYER"),
                             lifeButtonsCenterX,
                             lifeButtonsY - 12,
                             col
@@ -3208,8 +3177,8 @@ public final class LifePointScreen extends Screen {
             int leftW = (width - 24 - 10 * 2) / 3;
             int availX = 12 + leftW + 10;
             int contentTop = 12 + 24 + 18 + 10;
-            ctx.drawTextWithShadow(textRenderer,
-                    Text.literal("Pod full (" + MAX_GROUP_MEMBERS + "/" + MAX_GROUP_MEMBERS + ")"),
+            ctx.text(font,
+                    Component.literal("Pod full (" + MAX_GROUP_MEMBERS + "/" + MAX_GROUP_MEMBERS + ")"),
                     availX + 10, contentTop + 110, 0xFFB0B0B0);
         }
 
@@ -3267,7 +3236,7 @@ public final class LifePointScreen extends Screen {
 
         if (groupNameField != null) {
             settingGroupNameProgrammatically = true;
-            groupNameField.setText(groupNameCurrent == null ? "" : groupNameCurrent);
+            groupNameField.setValue(groupNameCurrent == null ? "" : groupNameCurrent);
             settingGroupNameProgrammatically = false;
         }
         podsAutoScrollPending = true;
@@ -3301,7 +3270,7 @@ public final class LifePointScreen extends Screen {
         return String.format("#%06X", rgb);
     }
 
-    private void onHexFieldChanged(TextFieldWidget field, boolean forPlayer, String raw) {
+    private void onHexFieldChanged(EditBox field, boolean forPlayer, String raw) {
         if (settingHexProgrammatically) return;
         if (field == null) return;
 
@@ -3323,8 +3292,8 @@ public final class LifePointScreen extends Screen {
             }
             if (ok) {
                 settingHexProgrammatically = true;
-                field.setText("#" + s);
-                field.setCursorToEnd(false);
+                field.setValue("#" + s);
+                field.moveCursorToEnd(false);
                 settingHexProgrammatically = false;
                 return; // wait for next change event
             }
@@ -3372,12 +3341,12 @@ public final class LifePointScreen extends Screen {
     // Confirm Delete Screen
     // -------------------------------------------------------------------------
 
-    private static final class ConfirmDeleteGroupScreen extends Screen {
+    private static final class ConfirmDeleteGroupScreen extends LegacyScreen {
         private final LifePointScreen parent;
         private final UUID groupId;
 
         protected ConfirmDeleteGroupScreen(LifePointScreen parent, UUID groupId) {
-            super(Text.literal("Delete Pod?"));
+            super(Component.literal("Delete Pod?"));
             this.parent = parent;
             this.groupId = groupId;
         }
@@ -3387,9 +3356,9 @@ public final class LifePointScreen extends Screen {
             int cx = width / 2;
             int y = height / 2 - 10;
 
-            addDrawableChild(ButtonWidget.builder(Text.literal("Confirm"), b -> {
+            addRenderableWidget(Button.builder(Component.literal("Confirm"), b -> {
                 ClientPlayNetworking.send(new LifePointPackets.DeleteGroupC2S(groupId));
-                MinecraftClient.getInstance().setScreen(parent);
+                Minecraft.getInstance().setScreen(parent);
 
                 parent.selectedGroupId = null;
                 parent.groupDirty = false;
@@ -3397,27 +3366,27 @@ public final class LifePointScreen extends Screen {
                 parent.orderedMembers.clear();
                 parent.scanRequested = false;
                 parent.refresh();
-            }).dimensions(cx - 90, y, 80, 20).build());
+            }).bounds(cx - 90, y, 80, 20).build());
 
-            addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), b -> {
-                MinecraftClient.getInstance().setScreen(parent);
+            addRenderableWidget(Button.builder(Component.literal("Cancel"), b -> {
+                Minecraft.getInstance().setScreen(parent);
                 parent.refresh();
-            }).dimensions(cx + 10, y, 80, 20).build());
+            }).bounds(cx + 10, y, 80, 20).build());
         }
 
-        @Override public boolean shouldPause() { return false; }
+        @Override public boolean isPauseScreen() { return false; }
 
         @Override
-        public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+        public void render(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
             ctx.fill(0, 0, width, height, 0xCC000000);
             super.render(ctx, mouseX, mouseY, delta);
 
             int cx = width / 2;
-            ctx.drawCenteredTextWithShadow(textRenderer, Text.literal("Delete this pod?"), cx, height / 2 - 40, 0xFFFFFFFF);
+            ctx.drawCenteredString(font, Component.literal("Delete this pod?"), cx, height / 2 - 40, 0xFFFFFFFF);
         }
     }
 
-    private boolean mouseClickedAfterScrollbars(Click click, boolean doubleClick) {
+    private boolean mouseClickedAfterScrollbars(MouseButtonEvent click, boolean doubleClick) {
         double mouseX = click.x();
         double mouseY = click.y();
         int button = click.button();
@@ -3510,7 +3479,7 @@ public final class LifePointScreen extends Screen {
                 for (var e : editPresetRowRects.entrySet()) {
                     if (ptIn(e.getValue(), mouseX, mouseY)) {
                         selectedPresetKey = e.getKey();
-                        if (editPresetNameField != null) editPresetNameField.setText(selectedPresetKey);
+                        if (editPresetNameField != null) editPresetNameField.setValue(selectedPresetKey);
                         return true;
                     }
                 }
@@ -3557,8 +3526,8 @@ public final class LifePointScreen extends Screen {
                     ClientPlayNetworking.send(new LifePointPackets.SetPlayerColorC2S(pos, editPlayerColor));
                     if (editPlayerHexField != null) {
                         settingHexProgrammatically = true;
-                        editPlayerHexField.setText(String.format("#%06X", editPlayerColor & 0xFFFFFF));
-                        editPlayerHexField.setCursorToEnd(false);
+                        editPlayerHexField.setValue(String.format("#%06X", editPlayerColor & 0xFFFFFF));
+                        editPlayerHexField.moveCursorToEnd(false);
                         settingHexProgrammatically = false;
                     }
                     return true;
@@ -3572,8 +3541,8 @@ public final class LifePointScreen extends Screen {
                     ClientPlayNetworking.send(new LifePointPackets.SetColorC2S(pos, editLifeColor));
                     if (editLifeHexField != null) {
                         settingHexProgrammatically = true;
-                        editLifeHexField.setText(String.format("#%06X", editLifeColor & 0xFFFFFF));
-                        editLifeHexField.setCursorToEnd(false);
+                        editLifeHexField.setValue(String.format("#%06X", editLifeColor & 0xFFFFFF));
+                        editLifeHexField.moveCursorToEnd(false);
                         settingHexProgrammatically = false;
                     }
                     return true;
@@ -3604,13 +3573,13 @@ public final class LifePointScreen extends Screen {
             boolean focused = (this.getFocused() == editPlayerHexField);
             if (playerHexWasFocused && !focused) {
                 // lost focus: normalize to "#RRGGBB" based on current color (or parsed value if valid)
-                String t = editPlayerHexField.getText();
+                String t = editPlayerHexField.getValue();
                 int v = parseHexColorOrNeg(t);
                 if (v < 0) v = editPlayerColor & 0xFFFFFF;
 
                 settingHexProgrammatically = true;
-                editPlayerHexField.setText(String.format("#%06X", v));
-                editPlayerHexField.setCursorToEnd(false);
+                editPlayerHexField.setValue(String.format("#%06X", v));
+                editPlayerHexField.moveCursorToEnd(false);
                 settingHexProgrammatically = false;
 
                 // ensure state + packet (optional but keeps it consistent)
@@ -3626,13 +3595,13 @@ public final class LifePointScreen extends Screen {
         if (editLifeHexField != null) {
             boolean focused = (this.getFocused() == editLifeHexField);
             if (lifeHexWasFocused && !focused) {
-                String t = editLifeHexField.getText();
+                String t = editLifeHexField.getValue();
                 int v = parseHexColorOrNeg(t);
                 if (v < 0) v = editLifeColor & 0xFFFFFF;
 
                 settingHexProgrammatically = true;
-                editLifeHexField.setText(String.format("#%06X", v));
-                editLifeHexField.setCursorToEnd(false);
+                editLifeHexField.setValue(String.format("#%06X", v));
+                editLifeHexField.moveCursorToEnd(false);
                 settingHexProgrammatically = false;
 
                 if ((editLifeColor & 0xFFFFFF) != v) {
@@ -3646,13 +3615,13 @@ public final class LifePointScreen extends Screen {
         if (editIconHexField != null) {
             boolean focused = (this.getFocused() == editIconHexField);
             if (iconHexWasFocused && !focused) {
-                String t = editIconHexField.getText();
+                String t = editIconHexField.getValue();
                 int v = parseHexColorOrNeg(t);
                 if (v < 0) v = editIconSwapColor & 0xFFFFFF;
 
                 settingHexProgrammatically = true;
-                editIconHexField.setText(String.format("#%06X", v));
-                editIconHexField.setCursorToEnd(false);
+                editIconHexField.setValue(String.format("#%06X", v));
+                editIconHexField.moveCursorToEnd(false);
                 settingHexProgrammatically = false;
 
                 if ((editIconSwapColor & 0xFFFFFF) != v) {
@@ -3666,10 +3635,11 @@ public final class LifePointScreen extends Screen {
 
 
     public void refresh(){
-        if (this.getFocused() instanceof TextFieldWidget) {
+        if (this.getFocused() instanceof EditBox) {
             return;
         }
         this.init();
     }
     public BlockPos getPos() { return pos; }
 }
+

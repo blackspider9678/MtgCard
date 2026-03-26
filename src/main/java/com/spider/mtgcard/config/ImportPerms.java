@@ -1,13 +1,13 @@
 package com.spider.mtgcard.config;
 
 import com.spider.mtgcard.config.MtgcardConfig;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.level.ServerPlayer;
 
 import java.util.Locale;
 
 public final class ImportPerms {
 
-    public static boolean canImport(ServerPlayerEntity player) {
+    public static boolean canImport(ServerPlayer player) {
         if (player == null) return false;
 
         MtgcardConfig cfg = MtgcardConfig.get();

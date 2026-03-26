@@ -2,11 +2,11 @@ package com.spider.mtgcard.client.displayblock;
 
 import com.spider.mtgcard.displayblock.DisplayBlock;
 import com.spider.mtgcard.displayblock.DisplayBlockEntity;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.world.World;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.resources.Identifier;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayDeque;
@@ -21,10 +21,10 @@ public final class DisplayScreenBoundsCache {
      * the BE's current link as the "screen identity".
      */
     public static Bounds computeBoundsFacingOnly(DisplayBlockEntity be, Direction facing) {
-        World world = be.getWorld();
-        BlockPos start = be.getPos();
+        Level world = be.getLevel();
+        BlockPos start = be.getBlockPos();
 
-        if (world == null || !world.isClient()) {
+        if (world == null || !world.isClientSide()) {
             return new Bounds(start.getX(), start.getY(), start.getZ(), start.getX(), start.getY(), start.getZ());
         }
 
@@ -47,10 +47,10 @@ public final class DisplayScreenBoundsCache {
      */
     public static Bounds computeBoundsFacingAndLink(DisplayBlockEntity be, Direction facing,
                                                     Identifier linkedDim, BlockPos linkedLifePos) {
-        World world = be.getWorld();
-        BlockPos start = be.getPos();
+        Level world = be.getLevel();
+        BlockPos start = be.getBlockPos();
 
-        if (world == null || !world.isClient()) {
+        if (world == null || !world.isClientSide()) {
             return new Bounds(start.getX(), start.getY(), start.getZ(), start.getX(), start.getY(), start.getZ());
         }
 
@@ -80,7 +80,7 @@ public final class DisplayScreenBoundsCache {
             BlockPos cur = q.removeFirst();
 
             for (Direction d : neighbors) {
-                BlockPos np = cur.offset(d);
+                BlockPos np = cur.relative(d);
                 if (visited.contains(np)) continue;
 
                 if (!isDisplayTileSameLink(world, np, facing, linkedDim, linkedLifePos)) continue;
@@ -111,11 +111,11 @@ public final class DisplayScreenBoundsCache {
         return new Bounds(minX, minY, minZ, maxX, maxY, maxZ);
     }
 
-    private static boolean isDisplayTileSameLink(World world, BlockPos pos, Direction facing,
+    private static boolean isDisplayTileSameLink(Level world, BlockPos pos, Direction facing,
                                                  @Nullable Identifier linkedDim, @Nullable BlockPos linkedLifePos) {
         var st = world.getBlockState(pos);
         if (!(st.getBlock() instanceof DisplayBlock)) return false;
-        if (st.get(DisplayBlock.FACING) != facing) return false;
+        if (st.getValue(DisplayBlock.FACING) != facing) return false;
 
         BlockEntity be = world.getBlockEntity(pos);
         if (!(be instanceof DisplayBlockEntity dbe)) return false;

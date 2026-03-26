@@ -1,9 +1,9 @@
 // com/spider/mtgcard/db/search/CardMeta.java
 package com.spider.mtgcard.db.search;
 
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtList;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 
 import java.util.HashSet;
 import java.util.Locale;
@@ -27,8 +27,8 @@ public final class CardMeta {
         if (st == null || st.isEmpty()) return empty();
 
         // Your helper already normalizes CUSTOM_DATA:
-        NbtCompound root = com.spider.mtgcard.util.StackData.readCustom(st);
-        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+        CompoundTag root = com.spider.mtgcard.util.StackData.readCustom(st);
+        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
 
         String name  = meta.getString("name").orElse("");
         String set   = meta.getString("set").orElse("");
@@ -50,7 +50,7 @@ public final class CardMeta {
         return new Info(name, set, rar, mv, colors, ci, type, text, foil, token);
     }
 
-    private static Set<Character> readColorList(NbtList lst) {
+    private static Set<Character> readColorList(ListTag lst) {
         Set<Character> out = new HashSet<>();
         if (lst == null) return out;
         for (int i = 0; i < lst.size(); i++) {
@@ -63,7 +63,7 @@ public final class CardMeta {
         return out;
     }
 
-    private static String firstFace(NbtCompound meta, String key) {
+    private static String firstFace(CompoundTag meta, String key) {
         var facesOpt = meta.getList("card_faces");
         if (facesOpt.isEmpty()) return "";
         var faces = facesOpt.get();

@@ -2,34 +2,34 @@ package com.spider.mtgcard;
 
 import com.spider.mtgcard.registry.ModBlocks;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
-import net.minecraft.screen.NamedScreenHandlerFactory;
-import net.minecraft.util.ActionResult;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.InteractionResult;
 
 public final class ModEvents {
     public static void register() {
         UseBlockCallback.EVENT.register((player, world, hand, hit) -> {
-            if (hit == null) return ActionResult.PASS; // just in case
+            if (hit == null) return InteractionResult.PASS; // just in case
 
             var pos = hit.getBlockPos();
             var state = world.getBlockState(pos);
 
             // Only react to our block
-            if (!state.isOf(ModBlocks.CARD_DB)) return ActionResult.PASS;
+            if (!state.is(ModBlocks.CARD_DB)) return InteractionResult.PASS;
 
-            if (world.isClient()) {
+            if (world.isClientSide()) {
                 // Let the hand animation play; server will actually open the screen
-                return ActionResult.SUCCESS;
+                return InteractionResult.SUCCESS;
             }
 
             // Server: open the screen using the factory provided by the block state
-            NamedScreenHandlerFactory factory = state.createScreenHandlerFactory(world, pos);
+            MenuProvider factory = state.getMenuProvider(world, pos);
             if (factory != null) {
-                player.openHandledScreen(factory);
+                player.openMenu(factory);
                 // Tell Fabric/Minecraft the interaction was fully handled
-                return ActionResult.CONSUME;
+                return InteractionResult.CONSUME;
             }
 
-            return ActionResult.PASS;
+            return InteractionResult.PASS;
         });
     }
 }

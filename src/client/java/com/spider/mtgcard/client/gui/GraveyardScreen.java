@@ -1,27 +1,27 @@
 package com.spider.mtgcard.client.gui;
 
+import com.spider.mtgcard.client.compat.LegacyContainerScreen;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.graveyard.GraveyardScreenHandler;
 import com.spider.mtgcard.net.payload.GraveyardActionPayload;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.text.Text;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.network.chat.Component;
 
 import java.util.List;
 
 import static com.spider.mtgcard.graveyard.GraveyardScreenHandler.TEX;
 
-public class GraveyardScreen extends HandledScreen<GraveyardScreenHandler> {
+public class GraveyardScreen extends LegacyContainerScreen<GraveyardScreenHandler> {
 
-    private ButtonWidget exileAllBtn;
-    private ButtonWidget returnAllBtn;
+    private Button exileAllBtn;
+    private Button returnAllBtn;
 
     // must match your handler: 0..99 graveyard, 100..199 exile
     private static final int GRID_SIZE = 100;
@@ -45,14 +45,14 @@ public class GraveyardScreen extends HandledScreen<GraveyardScreenHandler> {
 
 
 
-    public GraveyardScreen(GraveyardScreenHandler handler, PlayerInventory inv, Text title) {
+    public GraveyardScreen(GraveyardScreenHandler handler, Inventory inv, Component title) {
         super(handler, inv, title);
 
         int baseW = 8 + (10 * 18) + 18 + (10 * 18) + 8;   // 394
         int baseH = 24 + (10 * 18) + 22 + (4 * 18) + 12;
 
-        this.backgroundWidth = baseW;        // ✅ main UI only
-        this.backgroundHeight = baseH;
+        this.imageWidth = baseW;        // ✅ main UI only
+        this.imageHeight = baseH;
     }
 
     @Override
@@ -60,39 +60,39 @@ public class GraveyardScreen extends HandledScreen<GraveyardScreenHandler> {
         super.init();
 
         // ✅ Force center (HandledScreen usually does this, but we want it locked)
-        this.x = (this.width - this.backgroundWidth) / 2;
-        this.y = (this.height - this.backgroundHeight) / 2;
+        this.leftPos = (this.width - this.imageWidth) / 2;
+        this.topPos = (this.height - this.imageHeight) / 2;
 
         int colW = 10 * 18;
 
-        int graveColX = this.x + 28;
-        int exileColX = this.x + 220;
+        int graveColX = this.leftPos + 28;
+        int exileColX = this.leftPos + 220;
 
 
         // ✅ center buttons inside each 10-wide column
         int exileBtnX  = graveColX + (colW - 70) / 2;
         int returnBtnX = exileColX + (colW - 78) / 2;
 
-        int btnY = this.y + 6;
+        int btnY = this.topPos + 6;
 
-        exileAllBtn = addDrawableChild(ButtonWidget.builder(Text.literal("Exile All"), b -> {
+        exileAllBtn = addRenderableWidget(Button.builder(Component.literal("Exile All"), b -> {
             ClientPlayNetworking.send(new GraveyardActionPayload(
-                    this.handler.pos, this.handler.syncId, GraveyardActionPayload.Action.EXILE_ALL
+                    this.menu.pos, this.menu.containerId, GraveyardActionPayload.Action.EXILE_ALL
             ));
-        }).dimensions(exileBtnX, btnY, 70, 16).build());
+        }).bounds(exileBtnX, btnY, 70, 16).build());
 
-        returnAllBtn = addDrawableChild(ButtonWidget.builder(Text.literal("Return All"), b -> {
+        returnAllBtn = addRenderableWidget(Button.builder(Component.literal("Return All"), b -> {
             ClientPlayNetworking.send(new GraveyardActionPayload(
-                    this.handler.pos, this.handler.syncId, GraveyardActionPayload.Action.RETURN_ALL
+                    this.menu.pos, this.menu.containerId, GraveyardActionPayload.Action.RETURN_ALL
             ));
-        }).dimensions(returnBtnX, btnY, 78, 16).build());
+        }).bounds(returnBtnX, btnY, 78, 16).build());
 
         updateButtonStates();
     }
 
     @Override
-    protected void handledScreenTick() {
-        super.handledScreenTick();
+    protected void containerTick() {
+        super.containerTick();
         updateButtonStates();
     }
 
@@ -106,87 +106,87 @@ public class GraveyardScreen extends HandledScreen<GraveyardScreenHandler> {
 
     /** Checks the first 200 handler slots (your block inventory slots) for any stack in a range. */
     private boolean hasAnyInBlockRange(int start, int count) {
-        int end = Math.min(start + count, this.handler.slots.size());
+        int end = Math.min(start + count, this.menu.slots.size());
         for (int i = start; i < end; i++) {
-            if (this.handler.getSlot(i).hasStack()) return true;
+            if (this.menu.getSlot(i).hasItem()) return true;
         }
         return false;
     }
 
     @Override
-    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
         this.renderBackground(ctx, mouseX, mouseY, delta);
         super.render(ctx, mouseX, mouseY, delta);
-        this.drawMouseoverTooltip(ctx, mouseX, mouseY);
+        this.renderTooltip(ctx, mouseX, mouseY);
 
         renderHoverPreview(ctx, mouseX, mouseY, delta);
     }
 
     @Override
-    protected void drawBackground(DrawContext ctx, float delta, int mouseX, int mouseY) {
+    protected void renderBg(GuiGraphics ctx, float delta, int mouseX, int mouseY) {
         // draw full background texture (assumes texture is 512x512)
-        ctx.drawTexture(
+        ctx.blit(
                 RenderPipelines.GUI_TEXTURED,
                 TEX,
-                this.x, this.y,          // screen position
+                this.leftPos, this.topPos,          // screen position
                 0, 0,                    // texture u,v
-                this.backgroundWidth,    // draw width
-                this.backgroundHeight,   // draw height
+                this.imageWidth,    // draw width
+                this.imageHeight,   // draw height
                 512, 512                 // texture size
         );
 
         int colW = 10 * 18;
 
-        int headerY = this.y + 6;
-        ctx.drawTextWithShadow(textRenderer, Text.literal("Graveyard"), this.x + 8, headerY, 0xFFFFFFFF);
-        ctx.drawTextWithShadow(textRenderer, Text.literal("Exile"), this.x + 8 + colW + 18, headerY, 0xFFFFFFFF);
+        int headerY = this.topPos + 6;
+        ctx.drawString(font, Component.literal("Graveyard"), this.leftPos + 8, headerY, 0xFFFFFFFF);
+        ctx.drawString(font, Component.literal("Exile"), this.leftPos + 8 + colW + 18, headerY, 0xFFFFFFFF);
     }
 
 
     private boolean isMouseOverSlotArea(Slot slot, int mouseX, int mouseY) {
-        int sx = this.x + slot.x;
-        int sy = this.y + slot.y;
+        int sx = this.leftPos + slot.x;
+        int sy = this.topPos + slot.y;
         return mouseX >= sx && mouseX < sx + 16 && mouseY >= sy && mouseY < sy + 16;
     }
 
     private static int readFaceIndex(ItemStack st) {
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        var root = (comp == null) ? new net.minecraft.nbt.NbtCompound() : comp.copyNbt();
-        var meta = root.getCompound("mtg_meta").orElseGet(net.minecraft.nbt.NbtCompound::new);
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        var root = (comp == null) ? new net.minecraft.nbt.CompoundTag() : comp.copyTag();
+        var meta = root.getCompound("mtg_meta").orElseGet(net.minecraft.nbt.CompoundTag::new);
         return meta.getInt("mtg_face").orElse(0);
     }
 
     private boolean isFoil(ItemStack st) {
-        Boolean glint = st.get(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE);
+        Boolean glint = st.get(DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
         boolean hasGlint = glint != null && glint;
-        var comp = st.get(DataComponentTypes.CUSTOM_DATA);
-        var root = (comp == null) ? new net.minecraft.nbt.NbtCompound() : comp.copyNbt();
+        var comp = st.get(DataComponents.CUSTOM_DATA);
+        var root = (comp == null) ? new net.minecraft.nbt.CompoundTag() : comp.copyTag();
         boolean foilNbt = root.getBoolean("mtg_foil").orElse(false);
         return hasGlint || foilNbt;
     }
     @Override
-    protected void drawForeground(DrawContext ctx, int mouseX, int mouseY) {
+    protected void renderLabels(GuiGraphics ctx, int mouseX, int mouseY) {
         // intentionally empty; we draw headers in drawBackground
     }
 
 
-    private void renderHoverPreview(DrawContext ctx, int mouseX, int mouseY, float delta) {
-        var slot = this.focusedSlot;
-        if (slot == null || !slot.hasStack() || !isMouseOverSlotArea(slot, mouseX, mouseY)) {
+    private void renderHoverPreview(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
+        var slot = this.hoveredSlot;
+        if (slot == null || !slot.hasItem() || !isMouseOverSlotArea(slot, mouseX, mouseY)) {
             lastHoverStack = ItemStack.EMPTY;
             lastTexRef = null;
             return;
         }
 
-        ItemStack st = slot.getStack();
-        if (!st.isOf(com.spider.mtgcard.item.ModItems.CARD)) {
+        ItemStack st = slot.getItem();
+        if (!st.is(com.spider.mtgcard.item.ModItems.CARD)) {
             lastHoverStack = ItemStack.EMPTY;
             lastTexRef = null;
             return;
         }
 
         long now = System.currentTimeMillis();
-        if (!ItemStack.areEqual(st, lastHoverStack)) {
+        if (!ItemStack.matches(st, lastHoverStack)) {
             hoverSinceMs = now;
             lastHoverStack = st.copy();
             lastTexRef = null;
@@ -205,16 +205,16 @@ public class GraveyardScreen extends HandledScreen<GraveyardScreenHandler> {
         if (ref == null || ref.id() == null) return;
         lastTexRef = ref;
 
-        final int panelMaxH = Math.min(this.backgroundHeight - 8, 220);
+        final int panelMaxH = Math.min(this.imageHeight - 8, 220);
         final int panelMaxW = 180;
 
         int panelW = panelMaxW;
         int panelH = panelMaxH;
 
         // ✅ ONLY change from Deckbox: prefer right side first, fallback left
-        int panelX = this.x + this.backgroundWidth + 12;
-        int panelY = this.y + 4;
-        if (panelX + panelW > this.width - 8) panelX = this.x - (panelW + 12);
+        int panelX = this.leftPos + this.imageWidth + 12;
+        int panelY = this.topPos + 4;
+        if (panelX + panelW > this.width - 8) panelX = this.leftPos - (panelW + 12);
 
         final int texW = ref.texW();
         final int texH = ref.texH();
@@ -244,7 +244,7 @@ public class GraveyardScreen extends HandledScreen<GraveyardScreenHandler> {
         float sx = (float) drawW / (float) texW;
         float sy = (float) drawH / (float) texH;
 
-        var m = ctx.getMatrices();
+        var m = ctx.pose();
         float m00 = m.m00(), m01 = m.m01();
         float m10 = m.m10(), m11 = m.m11();
         float m20 = m.m20(), m21 = m.m21();
@@ -257,7 +257,7 @@ public class GraveyardScreen extends HandledScreen<GraveyardScreenHandler> {
         m.translate(-texW / 2f, -texH / 2f);
         m.translate(2f, 3f);
 
-        ctx.drawTexture(RenderPipelines.GUI_TEXTURED, ref.id(),
+        ctx.blit(RenderPipelines.GUI_TEXTURED, ref.id(),
                 0, 0, 0f, 0f, texW, texH, texW, texH, colorShadow);
 
         m.set(m00, m01, m10, m11, m20, m21);
@@ -269,7 +269,7 @@ public class GraveyardScreen extends HandledScreen<GraveyardScreenHandler> {
         m.rotate((float) Math.toRadians(angleDeg));
         m.translate(-texW / 2f, -texH / 2f);
 
-        ctx.drawTexture(RenderPipelines.GUI_TEXTURED, ref.id(),
+        ctx.blit(RenderPipelines.GUI_TEXTURED, ref.id(),
                 0, 0, 0f, 0f, texW, texH, texW, texH, colorMain);
 
         // foil shimmer
@@ -294,7 +294,7 @@ public class GraveyardScreen extends HandledScreen<GraveyardScreenHandler> {
                 int shimmerAlpha = (int) (0x88 + 0x2A * ease);
                 int colorShimmer = (shimmerAlpha << 24) | 0x00FFFFFF;
 
-                ctx.drawTexture(RenderPipelines.GUI_TEXTURED, ref.id(),
+                ctx.blit(RenderPipelines.GUI_TEXTURED, ref.id(),
                         drawU, 0, (float) drawU, 0f,
                         clipW, texH,
                         texW, texH,

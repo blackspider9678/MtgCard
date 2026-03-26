@@ -1,8 +1,8 @@
 // src/main/java/com/spider/mtgcard/shared/CardArtCommon.java
 package com.spider.mtgcard.shared;
 
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtList;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -11,7 +11,7 @@ import java.util.Optional;
 
 public final class CardArtCommon {
 
-    public static String computeArtKey(NbtCompound meta, int faceIndex) {
+    public static String computeArtKey(CompoundTag meta, int faceIndex) {
         String scryId = meta.getString("scryfall_id").orElse("");
         if (scryId.isEmpty()) scryId = meta.getString("id").orElse("");
         if (!scryId.isEmpty()) return scryId + "_f" + faceIndex;
@@ -22,15 +22,15 @@ public final class CardArtCommon {
         return sha1(stripQuery(url)) + "_f" + faceIndex;
     }
 
-    public static String extractImageUrl(NbtCompound meta, int faceIndex) {
-        Optional<NbtList> facesOpt = meta.getList("card_faces");
+    public static String extractImageUrl(CompoundTag meta, int faceIndex) {
+        Optional<ListTag> facesOpt = meta.getList("card_faces");
         if (facesOpt.isPresent() && !facesOpt.get().isEmpty()) {
             int idx = Math.max(0, Math.min(faceIndex, facesOpt.get().size() - 1));
-            Optional<NbtCompound> face0 = facesOpt.get().getCompound(idx);
+            Optional<CompoundTag> face0 = facesOpt.get().getCompound(idx);
             if (face0.isPresent()) {
                 String direct = face0.get().getString("image_png").orElse("");
                 if (!direct.isEmpty()) return direct;
-                Optional<NbtCompound> uris = face0.get().getCompound("image_uris");
+                Optional<CompoundTag> uris = face0.get().getCompound("image_uris");
                 if (uris.isPresent()) {
                     String u = choose(uris.get());
                     if (!u.isEmpty()) return u;
@@ -39,12 +39,12 @@ public final class CardArtCommon {
         }
         String directRoot = meta.getString("image_png").orElse("");
         if (!directRoot.isEmpty()) return directRoot;
-        Optional<NbtCompound> urisRoot = meta.getCompound("image_uris");
+        Optional<CompoundTag> urisRoot = meta.getCompound("image_uris");
         if (urisRoot.isPresent()) return choose(urisRoot.get());
         return "";
     }
 
-    private static String choose(NbtCompound uris) {
+    private static String choose(CompoundTag uris) {
         String png   = uris.getString("png").orElse("");
         if (!png.isEmpty()) return png;
         String large = uris.getString("large").orElse("");

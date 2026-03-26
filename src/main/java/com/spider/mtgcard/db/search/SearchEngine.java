@@ -1,8 +1,8 @@
 package com.spider.mtgcard.db.search;
 
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtList;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 
 import java.util.*;
 import java.util.function.Predicate;
@@ -80,9 +80,9 @@ public final class SearchEngine {
 
     /* ------------ Row extraction from NBT (matches CardNBTUtil) ------------- */
     public static Row toRow(ItemStack st) {
-        var comp = st.getOrDefault(net.minecraft.component.DataComponentTypes.CUSTOM_DATA, null);
-        NbtCompound root = (comp == null) ? new NbtCompound() : comp.copyNbt();
-        NbtCompound meta = root.getCompound("mtg_meta").orElseGet(NbtCompound::new);
+        var comp = st.getOrDefault(net.minecraft.core.component.DataComponents.CUSTOM_DATA, null);
+        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
+        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
 
         String name = meta.getString("name").orElse("");
         String set  = meta.getString("set").orElse("");
@@ -127,7 +127,7 @@ public final class SearchEngine {
 
     }
 
-    private static Set<String> readColors(NbtList lst) {
+    private static Set<String> readColors(ListTag lst) {
         Set<String> out = new HashSet<>();
         if (lst == null) return out;
         for (int i = 0; i < lst.size(); i++) {
@@ -140,7 +140,7 @@ public final class SearchEngine {
         return out;
     }
 
-    private static String firstFace(NbtCompound meta, String key) {
+    private static String firstFace(CompoundTag meta, String key) {
         var facesOpt = meta.getList("card_faces");
         if (facesOpt.isEmpty()) return "";
         var faces = facesOpt.get();
@@ -584,7 +584,7 @@ public final class SearchEngine {
         return out;
     }
 
-    private static double readDouble(NbtCompound nbt, String key, double def) {
+    private static double readDouble(CompoundTag nbt, String key, double def) {
         if (nbt == null || key == null) return def;
 
         // If stored as string

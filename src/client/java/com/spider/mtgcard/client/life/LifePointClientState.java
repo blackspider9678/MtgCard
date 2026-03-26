@@ -1,8 +1,8 @@
 package com.spider.mtgcard.client.life;
 
 import com.spider.mtgcard.life.LifePointPackets;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.core.BlockPos;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
@@ -13,7 +13,7 @@ public final class LifePointClientState {
     // ---------------- storage ----------------
 
     /** Per-LifePoint position snapshot (client-side). */
-    public static final Map<BlockPos, NbtCompound> CACHE = new ConcurrentHashMap<>();
+    public static final Map<BlockPos, CompoundTag> CACHE = new ConcurrentHashMap<>();
 
     /** origin -> nearby life points (positions) */
     public static final Map<BlockPos, List<BlockPos>> NEARBY_RESULTS = new HashMap<>();
@@ -43,7 +43,7 @@ public final class LifePointClientState {
 
     // ---------------- core cache ----------------
 
-    public static void onSync(@Nullable BlockPos pos, @Nullable NbtCompound nbt) {
+    public static void onSync(@Nullable BlockPos pos, @Nullable CompoundTag nbt) {
         if (pos == null) return;
 
         if (nbt == null || nbt.isEmpty()) {
@@ -59,14 +59,14 @@ public final class LifePointClientState {
      * Returns cached NBT or null if not present.
      * (DisplayLinkedLifeClient.resolve() treats null/empty as "no cache".)
      */
-    public static @Nullable NbtCompound get(@Nullable BlockPos pos) {
+    public static @Nullable CompoundTag get(@Nullable BlockPos pos) {
         if (pos == null) return null;
         return CACHE.get(pos);
     }
 
-    private static NbtCompound safe(@Nullable BlockPos pos) {
-        NbtCompound n = get(pos);
-        return (n == null) ? new NbtCompound() : n;
+    private static CompoundTag safe(@Nullable BlockPos pos) {
+        CompoundTag n = get(pos);
+        return (n == null) ? new CompoundTag() : n;
     }
 
     public static int getIconSwapColor(@Nullable BlockPos pos) {
@@ -160,7 +160,7 @@ public final class LifePointClientState {
     public static @Nullable UUID getGroupIdFor(@Nullable BlockPos pos) {
         if (pos == null) return null;
 
-        NbtCompound st = get(pos);
+        CompoundTag st = get(pos);
         if (st == null) return null;
 
         // NbtCompound.contains(String) is safe now because st != null

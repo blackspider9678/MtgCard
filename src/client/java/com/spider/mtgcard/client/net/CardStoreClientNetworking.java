@@ -9,7 +9,7 @@ public final class CardStoreClientNetworking {
                 CardStorePackets.ImportDeckS2C.ID,
                 (payload, ctx) -> {
                     ctx.client().execute(() -> {
-                        if (ctx.client().currentScreen instanceof com.spider.mtgcard.client.gui.CardStoreScreen screen) {
+                        if (ctx.client().screen instanceof com.spider.mtgcard.client.gui.CardStoreScreen screen) {
                             screen.onImportDeckResult(payload);
                         }
                     });

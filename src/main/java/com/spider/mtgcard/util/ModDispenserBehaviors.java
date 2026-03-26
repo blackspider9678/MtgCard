@@ -3,8 +3,8 @@ package com.spider.mtgcard.util;
 
 import com.spider.mtgcard.deckbox.DeckboxDispenserBehavior;
 import com.spider.mtgcard.registry.ModBlocks;
-import net.minecraft.block.DispenserBlock;
-import net.minecraft.block.dispenser.BlockPlacementDispenserBehavior;
+import net.minecraft.world.level.block.DispenserBlock;
+import net.minecraft.core.dispenser.ShulkerBoxDispenseBehavior;
 
 public final class ModDispenserBehaviors {
     private ModDispenserBehaviors() {}

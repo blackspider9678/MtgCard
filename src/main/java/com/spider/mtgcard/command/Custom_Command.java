@@ -8,10 +8,10 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.spider.mtgcard.net.CustomImportPackets;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.IOException;
 import java.lang.reflect.Type;
@@ -22,15 +22,15 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static net.minecraft.server.command.CommandManager.argument;
-import static net.minecraft.server.command.CommandManager.literal;
+import static net.minecraft.commands.Commands.argument;
+import static net.minecraft.commands.Commands.literal;
 
 public final class Custom_Command {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Type LIST_TYPE = new TypeToken<List<CustomCardRow>>(){}.getType();
 
-    public static LiteralArgumentBuilder<ServerCommandSource> node() {
+    public static LiteralArgumentBuilder<CommandSourceStack> node() {
         return literal("custom")
                 .then(literal("import").executes(ctx -> openImport(ctx.getSource())))
                 .then(literal("sets").executes(ctx -> listSets(ctx.getSource())))
@@ -49,19 +49,19 @@ public final class Custom_Command {
                 );
     }
 
-    private static int openImport(ServerCommandSource src) {
-        ServerPlayerEntity p;
+    private static int openImport(CommandSourceStack src) {
+        ServerPlayer p;
         try { p = src.getPlayer(); } catch (Exception e) { p = null; }
         if (p == null) {
-            src.sendFeedback(() -> Text.literal("§cNo player context."), false);
+            src.sendSuccess(() -> Component.literal("§cNo player context."), false);
             return 0;
         }
         ServerPlayNetworking.send(p, new CustomImportPackets.OpenImportGui());
-        src.sendFeedback(() -> Text.literal("§aOpening Custom Import…"), false);
+        src.sendSuccess(() -> Component.literal("§aOpening Custom Import…"), false);
         return 1;
     }
 
-    private static int listSets(ServerCommandSource src) {
+    private static int listSets(CommandSourceStack src) {
         List<CustomCardRow> rows = load(src);
         if (rows == null) return 0;
 
@@ -70,18 +70,18 @@ public final class Custom_Command {
                 .filter(s -> !s.isEmpty())
                 .collect(Collectors.toCollection(TreeSet::new));
 
-        src.sendFeedback(() -> Text.literal("§aCustom sets (Found §e" + sets.size() + "§a):"), false);
+        src.sendSuccess(() -> Component.literal("§aCustom sets (Found §e" + sets.size() + "§a):"), false);
         if (sets.isEmpty()) {
-            src.sendFeedback(() -> Text.literal("§7- (none)"), false);
+            src.sendSuccess(() -> Component.literal("§7- (none)"), false);
             return 1;
         }
         for (String s : sets) {
-            src.sendFeedback(() -> Text.literal("§7- §f" + s), false);
+            src.sendSuccess(() -> Component.literal("§7- §f" + s), false);
         }
         return 1;
     }
 
-    private static int showCard(ServerCommandSource src, String rawName) {
+    private static int showCard(CommandSourceStack src, String rawName) {
         List<CustomCardRow> rows = load(src);
         if (rows == null) return 0;
 
@@ -105,20 +105,20 @@ public final class Custom_Command {
                 .toList();
 
         if (matches.isEmpty()) {
-            src.sendFeedback(() -> Text.literal("§cNo custom card found named: §e" + rawName), false);
+            src.sendSuccess(() -> Component.literal("§cNo custom card found named: §e" + rawName), false);
             return 0;
         }
 
         if (matches.size() > 1) {
             final String displayName = name; // <- capture final for lambdas
-            src.sendFeedback(() -> Text.literal("§eMultiple custom cards named §f" + displayName + "§e found:"), false);
+            src.sendSuccess(() -> Component.literal("§eMultiple custom cards named §f" + displayName + "§e found:"), false);
 
             for (CustomCardRow r : matches) {
-                src.sendFeedback(() -> Text.literal("§7- §f" + r.name + " §7(SET=" + safe(r.set) + ")"), false);
+                src.sendSuccess(() -> Component.literal("§7- §f" + r.name + " §7(SET=" + safe(r.set) + ")"), false);
             }
 
             final String firstSet = safe(matches.get(0).set);
-            src.sendFeedback(() -> Text.literal(
+            src.sendSuccess(() -> Component.literal(
                     "§7Tip: use §e\"Name [SET]\"§7 e.g. §e/mtg custom card \"" + displayName + " [" + firstSet + "]\""
             ), false);
             return 1;
@@ -127,20 +127,20 @@ public final class Custom_Command {
         CustomCardRow c = matches.get(0);
 
         // Minimal details (expand as your schema supports)
-        src.sendFeedback(() -> Text.literal("§aCustom Card Details:"), false);
-        src.sendFeedback(() -> Text.literal("§7Name: §f" + safe(c.name)), false);
-        src.sendFeedback(() -> Text.literal("§7Set: §f" + safe(c.set)), false);
-        if (c.rarity != null) src.sendFeedback(() -> Text.literal("§7Rarity: §f" + c.rarity), false);
-        if (c.manaCost != null) src.sendFeedback(() -> Text.literal("§7Mana: §f" + c.manaCost), false);
-        if (c.typeLine != null) src.sendFeedback(() -> Text.literal("§7Type: §f" + c.typeLine), false);
-        if (c.oracleText != null) src.sendFeedback(() -> Text.literal("§7Text: §f" + c.oracleText), false);
-        if (c.power != null || c.toughness != null) src.sendFeedback(() -> Text.literal("§7P/T: §f" + safe(c.power) + "/" + safe(c.toughness)), false);
-        if (c.loyalty != null) src.sendFeedback(() -> Text.literal("§7Loyalty: §f" + c.loyalty), false);
+        src.sendSuccess(() -> Component.literal("§aCustom Card Details:"), false);
+        src.sendSuccess(() -> Component.literal("§7Name: §f" + safe(c.name)), false);
+        src.sendSuccess(() -> Component.literal("§7Set: §f" + safe(c.set)), false);
+        if (c.rarity != null) src.sendSuccess(() -> Component.literal("§7Rarity: §f" + c.rarity), false);
+        if (c.manaCost != null) src.sendSuccess(() -> Component.literal("§7Mana: §f" + c.manaCost), false);
+        if (c.typeLine != null) src.sendSuccess(() -> Component.literal("§7Type: §f" + c.typeLine), false);
+        if (c.oracleText != null) src.sendSuccess(() -> Component.literal("§7Text: §f" + c.oracleText), false);
+        if (c.power != null || c.toughness != null) src.sendSuccess(() -> Component.literal("§7P/T: §f" + safe(c.power) + "/" + safe(c.toughness)), false);
+        if (c.loyalty != null) src.sendSuccess(() -> Component.literal("§7Loyalty: §f" + c.loyalty), false);
 
         return 1;
     }
 
-    private static int removeSet(ServerCommandSource src, String set) {
+    private static int removeSet(CommandSourceStack src, String set) {
         List<CustomCardRow> rows = load(src);
         if (rows == null) return 0;
 
@@ -153,16 +153,16 @@ public final class Custom_Command {
 
         int removed = before - kept.size();
         if (removed == 0) {
-            src.sendFeedback(() -> Text.literal("§cSet not found: §e" + set), false);
+            src.sendSuccess(() -> Component.literal("§cSet not found: §e" + set), false);
             return 0;
         }
 
         if (!saveWithBackup(src, kept)) return 0;
-        src.sendFeedback(() -> Text.literal("§aRemoved set §e" + set + "§a (deleted §e" + removed + "§a card(s))."), false);
+        src.sendSuccess(() -> Component.literal("§aRemoved set §e" + set + "§a (deleted §e" + removed + "§a card(s))."), false);
         return 1;
     }
 
-    private static int removeCard(ServerCommandSource src, String rawName) {
+    private static int removeCard(CommandSourceStack src, String rawName) {
         List<CustomCardRow> rows = load(src);
         if (rows == null) return 0;
 
@@ -185,20 +185,20 @@ public final class Custom_Command {
                 .toList();
 
         if (matches.isEmpty()) {
-            src.sendFeedback(() -> Text.literal("§cNo custom card found named: §e" + rawName), false);
+            src.sendSuccess(() -> Component.literal("§cNo custom card found named: §e" + rawName), false);
             return 0;
         }
 
         if (matches.size() > 1) {
             final String displayName = name; // <- capture final for lambdas
-            src.sendFeedback(() -> Text.literal("§cMultiple matches for §e" + displayName + "§c. Nothing removed."), false);
+            src.sendSuccess(() -> Component.literal("§cMultiple matches for §e" + displayName + "§c. Nothing removed."), false);
 
             for (CustomCardRow r : matches) {
-                src.sendFeedback(() -> Text.literal("§7- §f" + r.name + " §7(SET=" + safe(r.set) + ")"), false);
+                src.sendSuccess(() -> Component.literal("§7- §f" + r.name + " §7(SET=" + safe(r.set) + ")"), false);
             }
 
             final String firstSet = safe(matches.get(0).set);
-            src.sendFeedback(() -> Text.literal(
+            src.sendSuccess(() -> Component.literal(
                     "§7Tip: use §e\"Name [SET]\"§7 e.g. §e/mtg custom remove card \"" + displayName + " [" + firstSet + "]\""
             ), false);
             return 0;
@@ -212,15 +212,15 @@ public final class Custom_Command {
 
         if (!saveWithBackup(src, kept)) return 0;
 
-        src.sendFeedback(() -> Text.literal("§aRemoved custom card: §f" + safe(target.name) + " §7(SET=" + safe(target.set) + ")"), false);
+        src.sendSuccess(() -> Component.literal("§aRemoved custom card: §f" + safe(target.name) + " §7(SET=" + safe(target.set) + ")"), false);
         return 1;
     }
 
-    private static List<CustomCardRow> load(ServerCommandSource src) {
+    private static List<CustomCardRow> load(CommandSourceStack src) {
         Path path = cardsJson(src);
         if (!Files.exists(path)) {
-            src.sendFeedback(() -> Text.literal("§7No custom cards file found: §e" + path), false);
-            src.sendFeedback(() -> Text.literal("§7(Found 0 custom sets / cards)"), false);
+            src.sendSuccess(() -> Component.literal("§7No custom cards file found: §e" + path), false);
+            src.sendSuccess(() -> Component.literal("§7(Found 0 custom sets / cards)"), false);
             return new ArrayList<>();
         }
         try {
@@ -228,12 +228,12 @@ public final class Custom_Command {
             List<CustomCardRow> rows = GSON.fromJson(json, LIST_TYPE);
             return rows != null ? new ArrayList<>(rows) : new ArrayList<>();
         } catch (Exception e) {
-            src.sendFeedback(() -> Text.literal("§cFailed to read cards.json: §7" + e.getMessage()), false);
+            src.sendSuccess(() -> Component.literal("§cFailed to read cards.json: §7" + e.getMessage()), false);
             return null;
         }
     }
 
-    private static boolean saveWithBackup(ServerCommandSource src, List<CustomCardRow> rows) {
+    private static boolean saveWithBackup(CommandSourceStack src, List<CustomCardRow> rows) {
         Path path = cardsJson(src);
         try {
             Files.createDirectories(path.getParent());
@@ -252,21 +252,21 @@ public final class Custom_Command {
 
             return true;
         } catch (IOException e) {
-            src.sendFeedback(() -> Text.literal("§cFailed to write cards.json: §7" + e.getMessage()), false);
+            src.sendSuccess(() -> Component.literal("§cFailed to write cards.json: §7" + e.getMessage()), false);
             return false;
         }
     }
 
-    private static Path cardsJson(ServerCommandSource src) {
+    private static Path cardsJson(CommandSourceStack src) {
         // <world>/mtgcard/custom/cards.json
-        return src.getServer().getSavePath(WorldSavePath.ROOT)
+        return src.getServer().getWorldPath(LevelResource.ROOT)
                 .resolve("mtgcard")
                 .resolve("custom")
                 .resolve("cards.json");
     }
 
-    private static boolean isOp(ServerCommandSource src) {
-        ServerPlayerEntity p;
+    private static boolean isOp(CommandSourceStack src) {
+        ServerPlayer p;
         try { p = src.getPlayer(); } catch (Exception e) { return false; }
         return p != null && com.spider.mtgcard.config.Perms.isOp(p);
     }

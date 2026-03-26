@@ -2,8 +2,8 @@ package com.spider.mtgcard.net;
 
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.storage.LevelResource;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -27,7 +27,7 @@ public final class ArtServerPackets {
 
     public static void registerServerReceiver() {
         ServerPlayNetworking.registerGlobalReceiver(ArtPackets.ArtRequest.ID, (payload, ctx) -> {
-            ServerPlayerEntity player = ctx.player();
+            ServerPlayer player = ctx.player();
             MinecraftServer server = ctx.server();
 
             final String artKey = safeKey(payload.artKey());
@@ -71,7 +71,7 @@ public final class ArtServerPackets {
         });
     }
 
-    private static void sendChunks(MinecraftServer server, ServerPlayerEntity player, String artKey, byte[] bytes) {
+    private static void sendChunks(MinecraftServer server, ServerPlayer player, String artKey, byte[] bytes) {
         final int total = (bytes.length + CHUNK_SIZE - 1) / CHUNK_SIZE;
 
         for (int i = 0; i < total; i++) {
@@ -82,7 +82,7 @@ public final class ArtServerPackets {
             final byte[] part = java.util.Arrays.copyOfRange(bytes, off, off + len);
 
             server.execute(() -> {
-                if (player.networkHandler != null) {
+                if (player.connection != null) {
                     ServerPlayNetworking.send(player, new ArtPackets.ArtChunk(artKey, index, total, part));
                 }
             });
@@ -91,7 +91,7 @@ public final class ArtServerPackets {
 
     /** <world>/mtgcard/art */
     private static Path serverCacheDir(MinecraftServer server) {
-        Path root = server.getSavePath(WorldSavePath.ROOT);
+        Path root = server.getWorldPath(LevelResource.ROOT);
         Path dir = root.resolve("mtgcard").resolve("art");
         try { Files.createDirectories(dir); } catch (Exception ignored) {}
         return dir;
