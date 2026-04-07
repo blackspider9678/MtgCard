@@ -68,7 +68,7 @@ public class PackItem extends Item {
         }
 
         ServerLevel sw = (ServerLevel) player.level();
-        PackGenerator.openPackAsync(sw.getServer(), player, uid);
+        PackGenerator.openPackAsync(sw.getServer(), player, desiredSet);
 
         player.playSound(SoundEvents.UI_TOAST_IN, 1f, 1f);
         return InteractionResult.SUCCESS;

@@ -90,7 +90,7 @@ public final class ScryfallCache {
     /** Fetch with the hard-coded JS-style URL set above. */
     public static CompletableFuture<ScryfallModels.Card> pickHardAsync(ServerLevel world, HardQuery hq) {
         final String url = hardUrl(hq);
-        return ScryfallService.supplyAsync(() -> {
+        return ScryfallService.supplyAsync("hard random " + hq.name(), () -> {
             String body = ScryfallHttp.get(url);
             ScryfallModels.Card card = ScryfallJson.parseCard(body);
 
@@ -168,7 +168,7 @@ public final class ScryfallCache {
         final String url = "https://api.scryfall.com/cards/random?q=" + url(query) + "&unique=prints";
         System.out.println("[mtgcard:packs] ScryfallFetch url=" + url + " onlySet=" + ctx.onlySet());
 
-        return ScryfallService.supplyAsync(() -> {
+        return ScryfallService.supplyAsync("random query " + query, () -> {
             String body = ScryfallHttp.get(url);
             ScryfallModels.Card card = ScryfallJson.parseCard(body);
 

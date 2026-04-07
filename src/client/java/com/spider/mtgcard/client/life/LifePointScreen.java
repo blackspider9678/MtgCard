@@ -222,7 +222,7 @@ public final class LifePointScreen extends LegacyScreen {
     // -------------------------------------------------------------------------
 
     // Pick the size your UI was authored for (tune these once).
-    // I like 960x540 (16:9) or 854x480. Choose what matches your “GUI Scale 5” look.
+    // I like 960x540 (16:9) or 854x480. Choose what matches your â€œGUI Scale 5â€ look.
     private static final int DESIGN_W = 960;
     private static final int DESIGN_H = 540;
 
@@ -952,8 +952,8 @@ public final class LifePointScreen extends LegacyScreen {
 
         int hintY = boxY + box + 10;
         int hintW = (lifeHealthPanel != null) ? (lifeHealthPanel.w - ps(20)) : (colW - ps(20));
-        addHintLabel(leftX + ps(10), hintY, hintW, "Scroll ±1");
-        addHintLabel(leftX + ps(10), hintY + ps(16), hintW, "Shift ×10");
+        addHintLabel(leftX + ps(10), hintY, hintW, "Scroll Â±1");
+        addHintLabel(leftX + ps(10), hintY + ps(16), hintW, "Shift Ã—10");
 
         // MIDDLE: Other players flat list
         int listY = y0 + 26;
@@ -1183,7 +1183,7 @@ public final class LifePointScreen extends LegacyScreen {
         valueField.setResponder(s -> {
             try {
                 int v = Integer.parseInt(s.trim());
-                v = Math.max(0, v); // ✅ only minimum clamp
+                v = Math.max(0, v); // âœ… only minimum clamp
                 ClientPlayNetworking.send(
                         new LifePointPackets.SetCounterC2S(pos, counterKey, v)
                 );
@@ -1199,8 +1199,8 @@ public final class LifePointScreen extends LegacyScreen {
 
         addRenderableWidget(valueField);
 
-        addHintLabel(rightX + 10, listY + 52, "Scroll = ±1");
-        addHintLabel(rightX + 10, listY + 68, "Shift + Scroll = ±10");
+        addHintLabel(rightX + 10, listY + 52, "Scroll = Â±1");
+        addHintLabel(rightX + 10, listY + 68, "Shift + Scroll = Â±10");
 
         int resetX = rightX + 10;
         int resetY = listY + 92;
@@ -1363,8 +1363,8 @@ public final class LifePointScreen extends LegacyScreen {
             boolean locked = (otherPod != null);
 
             String label = locked
-                    ? "🔒 " + name + " (In pod " + otherPod + ")"
-                    : "☐ " + name;
+                    ? "ðŸ”’ " + name + " (In pod " + otherPod + ")"
+                    : "â˜ " + name;
 
             int bx = availX + 6;
             int by = listY + i * rowH;
@@ -1405,17 +1405,17 @@ public final class LifePointScreen extends LegacyScreen {
 
             int mainW = totalW - (btnW * 2 + gapBtns * 2);
 
-            addRenderableWidget(Button.builder(Component.literal("☑ " + name), bb -> {
+            addRenderableWidget(Button.builder(Component.literal("â˜‘ " + name), bb -> {
                 toggleMember(p);
                 init();
             }).bounds(baseX, rowY, mainW, 18).build());
 
-            addRenderableWidget(Button.builder(Component.literal("▲"), bb -> {
+            addRenderableWidget(Button.builder(Component.literal("â–²"), bb -> {
                 moveMemberInOrder(p, -1);
                 init();
             }).bounds(baseX + mainW + gapBtns, rowY, btnW, 18).build());
 
-            addRenderableWidget(Button.builder(Component.literal("▼"), bb -> {
+            addRenderableWidget(Button.builder(Component.literal("â–¼"), bb -> {
                 moveMemberInOrder(p, +1);
                 init();
             }).bounds(baseX + mainW + gapBtns + btnW + gapBtns, rowY, btnW, 18).build());
@@ -1755,7 +1755,7 @@ public final class LifePointScreen extends LegacyScreen {
         m.pushMatrix();
         m.translate(new Vector2f(x + (w / 2f), y + (h / 2f)));
         m.scale(new Vector2f(scale, scale));
-        ctx.text(font, Component.literal(s), (int)(-tw / 2f), (int)(-th / 2f), 0xFFFFFFFF);
+        ctx.drawString(font, Component.literal(s), (int)(-tw / 2f), (int)(-th / 2f), 0xFFFFFFFF);
         m.popMatrix();
     }
 
@@ -1904,7 +1904,7 @@ public final class LifePointScreen extends LegacyScreen {
         int tw = font.width(s);
         int tx = x + (size - tw) / 2;
         int ty = y + size - 14;
-        ctx.text(font, Component.literal(s), tx, ty, 0xFFFFFFFF);
+        ctx.drawString(font, Component.literal(s), tx, ty, 0xFFFFFFFF);
     }
 
     private void drawLifeCountersHud(GuiGraphics ctx, int mouseX, int mouseY) {
@@ -2038,8 +2038,8 @@ public final class LifePointScreen extends LegacyScreen {
             int iy = y + 3;
             drawIcon(ctx, tex, ix, iy, iconSz, iconSz);
 
-            String label = (sel ? "▶ " : "  ") + k + "   " + v;
-            ctx.text(font, Component.literal(label), rx + 6 + iconSz + 6, y + 5, 0xFFFFFFFF);
+            String label = (sel ? "â–¶ " : "  ") + k + "   " + v;
+            ctx.drawString(font, Component.literal(label), rx + 6 + iconSz + 6, y + 5, 0xFFFFFFFF);
         }
 
         ctx.disableScissor();
@@ -2088,7 +2088,7 @@ public final class LifePointScreen extends LegacyScreen {
         int iy = p.y + (p.h - size) / 2;
         drawIcon(ctx, tex, ix, iy, size, size);
 
-        ctx.text(font, Component.literal("Selected: " + iconKey), ix + size + 10, p.y + (p.h / 2) - 4, 0xFFB0B0B0);
+        ctx.drawString(font, Component.literal("Selected: " + iconKey), ix + size + 10, p.y + (p.h / 2) - 4, 0xFFB0B0B0);
 
         // Picker grid
         Rect vp = counterIconPickerViewport;
@@ -2193,7 +2193,7 @@ public final class LifePointScreen extends LegacyScreen {
             if (nm == null || nm.isBlank()) nm = LifePointClientState.get(other).getString("DisplayName").orElse("");
             if (nm == null || nm.isBlank()) nm = shortPos(other);
 
-            ctx.text(font, Component.literal((sel ? "▶ " : "  ") + nm), r.x + 6, r.y + 5, 0xFFFFFFFF);
+            ctx.drawString(font, Component.literal((sel ? "â–¶ " : "  ") + nm), r.x + 6, r.y + 5, 0xFFFFFFFF);
         }
 
         ctx.disableScissor();
@@ -2256,8 +2256,8 @@ public final class LifePointScreen extends LegacyScreen {
             String name = LifePointClientState.groupName(id);
             if (name == null || name.isBlank()) name = "Pod";
 
-            String label = (sel ? "▶ " : "  ") + name + "  (" + size + "/" + MAX_GROUP_MEMBERS + ")";
-            ctx.text(font, Component.literal(label), r.x + 6, r.y + 5, 0xFFFFFFFF);
+            String label = (sel ? "â–¶ " : "  ") + name + "  (" + size + "/" + MAX_GROUP_MEMBERS + ")";
+            ctx.drawString(font, Component.literal(label), r.x + 6, r.y + 5, 0xFFFFFFFF);
         }
 
         ctx.disableScissor();
@@ -2268,7 +2268,7 @@ public final class LifePointScreen extends LegacyScreen {
 
         boolean hov = mouseX >= cr.x && mouseX < cr.x + cr.w && mouseY >= cr.y && mouseY < cr.y + cr.h;
         drawFlatRow(ctx, cr, false, hov);
-        ctx.text(font, Component.literal("+ Create"), cr.x + 6, cr.y + 5, 0xFFFFFFFF);
+        ctx.drawString(font, Component.literal("+ Create"), cr.x + 6, cr.y + 5, 0xFFFFFFFF);
 
         drawScrollbar(ctx, ScrollId.PODS_LIST, podsListScrollVp, podsListContentH, podsListScroll);
     }
@@ -2312,7 +2312,7 @@ public final class LifePointScreen extends LegacyScreen {
             ctx.fill(box.x + 3, box.y + 3, box.x + box.w - 3, box.y + box.h - 3, 0xFF2E8B57);
         }
         if (!label.isEmpty()) {
-            ctx.text(font, Component.literal(label), labelX, labelY, 0xFFFFFFFF);
+            ctx.drawString(font, Component.literal(label), labelX, labelY, 0xFFFFFFFF);
         }
     }
 
@@ -2329,8 +2329,8 @@ public final class LifePointScreen extends LegacyScreen {
         ctx.fill(r.x + 6, r.y + 6, r.x + r.w - 6, r.y + r.h - 6, c);
 
         // draw label + hex INSIDE the swatch (prevents scissor clipping)
-        ctx.text(font, Component.literal(label), r.x + 6, r.y + 4, 0xFFB0B0B0);
-        ctx.text(font, Component.literal(toHex(rgb)), r.x + 6, r.y + r.h - 12, 0xFFB0B0B0);
+        ctx.drawString(font, Component.literal(label), r.x + 6, r.y + 4, 0xFFB0B0B0);
+        ctx.drawString(font, Component.literal(toHex(rgb)), r.x + 6, r.y + r.h - 12, 0xFFB0B0B0);
     }
 
     private int drawPaletteTiles(GuiGraphics ctx, int x, int y, int w, boolean forPlayer) {
@@ -2360,7 +2360,7 @@ public final class LifePointScreen extends LegacyScreen {
                 int col = 0xFF000000 | (p.rgb & 0xFFFFFF);
                 ctx.fill(rr.x, rr.y, rr.x + rr.w, rr.y + rr.h, 0xFF101010);
                 ctx.fill(rr.x + 2, rr.y + 2, rr.x + rr.w - 2, rr.y + rr.h - 2, col);
-                ctx.text(font, Component.literal(p.label), rr.x + 5, rr.y + 5, 0xFFFFFFFF);
+                ctx.drawString(font, Component.literal(p.label), rr.x + 5, rr.y + 5, 0xFFFFFFFF);
             }
         }
         return y + rows * tile + (rows - 1) * gap;
@@ -2397,7 +2397,7 @@ public final class LifePointScreen extends LegacyScreen {
             boolean hov = mouseX >= rr.x && mouseX < rr.x + rr.w && mouseY >= rr.y && mouseY < rr.y + rr.h;
             drawFlatRow(ctx, rr, sel, hov);
 
-            ctx.text(font, Component.literal((sel ? "▶ " : "  ") + k), rr.x + 6, rr.y + 5, 0xFFFFFFFF);
+            ctx.drawString(font, Component.literal((sel ? "â–¶ " : "  ") + k), rr.x + 6, rr.y + 5, 0xFFFFFFFF);
         }
 
         ctx.disableScissor();
@@ -2461,7 +2461,7 @@ public final class LifePointScreen extends LegacyScreen {
                 Rect small = new Rect(rr.x + 4, rr.y + 3, 12, 12);
                 drawCheckbox(ctx, small, checked, "", 0, 0);
 
-                ctx.text(font, Component.literal(k), rr.x + 22, rr.y + 5, 0xFFFFFFFF);
+                ctx.drawString(font, Component.literal(k), rr.x + 22, rr.y + 5, 0xFFFFFFFF);
             }
 
             ctx.disableScissor();
@@ -2496,13 +2496,13 @@ public final class LifePointScreen extends LegacyScreen {
         ctx.enableScissor(vp.x, vp.y, vp.x + vp.w, vp.y + vp.h);
 
         // ---- Player Color ----
-        ctx.text(font, Component.literal("Player Color"), innerX, y, 0xFFB0B0B0);
+        ctx.drawString(font, Component.literal("Player Color"), innerX, y, 0xFFB0B0B0);
         y += 14;
 
         y = drawPaletteTiles(ctx, innerX, y, innerW, true);
         y += 6;
 
-        ctx.text(font, Component.literal("Hex"), innerX, y, 0xFF707070);
+        ctx.drawString(font, Component.literal("Hex"), innerX, y, 0xFF707070);
         y += 14;
 
         // Move the player hex field to match scrolled layout
@@ -2531,13 +2531,13 @@ public final class LifePointScreen extends LegacyScreen {
         y += 14 + 12; // bar + spacing
 
         // ---- Life Color ----
-        ctx.text(font, Component.literal("Life Color"), innerX, y, 0xFFB0B0B0);
+        ctx.drawString(font, Component.literal("Life Color"), innerX, y, 0xFFB0B0B0);
         y += 14;
 
         y = drawPaletteTiles(ctx, innerX, y, innerW, false);
         y += 6;
 
-        ctx.text(font, Component.literal("Hex"), innerX, y, 0xFF707070);
+        ctx.drawString(font, Component.literal("Hex"), innerX, y, 0xFF707070);
         y += 14;
 
         // Move the life hex field to match scrolled layout
@@ -2565,7 +2565,7 @@ public final class LifePointScreen extends LegacyScreen {
         y += 14 + 10;
 
         // ---- Format ----
-        ctx.text(font, Component.literal("Format"), innerX, y, 0xFFB0B0B0);
+        ctx.drawString(font, Component.literal("Format"), innerX, y, 0xFFB0B0B0);
         y += 14;
 
         int gridCols = 2;
@@ -2585,14 +2585,14 @@ public final class LifePointScreen extends LegacyScreen {
             boolean hov = mouseX >= r.x && mouseX < r.x + r.w && mouseY >= r.y && mouseY < r.y + r.h;
 
             drawFlatRow(ctx, r, sel, hov);
-            ctx.text(font, Component.literal(fk), r.x + 6, r.y + 5, 0xFFFFFFFF);
+            ctx.drawString(font, Component.literal(fk), r.x + 6, r.y + 5, 0xFFFFFFFF);
         }
         y += (int) Math.ceil(FORMAT_KEYS.size() / 2.0) * (cellH + cellGap);
         y += 10;
 
         // ---- Icon Key ----
         // ---- Icon Key ----
-        ctx.text(font, Component.literal("Icon Key"), innerX, y, 0xFFB0B0B0);
+        ctx.drawString(font, Component.literal("Icon Key"), innerX, y, 0xFFB0B0B0);
         y += 14;
 
 // Preview row
@@ -2603,14 +2603,14 @@ public final class LifePointScreen extends LegacyScreen {
 
         Identifier tex = counterIconId(editIconKey);
         drawIconSwapped(ctx, tex, prev.x + 6, prev.y + 4, 20, 20);
-        ctx.text(font, Component.literal("Selected: " + editIconKey),
+        ctx.drawString(font, Component.literal("Selected: " + editIconKey),
                 prev.x + 30, prev.y + 10, 0xFFB0B0B0);
 
-        // ✅ move y BELOW the preview block before drawing hex stuff
+        // âœ… move y BELOW the preview block before drawing hex stuff
         y += prevH + 8;
 
         // Hex label + field below preview
-        ctx.text(font, Component.literal("Hex"), innerX, y, 0xFF707070);
+        ctx.drawString(font, Component.literal("Hex"), innerX, y, 0xFF707070);
         y += 14;
 
         if (editIconHexField != null) {
@@ -2734,7 +2734,7 @@ public final class LifePointScreen extends LegacyScreen {
         m.translate(new org.joml.Vector2f(L.lifeCenterX(), L.lifeCenterY()));
         m.scale(new org.joml.Vector2f(scale, scale));
         int lifeCol = 0xFF000000 | (editLifeColor & 0xFFFFFF);
-        ctx.text(font, Component.literal(s), (int)(-tw / 2f), (int)(-th / 2f), lifeCol);
+        ctx.drawString(font, Component.literal(s), (int)(-tw / 2f), (int)(-th / 2f), lifeCol);
         m.popMatrix();
 
         // Name pinned near bottom (use name baseline from layout)
@@ -3028,7 +3028,7 @@ public final class LifePointScreen extends LegacyScreen {
                         ? counters.getInt(counterKey).orElse(0)
                         : 0;
 
-                int newV = Math.max(0, oldV + d); // ✅ no max cap
+                int newV = Math.max(0, oldV + d); // âœ… no max cap
 
                 if (newV != oldV) {
                     ClientPlayNetworking.send(
@@ -3177,7 +3177,7 @@ public final class LifePointScreen extends LegacyScreen {
             int leftW = (width - 24 - 10 * 2) / 3;
             int availX = 12 + leftW + 10;
             int contentTop = 12 + 24 + 18 + 10;
-            ctx.text(font,
+            ctx.drawString(font,
                     Component.literal("Pod full (" + MAX_GROUP_MEMBERS + "/" + MAX_GROUP_MEMBERS + ")"),
                     availX + 10, contentTop + 110, 0xFFB0B0B0);
         }
@@ -3188,7 +3188,7 @@ public final class LifePointScreen extends LegacyScreen {
             if (editIconHexField != null) editIconHexField.visible = false;
         }
 
-        // IMPORTANT: widgets (buttons) drawn LAST so they’re on top
+        // IMPORTANT: widgets (buttons) drawn LAST so theyâ€™re on top
         super.render(ctx, mouseX, mouseY, delta);
     }
 

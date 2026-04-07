@@ -10,6 +10,7 @@ import net.minecraft.client.renderer.special.SpecialModelRenderer;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.renderer.special.SpecialModelRenderer.BakingContext;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.Identifier;
 import org.jetbrains.annotations.Nullable;
@@ -40,6 +41,7 @@ public class CardItemRenderer implements SpecialModelRenderer<CardItemRenderer.D
 
     @Override
     public void submit(@Nullable Data data,
+                       ItemDisplayContext displayContext,
                        PoseStack matrices,
                        SubmitNodeCollector queue,
                        int light,

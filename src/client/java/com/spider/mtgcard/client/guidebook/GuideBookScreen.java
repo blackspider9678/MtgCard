@@ -1,5 +1,4 @@
 package com.spider.mtgcard.client.guidebook;
-
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.client.compat.LegacyScreen;
 import com.spider.mtgcard.client.gui.MtgGuiChrome;

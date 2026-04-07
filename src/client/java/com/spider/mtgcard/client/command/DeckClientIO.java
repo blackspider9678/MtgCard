@@ -37,13 +37,13 @@ public final class DeckClientIO {
 
         ItemStack hand = mc.player.getMainHandItem();
         if (hand.isEmpty() || !(hand.getItem() instanceof DeckboxBlockItem)) {
-            mc.player.sendSystemMessage(Component.literal("§cHold a Deckbox in your main hand to export."));
+            mc.player.displayClientMessage(Component.literal("Â§cHold a Deckbox in your main hand to export."), false);
             return;
         }
 
         List<ExportRow> rows = readDeckboxExportRows(hand);
         if (rows.isEmpty()) {
-            mc.player.sendSystemMessage(Component.literal("§eDeckbox has no MTG cards to export."));
+            mc.player.displayClientMessage(Component.literal("Â§eDeckbox has no MTG cards to export."), false);
             return;
         }
 
@@ -73,19 +73,19 @@ public final class DeckClientIO {
             Files.writeString(txt, txtOut.toString(), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
             Files.writeString(csv, csvOut.toString(), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         } catch (IOException e) {
-            mc.player.sendSystemMessage(Component.literal("§cExport failed: §7" + e.getMessage()));
+            mc.player.displayClientMessage(Component.literal("Â§cExport failed: Â§7" + e.getMessage()), false);
             return;
         }
 
-        mc.player.sendSystemMessage(Component.literal("§aExported deck:"));
-        mc.player.sendSystemMessage(
-                Component.literal("§7- ").append(openFileLink("§f" + txt.getFileName(), txt)));
-        mc.player.sendSystemMessage(
-                Component.literal("§7- ").append(openFileLink("§f" + csv.getFileName(), csv)));
+        mc.player.displayClientMessage(Component.literal("Â§aExported deck:"), false);
+        mc.player.displayClientMessage(
+                Component.literal("Â§7- ").append(openFileLink("Â§f" + txt.getFileName(), txt)), false);
+        mc.player.displayClientMessage(
+                Component.literal("Â§7- ").append(openFileLink("Â§f" + csv.getFileName(), csv)), false);
         // Optional: also link the folder
-        mc.player.sendSystemMessage(
-                Component.literal("§7Folder: ").append(openFileLink("§eopen decks folder", dir)));
-        mc.player.sendSystemMessage(Component.literal("§7Saved to: §e" + dir.toAbsolutePath()));
+        mc.player.displayClientMessage(
+                Component.literal("Â§7Folder: ").append(openFileLink("Â§eopen decks folder", dir)), false);
+        mc.player.displayClientMessage(Component.literal("Â§7Saved to: Â§e" + dir.toAbsolutePath()), false);
     }
 
     public static void handleList() {
@@ -94,8 +94,8 @@ public final class DeckClientIO {
 
         Path dir = decksDir();
         if (!Files.exists(dir)) {
-            mc.player.sendSystemMessage(Component.literal("§aDecks (Found §e0§a)."));
-            mc.player.sendSystemMessage(Component.literal("§7Folder: §e" + dir.toAbsolutePath()));
+            mc.player.displayClientMessage(Component.literal("Â§aDecks (Found Â§e0Â§a)."), false);
+            mc.player.displayClientMessage(Component.literal("Â§7Folder: Â§e" + dir.toAbsolutePath()), false);
             return;
         }
 
@@ -110,13 +110,13 @@ public final class DeckClientIO {
                     .sorted()
                     .toList();
         } catch (IOException e) {
-            mc.player.sendSystemMessage(Component.literal("§cFailed to list decks: §7" + e.getMessage()));
+            mc.player.displayClientMessage(Component.literal("Â§cFailed to list decks: Â§7" + e.getMessage()), false);
             return;
         }
 
-        mc.player.sendSystemMessage(Component.literal("§aDecks (Found §e" + files.size() + "§a):"));
-        if (files.isEmpty()) mc.player.sendSystemMessage(Component.literal("§7- (none)"));
-        else for (String fn : files) mc.player.sendSystemMessage(Component.literal("§7- §f" + fn));
+        mc.player.displayClientMessage(Component.literal("Â§aDecks (Found Â§e" + files.size() + "Â§a):"), false);
+        if (files.isEmpty()) mc.player.displayClientMessage(Component.literal("Â§7- (none)"), false);
+        else for (String fn : files) mc.player.displayClientMessage(Component.literal("Â§7- Â§f" + fn), false);
     }
 
     // ---------- deck parsing ----------

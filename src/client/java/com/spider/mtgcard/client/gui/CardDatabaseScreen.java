@@ -100,7 +100,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
 
     public void applyDeckboxTabNames(int syncId, java.util.List<com.spider.mtgcard.net.payload.DeckboxTabNamesPayload.Entry> entries) {
         if (this.menu == null) return;
-        if (syncId != this.menu.containerId) return; // make sure it’s for this screen
+        if (syncId != this.menu.containerId) return; // make sure itâ€™s for this screen
         this.tabNames = (entries == null) ? java.util.List.of() : java.util.List.copyOf(entries);
     }
 
@@ -202,7 +202,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
             scheduleAutoSearch();
         });
 
-        this.btnClear = Button.builder(Component.literal("×"), b -> {
+        this.btnClear = Button.builder(Component.literal("Ã—"), b -> {
             this.search.setValue("");
             this.search.setFocused(true);
             lastSentQuery = "";
@@ -220,7 +220,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         int row = 0;
 
         // Store All
-        this.btnStoreAll = addGutterButton(gx, gy + (row++ * step), "⇪", "Store all cards into DB", () -> {
+        this.btnStoreAll = addGutterButton(gx, gy + (row++ * step), "â‡ª", "Store all cards into DB", () -> {
             if (this.minecraft != null && this.minecraft.gameMode != null) {
                 this.minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId, CardDatabaseScreenHandler.BTN_STORE_ALL);
             }
@@ -515,7 +515,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
             hoverSinceMs = now;
             lastHoverStack = st.copy();
             lastTexRef = null;
-            animStartMs = now; // ← start anim on new card
+            animStartMs = now; // â† start anim on new card
         }
         if (now - hoverSinceMs < HOVER_DEBOUNCE_MS) return;
 
@@ -524,7 +524,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         if (face != lastHoverFace) {
             lastHoverFace = face;
             lastTexRef = null;
-            animStartMs = now; // ← start anim on face change
+            animStartMs = now; // â† start anim on face change
         }
 
         CardArtManager.TextureRef ref = CardArtManager.getOrRequestFace(st, face);
@@ -566,7 +566,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         // Scale: 92% -> 100%
         float scaleAnim = ANIM_SCALE_FROM + (1f - ANIM_SCALE_FROM) * ease;
 
-        // Tilt: ~2.5° -> 0°
+        // Tilt: ~2.5Â° -> 0Â°
         float angleDeg = (1f - ease) * 2.5f;
 
         // Fade: 40% -> 100% alpha
@@ -574,7 +574,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         int colorMain = (alphaMain << 24) | 0x00FFFFFF; // ARGB tint for main draw
         int colorShadow = 0x55000000;                    // soft black shadow
 
-        // Precompute scales from texture → target draw size
+        // Precompute scales from texture â†’ target draw size
         float sx = (float) drawW / (float) texW;
         float sy = (float) drawH / (float) texH;
 
@@ -674,7 +674,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
             int py = rightPanelY();
             int tab = H().getClientActiveDeckboxTab();
             String title = "Deckbox " + (tab + 1) + "/" + H().getClientDeckboxCount();
-            ctx.text(this.font, title, px + 52, py + 9, 0xFFFFFFFF, false);
+            ctx.drawString(this.font, title, px + 52, py + 9, 0xFFFFFFFF, false);
         }
 
         // scrollbar geometry (left panel)
@@ -830,7 +830,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         int x0 = this.btnSort.getX() - 4 - w;
         int y0 = this.btnSort.getY();
 
-        // Clamp so it stays on-screen (and doesn’t go above/below)
+        // Clamp so it stays on-screen (and doesnâ€™t go above/below)
         int minX = 4;
         int maxX = this.width - w - 4;
         int minY = 4;

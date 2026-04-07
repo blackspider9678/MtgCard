@@ -24,12 +24,12 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.BlockEntityRendererRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.BlockRenderLayerMap;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.ingame.HandledScreens;
-import net.minecraft.client.render.BlockRenderLayer;
-import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
-import net.minecraft.client.render.entity.EntityRendererFactories;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.MenuScreens;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.renderer.blockentity.BlockEntityRenderers;
+import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
+import net.minecraft.client.renderer.entity.EntityRenderers;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWDropCallback;
 
@@ -59,11 +59,11 @@ public final class MtgcardClient implements ClientModInitializer {
         CardStoreClientNetworking.register();
         CardDisplayClientPackets.registerClientReceivers();
 
-        HandledScreens.register(ModScreenHandlers.DECKBOX, DeckboxScreen::new);
-        HandledScreens.register(ModScreenHandlers.CARD_DB, CardDatabaseScreen::new);
-        HandledScreens.register(ModScreenHandlers.DECKCONTROL, DeckControlScreen::new);
-        HandledScreens.register(ModScreenHandlers.GRAVEYARD, GraveyardScreen::new);
-        HandledScreens.register(ModScreenHandlers.CARD_STORE, CardStoreScreen::new);
+        MenuScreens.register(ModScreenHandlers.DECKBOX, DeckboxScreen::new);
+        MenuScreens.register(ModScreenHandlers.CARD_DB, CardDatabaseScreen::new);
+        MenuScreens.register(ModScreenHandlers.DECKCONTROL, DeckControlScreen::new);
+        MenuScreens.register(ModScreenHandlers.GRAVEYARD, GraveyardScreen::new);
+        MenuScreens.register(ModScreenHandlers.CARD_STORE, CardStoreScreen::new);
 
         GuideBookClientNet.init();
         ModKeybinds.init();
@@ -82,26 +82,26 @@ public final class MtgcardClient implements ClientModInitializer {
 
     private static void lateClientInit() {
         // Register renderers AFTER the window/device exists
-        EntityRendererFactories.register(ModEntities.CARD_DISPLAY, CardDisplayEntityRenderer::new);
+        EntityRenderers.register(ModEntities.CARD_DISPLAY, CardDisplayEntityRenderer::new);
 
-        BlockEntityRendererFactories.register(ModBlockEntities.DISPLAY_BLOCK,
+        BlockEntityRenderers.register(ModBlockEntities.DISPLAY_BLOCK,
                 com.spider.mtgcard.client.displayblock.DisplayBlockEntityRenderer::new
         );
         BlockEntityRendererRegistry.register(ModBlockEntities.CARD_DB, CardDatabaseBlockEntityRenderer::new);
 
         // Render layers (safe either place, but fine here too)
-        BlockRenderLayerMap.putBlock(LifePointRegistry.LIFE_POINT_BLOCK, BlockRenderLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECKBOX, BlockRenderLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_STONE, BlockRenderLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_GRANITE, BlockRenderLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_DIORITE, BlockRenderLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_ANDESITE, BlockRenderLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_TUFF, BlockRenderLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_DEEPSLATE, BlockRenderLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_BLACKSTONE, BlockRenderLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_PRISMARINE, BlockRenderLayer.CUTOUT);
+        BlockRenderLayerMap.putBlock(LifePointRegistry.LIFE_POINT_BLOCK, ChunkSectionLayer.CUTOUT);
+        BlockRenderLayerMap.putBlock(ModBlocks.DECKBOX, ChunkSectionLayer.CUTOUT);
+        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_STONE, ChunkSectionLayer.CUTOUT);
+        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_GRANITE, ChunkSectionLayer.CUTOUT);
+        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_DIORITE, ChunkSectionLayer.CUTOUT);
+        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_ANDESITE, ChunkSectionLayer.CUTOUT);
+        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_TUFF, ChunkSectionLayer.CUTOUT);
+        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_DEEPSLATE, ChunkSectionLayer.CUTOUT);
+        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_BLACKSTONE, ChunkSectionLayer.CUTOUT);
+        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_PRISMARINE, ChunkSectionLayer.CUTOUT);
 
-        BlockEntityRendererFactories.register(
+        BlockEntityRenderers.register(
                 ModBlockEntities.DECK_CONTROL,
                 com.spider.mtgcard.client.deckcontrol.DeckControlEntityRenderer::new
         );
@@ -113,8 +113,8 @@ public final class MtgcardClient implements ClientModInitializer {
         Mtgcard.LOGGER.info("[MtgcardClient] late init done");
     }
 
-    private static void installDropCallback(MinecraftClient client) {
-        long handle = client.getWindow().getHandle();
+    private static void installDropCallback(Minecraft client) {
+        long handle = client.getWindow().handle();
 
         // Free old one if reloading
         if (DROP_CB != null) DROP_CB.free();
@@ -130,11 +130,11 @@ public final class MtgcardClient implements ClientModInitializer {
             if (paths.isEmpty()) return;
 
             client.execute(() -> {
-                Screen s = client.currentScreen;
+                Screen s = client.screen;
                 if (s instanceof CustomImportScreen cis) {
                     cis.handleFileDrop(paths);
                 } else if (s != null) {
-                    s.onFilesDropped(paths);
+                    s.onFilesDrop(paths);
                 }
             });
         });

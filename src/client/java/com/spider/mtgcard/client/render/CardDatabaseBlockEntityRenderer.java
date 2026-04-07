@@ -13,7 +13,7 @@ import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
 import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
 import net.minecraft.client.renderer.SubmitNodeCollector;
-import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.client.renderer.state.CameraRenderState;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.resources.Identifier;
 import net.minecraft.core.Direction;
@@ -81,13 +81,10 @@ public class CardDatabaseBlockEntityRenderer
     public void submit(State s, PoseStack matrices, SubmitNodeCollector queue, CameraRenderState cameraState) {
         if (s.frontFill <= 0 && s.leftFill <= 0 && s.rightFill <= 0 && s.backFill <= 0) return;
 
-        // Pick an order; 0 is fine for “simple overlay”
-        var batching = queue.order(0);
-
-        if (s.frontFill > 0) submitFace(matrices, (SubmitNodeCollector) batching, s.frontDir, CardDbBinderOverlayTex.front(s.frontFill));
-        if (s.leftFill  > 0) submitFace(matrices, (SubmitNodeCollector) batching, s.leftDir,  CardDbBinderOverlayTex.side(s.leftFill));
-        if (s.rightFill > 0) submitFace(matrices, (SubmitNodeCollector) batching, s.rightDir, CardDbBinderOverlayTex.side(s.rightFill));
-        if (s.backFill  > 0) submitFace(matrices, (SubmitNodeCollector) batching, s.backDir,  CardDbBinderOverlayTex.side(s.backFill));
+        if (s.frontFill > 0) submitFace(matrices, queue, s.frontDir, CardDbBinderOverlayTex.front(s.frontFill));
+        if (s.leftFill  > 0) submitFace(matrices, queue, s.leftDir,  CardDbBinderOverlayTex.side(s.leftFill));
+        if (s.rightFill > 0) submitFace(matrices, queue, s.rightDir, CardDbBinderOverlayTex.side(s.rightFill));
+        if (s.backFill  > 0) submitFace(matrices, queue, s.backDir,  CardDbBinderOverlayTex.side(s.backFill));
     }
 
     private static void submitFace(PoseStack matrices, SubmitNodeCollector queue, Direction dir, Identifier tex) {
@@ -111,8 +108,8 @@ public class CardDatabaseBlockEntityRenderer
         int light = 0x00F000F0; // fullbright; replace if you want world lighting
         int overlay = OverlayTexture.NO_OVERLAY;
 
-        // NOTE: we’re not doing correct normals here because it’s a flat decal;
-        // leaving normal (0,0,0) works fine for “no shading” with fullbright.
+        // NOTE: weâ€™re not doing correct normals here because itâ€™s a flat decal;
+        // leaving normal (0,0,0) works fine for â€œno shadingâ€ with fullbright.
         switch (dir) {
             case NORTH -> {
                 float z = z0 + eps;

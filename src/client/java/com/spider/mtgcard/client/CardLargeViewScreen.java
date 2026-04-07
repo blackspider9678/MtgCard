@@ -201,7 +201,7 @@ public class CardLargeViewScreen extends LegacyScreen {
         super(Component.literal("Card"));
         this.stack = original.copy();
         this.handSlot = handSlot;
-        this.displayEntityId = displayEntityId; // ✅ IMPORTANT
+        this.displayEntityId = displayEntityId; // âœ… IMPORTANT
         this.hidden = readHidden(this.stack);
 
         this.faceIndex = readFaceIndex(this.stack);
@@ -393,7 +393,7 @@ public class CardLargeViewScreen extends LegacyScreen {
     }
 
     private static String prettyLegality(String status) {
-        if (status == null) return "—";
+        if (status == null) return "â€”";
         return switch (status) {
             case "legal" -> "Legal";
             case "restricted" -> "Restricted";
@@ -742,7 +742,7 @@ public class CardLargeViewScreen extends LegacyScreen {
             int iy = ry + (HUD_ROW_H - HUD_ICON) / 2;
 
             if (iconKey == null || iconKey.equals("none")) {
-                ctx.text(this.font, "—", ix + 2, ry + 3, 0xFF777777, false);
+                ctx.drawString(this.font, "â€”", ix + 2, ry + 3, 0xFF777777, false);
             } else {
                 Identifier tex = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/" + iconKey + ".png");
                 drawIconFit(ctx, tex, ix, iy, HUD_ICON, HUD_ICON);
@@ -770,7 +770,7 @@ public class CardLargeViewScreen extends LegacyScreen {
             boolean hoverPlus  = (mouseX >= bxPlus  && mouseX < bxPlus  + ADJ_BTN && mouseY >= byBtn && mouseY < byBtn + ADJ_BTN);
 
             drawMiniButton(ctx, bxMinus, byBtn, ADJ_BTN, "-", hoverMinus);
-            ctx.text(this.font, val, txVal, tyVal, 0xFFFFFFFF, false);
+            ctx.drawString(this.font, val, txVal, tyVal, 0xFFFFFFFF, false);
             drawMiniButton(ctx, bxPlus,  byBtn, ADJ_BTN, "+", hoverPlus);
 
             // store click rects
@@ -1059,7 +1059,7 @@ public class CardLargeViewScreen extends LegacyScreen {
 
         if (infoOpen && tab == Tab.COUNTERS) {
             // if scrolling over the counters list area, modify counter instead of scrolling legality
-            // (we’ll use the same panel geometry as drawInfoPanel)
+            // (weâ€™ll use the same panel geometry as drawInfoPanel)
             int panelX = 8;
             int panelY = 8 + INFO_SIZE + 6;
             int panelW = 190;
@@ -1411,7 +1411,7 @@ public class CardLargeViewScreen extends LegacyScreen {
         // face indicator
         if (faceCount > 1) {
             String s = (renderFace + 1) + "/" + faceCount;
-            ctx.text(this.font, s, cardX + 4, cardY + 4, 0xFFFFFF);
+            ctx.drawString(this.font, s, cardX + 4, cardY + 4, 0xFFFFFF);
         }
 
         // buttons
@@ -1465,7 +1465,7 @@ public class CardLargeViewScreen extends LegacyScreen {
         int tx = hideX + (hideW - tw) / 2;
         int ty = hideY + (hideH - this.font.lineHeight) / 2;
 
-        ctx.text(this.font, label, tx, ty, 0xFFFFFFFF, false);
+        ctx.drawString(this.font, label, tx, ty, 0xFFFFFFFF, false);
 
         if (hover) {
             ctx.setTooltipForNextFrame(this.font,
@@ -1488,7 +1488,7 @@ public class CardLargeViewScreen extends LegacyScreen {
         ctx.fill(infoX - 1, infoY - 1, infoX + INFO_SIZE + 1, infoY + INFO_SIZE + 1, border);
         ctx.fill(infoX, infoY, infoX + INFO_SIZE, infoY + INFO_SIZE, bg);
 
-        ctx.text(this.font, "i",
+        ctx.drawString(this.font, "i",
                 infoX + (INFO_SIZE - this.font.width("i")) / 2,
                 infoY + (INFO_SIZE - this.font.lineHeight) / 2,
                 0xFFFFFFFF, false);
@@ -1532,7 +1532,7 @@ public class CardLargeViewScreen extends LegacyScreen {
         ctx.fill(bx - 1, by - 1, bx + FLIP_SIZE + 1, by + FLIP_SIZE + 1, border);
         ctx.fill(bx, by, bx + FLIP_SIZE, by + FLIP_SIZE, bg);
 
-        String glyph = (faceIndex == 0) ? "↻" : "↺";
+        String glyph = (faceIndex == 0) ? "â†»" : "â†º";
         float scale = 2.6f;
 
         int tw = this.font.width(glyph);
@@ -1544,7 +1544,7 @@ public class CardLargeViewScreen extends LegacyScreen {
         m.pushMatrix();
         m.translate(drawX, drawY);
         m.scale(scale, scale);
-        ctx.text(this.font, glyph, 0, 0, 0xFFFFE070, false);
+        ctx.drawString(this.font, glyph, 0, 0, 0xFFFFE070, false);
         m.popMatrix();
 
         m.popMatrix();
@@ -1571,7 +1571,7 @@ public class CardLargeViewScreen extends LegacyScreen {
         ctx.fill(bx - 1, by - 1, bx + FLIP_SIZE + 1, by + FLIP_SIZE + 1, border);
         ctx.fill(bx, by, bx + FLIP_SIZE, by + FLIP_SIZE, bg);
 
-        String glyph = "⟳";
+        String glyph = "âŸ³";
         float scale = 2.4f;
 
         int tw = this.font.width(glyph);
@@ -1584,11 +1584,11 @@ public class CardLargeViewScreen extends LegacyScreen {
         m.pushMatrix();
         m.translate(cxx, cyy);
         m.scale(scale, scale);
-        ctx.text(this.font, glyph, -tw / 2, -th / 2, 0xFF70E0FF, false);
+        ctx.drawString(this.font, glyph, -tw / 2, -th / 2, 0xFF70E0FF, false);
         m.popMatrix();
 
         if (hover) {
-            ctx.setTooltipForNextFrame(this.font, Component.literal("Rotate 90° (E)"), mouseX, mouseY);
+            ctx.setTooltipForNextFrame(this.font, Component.literal("Rotate 90Â° (E)"), mouseX, mouseY);
         }
     }
 
@@ -1618,31 +1618,31 @@ public class CardLargeViewScreen extends LegacyScreen {
 
     private void drawInfoTab(GuiGraphics ctx, int x, int y, int panelW, int panelY, int panelH, int mouseX, int mouseY) {
         // Title
-        ctx.text(this.font, Component.literal("Card Info"), x, y, 0xFFFFFFFF);
+        ctx.drawString(this.font, Component.literal("Card Info"), x, y, 0xFFFFFFFF);
         y += 16;
 
         // NBT card header (name + set line)
         CompoundTag meta = getMeta(stack);
 
         String name = meta.getString("name").orElse("Unknown Card");
-        String set = meta.getString("set").orElse("—").toUpperCase();
-        String rarity = meta.getString("rarity").orElse("—");
-        String typeLine = meta.getString("type_line").orElse("—");
-        String collector = meta.getString("collector_number").orElse("—");
+        String set = meta.getString("set").orElse("â€”").toUpperCase();
+        String rarity = meta.getString("rarity").orElse("â€”");
+        String typeLine = meta.getString("type_line").orElse("â€”");
+        String collector = meta.getString("collector_number").orElse("â€”");
 
         // Name (trim if too wide)
         name = trimToWidth(name, panelW - 20);
-        ctx.text(this.font, Component.literal(name), x, y, 0xFFFFFFFF);
+        ctx.drawString(this.font, Component.literal(name), x, y, 0xFFFFFFFF);
         y += 12;
 
-        String sub = set + " • " + rarity + " • #" + collector;
+        String sub = set + " â€¢ " + rarity + " â€¢ #" + collector;
         sub = trimToWidth(sub, panelW - 20);
-        ctx.text(this.font, Component.literal(sub), x, y, 0xFFAAAAAA);
+        ctx.drawString(this.font, Component.literal(sub), x, y, 0xFFAAAAAA);
         y += 12;
 
         // Type line
         typeLine = trimToWidth(typeLine, panelW - 20);
-        ctx.text(this.font, Component.literal(typeLine), x, y, 0xFFAAAAAA);
+        ctx.drawString(this.font, Component.literal(typeLine), x, y, 0xFFAAAAAA);
         y += 14;
 
         ScryfallInfoManager.Entry e = (currentScryfallId == null) ? null : ScryfallInfoManager.getCached(currentScryfallId);
@@ -1661,7 +1661,7 @@ public class CardLargeViewScreen extends LegacyScreen {
 
         // Current prices header + configured item + rounded value
         Component header = Component.literal("Current prices");
-        ctx.text(this.font, header, x, y, 0xFF70E0FF);
+        ctx.drawString(this.font, header, x, y, 0xFF70E0FF);
 
         int headerW = this.font.width(header);
         int iconX = x + headerW + 6;
@@ -1675,7 +1675,7 @@ public class CardLargeViewScreen extends LegacyScreen {
             ctx.renderItem(priceStack, iconX, iconY);
 
             // Always keep the item amount white; only color the matching currency row(s)
-            ctx.text(
+            ctx.drawString(
                     this.font,
                     String.valueOf(amount),
                     iconX + 18,
@@ -1687,7 +1687,7 @@ public class CardLargeViewScreen extends LegacyScreen {
         y += 14;
 
         if (e == null) {
-            ctx.text(this.font, Component.literal("Loading..."), x, y, 0xFFAAAAAA);
+            ctx.drawString(this.font, Component.literal("Loading..."), x, y, 0xFFAAAAAA);
             y += 12;
         } else {
             int baseKey = 0xFFDDDDDD;
@@ -1710,8 +1710,8 @@ public class CardLargeViewScreen extends LegacyScreen {
             y = drawKv(ctx, x, y, "USD Foil", "$" + e.usdFoil, usdFoilCol, 0xFFFFFFFF);
             y = drawKv(ctx, x, y, "USD Etched", "$" + e.usdEtched, usdEtchedCol, 0xFFFFFFFF);
 
-            y = drawKv(ctx, x, y, "EUR", "€" + e.eur, eurCol, 0xFFFFFFFF);
-            y = drawKv(ctx, x, y, "EUR Foil", "€" + e.eurFoil, eurFoilCol, 0xFFFFFFFF);
+            y = drawKv(ctx, x, y, "EUR", "â‚¬" + e.eur, eurCol, 0xFFFFFFFF);
+            y = drawKv(ctx, x, y, "EUR Foil", "â‚¬" + e.eurFoil, eurFoilCol, 0xFFFFFFFF);
 
             y = drawKv(ctx, x, y, "TIX", e.tix, tixCol, 0xFFFFFFFF);
 
@@ -1719,11 +1719,11 @@ public class CardLargeViewScreen extends LegacyScreen {
 
         y += 8;
 
-        ctx.text(this.font, Component.literal("Format legality"), x, y, 0xFF70E0FF);
+        ctx.drawString(this.font, Component.literal("Format legality"), x, y, 0xFF70E0FF);
         y += 14;
 
         if (e == null) {
-            ctx.text(this.font, Component.literal("Loading..."), x, y, 0xFFAAAAAA);
+            ctx.drawString(this.font, Component.literal("Loading..."), x, y, 0xFFAAAAAA);
             return;
         }
 
@@ -1767,8 +1767,8 @@ public class CardLargeViewScreen extends LegacyScreen {
             String label = prettyFormatName(key);
             label = trimToWidth(label, 84); // keep aligned with value column
 
-            ctx.text(this.font, label + ":", listX, rowY, 0xFFDDDDDD, false);
-            ctx.text(this.font, prettyLegality(status), listX + 88, rowY, legalityColor(status), false);
+            ctx.drawString(this.font, label + ":", listX, rowY, 0xFFDDDDDD, false);
+            ctx.drawString(this.font, prettyLegality(status), listX + 88, rowY, legalityColor(status), false);
         }
 
         ctx.disableScissor();
@@ -1779,7 +1779,7 @@ public class CardLargeViewScreen extends LegacyScreen {
 
     private void drawCountersTab(GuiGraphics ctx, int x, int y, int panelW, int panelY, int panelH, int mouseX, int mouseY) {
         // Title
-        ctx.text(this.font, Component.literal("Counters"), x, y, 0xFF70E0FF);
+        ctx.drawString(this.font, Component.literal("Counters"), x, y, 0xFF70E0FF);
         y += 16; // move below title
 
         // Load counters map from NBT
@@ -1804,11 +1804,11 @@ public class CardLargeViewScreen extends LegacyScreen {
 
         // Empty state (still draw editor below)
         if (keys.isEmpty()) {
-            ctx.text(this.font, Component.literal("No counters yet."), listX, listY, 0xFFAAAAAA);
-            ctx.text(this.font, Component.literal("Type a name, choose an icon, then Create."), listX, listY + 12, 0xFF777777);
+            ctx.drawString(this.font, Component.literal("No counters yet."), listX, listY, 0xFFAAAAAA);
+            ctx.drawString(this.font, Component.literal("Type a name, choose an icon, then Create."), listX, listY + 12, 0xFF777777);
 
             drawCountersEditorArea(ctx, panelY, panelH, x, mouseX, mouseY);
-            ctx.text(this.font, Component.literal("Tip: Shift for +/-5"), x, panelY + panelH - 18, 0xFF777777);
+            ctx.drawString(this.font, Component.literal("Tip: Shift for +/-5"), x, panelY + panelH - 18, 0xFF777777);
             return;
         }
 
@@ -1845,7 +1845,7 @@ public class CardLargeViewScreen extends LegacyScreen {
 
             if (iconKey == null || iconKey.equals("none")) {
                 // dash placeholder
-                ctx.text(this.font, "—", iconX + 2, rowY + 2, 0xFF777777, false);
+                ctx.drawString(this.font, "â€”", iconX + 2, rowY + 2, 0xFF777777, false);
             } else {
                 Identifier tex = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/" + iconKey + ".png");
                 drawIconFit(ctx, tex, iconX, iconY, iconSize, iconSize);
@@ -1865,7 +1865,7 @@ public class CardLargeViewScreen extends LegacyScreen {
 
             display = trimToWidth(display, maxNameW);
 
-            ctx.text(this.font, display, nameX, rowY + 2, 0xFFDDDDDD, false);
+            ctx.drawString(this.font, display, nameX, rowY + 2, 0xFFDDDDDD, false);
             int btnY = rowY + (CTR_ROW_H - ADJ_BTN) / 2;
 
             // right edge alignment
@@ -1877,7 +1877,7 @@ public class CardLargeViewScreen extends LegacyScreen {
             boolean hoverPlus  = mouseX >= plusX  && mouseX < plusX  + ADJ_BTN && mouseY >= btnY && mouseY < btnY + ADJ_BTN;
 
             drawMiniButton(ctx, minusX, btnY, ADJ_BTN, "-", hoverMinus);
-            ctx.text(this.font, val, valX, rowY + 2, 0xFFFFFFFF, false);
+            ctx.drawString(this.font, val, valX, rowY + 2, 0xFFFFFFFF, false);
             drawMiniButton(ctx, plusX,  btnY, ADJ_BTN, "+", hoverPlus);
 
             // store click rects for this key
@@ -1887,7 +1887,7 @@ public class CardLargeViewScreen extends LegacyScreen {
 
             if (hover) {
                 ctx.setTooltipForNextFrame(this.font,
-                        Component.literal("Scroll: +/- 1  •  Shift+Scroll: +/- 5  •  Click: select"),
+                        Component.literal("Scroll: +/- 1  â€¢  Shift+Scroll: +/- 5  â€¢  Click: select"),
                         mouseX, mouseY);
             }
         }
@@ -1898,7 +1898,7 @@ public class CardLargeViewScreen extends LegacyScreen {
         drawCountersEditorArea(ctx, panelY, panelH, x, mouseX, mouseY);
 
         // Tip footer
-        ctx.text(this.font, Component.literal("Tip: Shift for +/-5"), x, panelY + panelH - 18, 0xFF777777);
+        ctx.drawString(this.font, Component.literal("Tip: Shift for +/-5"), x, panelY + panelH - 18, 0xFF777777);
     }
 
     private static void editMeta(ItemStack st, java.util.function.Consumer<CompoundTag> mutator) {
@@ -1977,11 +1977,11 @@ public class CardLargeViewScreen extends LegacyScreen {
             if (selected) ctx.fill(cx, cy, cx + cell, cy + cell, 0x553BE36A);
             else if (hover) ctx.fill(cx, cy, cx + cell, cy + cell, 0x33202020);
 
-            // draw icon or "—" for none
+            // draw icon or "â€”" for none
             if (key.equals("none")) {
-                String dash = "—";
+                String dash = "â€”";
                 int tw = this.font.width(dash);
-                ctx.text(this.font, dash,
+                ctx.drawString(this.font, dash,
                         cx + (cell - tw) / 2,
                         cy + (cell - this.font.lineHeight) / 2,
                         0xFFAAAAAA, false);
@@ -2094,7 +2094,7 @@ public class CardLargeViewScreen extends LegacyScreen {
         int tw = this.font.width(glyph);
         int tx = x + (size - tw) / 2;
         int ty = y + (size - this.font.lineHeight) / 2;
-        ctx.text(this.font, glyph, tx, ty, 0xFFFFFFFF, false);
+        ctx.drawString(this.font, glyph, tx, ty, 0xFFFFFFFF, false);
     }
 
     private void adjustCounterValue(String key, int deltaSteps) {
@@ -2165,10 +2165,10 @@ public class CardLargeViewScreen extends LegacyScreen {
     }
 
     private int drawKv(GuiGraphics ctx, int x, int y, String k, String v, int keyColor, int valueColor) {
-        if (v == null) v = "—";
-        if (v.endsWith("—")) v = "—";
-        ctx.text(this.font, k + ":", x, y, keyColor, false);
-        ctx.text(this.font, v, x + 88, y, valueColor, false);
+        if (v == null) v = "â€”";
+        if (v.endsWith("â€”")) v = "â€”";
+        ctx.drawString(this.font, k + ":", x, y, keyColor, false);
+        ctx.drawString(this.font, v, x + 88, y, valueColor, false);
         return y + 12;
     }
 
@@ -2216,13 +2216,13 @@ public class CardLargeViewScreen extends LegacyScreen {
     private static boolean isValidPrice(String s) {
         if (s == null) return false;
         String t = s.trim();
-        return !(t.isEmpty() || t.equals("-") || t.equals("—"));
+        return !(t.isEmpty() || t.equals("-") || t.equals("â€”"));
     }
 
     private static int roundPriceToWhole(String price) {
         if (price == null) return 0;
         String s = price.trim();
-        if (s.isEmpty() || s.equals("—")) return 0;
+        if (s.isEmpty() || s.equals("â€”")) return 0;
 
         try {
             double v = Double.parseDouble(s);
@@ -2255,7 +2255,7 @@ public class CardLargeViewScreen extends LegacyScreen {
     }
 
     private static String prettyFormatName(String key) {
-        if (key == null || key.isBlank()) return "—";
+        if (key == null || key.isBlank()) return "â€”";
         // Scryfall keys are like "paupercommander" or "oldschool" or "standardbrawl" or "future"
         // Make them readable: split underscores if present; otherwise title-case.
         String s = key.trim().replace('_', ' ');
@@ -2263,7 +2263,7 @@ public class CardLargeViewScreen extends LegacyScreen {
     }
 
     private static String toTitle(String s) {
-        if (s == null) return "—";
+        if (s == null) return "â€”";
         String[] parts = s.split("\\s+");
         StringBuilder out = new StringBuilder();
         for (String p : parts) {
@@ -2272,7 +2272,7 @@ public class CardLargeViewScreen extends LegacyScreen {
             out.append(Character.toUpperCase(p.charAt(0)));
             if (p.length() > 1) out.append(p.substring(1));
         }
-        return out.isEmpty() ? "—" : out.toString();
+        return out.isEmpty() ? "â€”" : out.toString();
     }
 
     // Keep common formats near the top, then everything else
@@ -2328,7 +2328,7 @@ public class CardLargeViewScreen extends LegacyScreen {
     }
 
     private String trimToWidth(String s, int maxPx) {
-        if (s == null) return "—";
+        if (s == null) return "â€”";
         if (this.font.width(s) <= maxPx) return s;
 
         String ell = "...";

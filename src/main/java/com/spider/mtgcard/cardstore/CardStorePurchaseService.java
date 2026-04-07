@@ -15,6 +15,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,6 +25,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 public final class CardStorePurchaseService {
+    private static final Logger LOGGER = LoggerFactory.getLogger("MtgCard/CardStore");
 
     private static int priceItemsForCustomRarity(String rarity) {
         if (rarity == null) return 1;
@@ -182,20 +185,24 @@ public final class CardStorePurchaseService {
         // ---- Scryfall async fetch for the scry lines ----
         List<CompletableFuture<ScryfallModels.Card>> futures = new ArrayList<>(scryLines.size());
         for (var l : scryLines) {
-            futures.add(ScryfallExactFetch.fetchBySetCollectorAsync(world, l.setCode(), l.collectorNumber()));
+            String setCode = l.setCode();
+            String collectorNumber = l.collectorNumber();
+            futures.add(ScryfallExactFetch.fetchBySetCollectorAsync(world, setCode, collectorNumber)
+                    .exceptionally(ex -> {
+                        LOGGER.warn("Card store fetch failed for {}/{}", setCode, collectorNumber, ex);
+                        return null;
+                    }));
         }
 
         CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).whenComplete((v, ex) -> {
-            if (ex != null) {
-                server.execute(() -> player.sendSystemMessage(Component.literal("Failed fetching cards from Scryfall."), true));
-                return;
-            }
-
-            List<ScryfallModels.Card> cards = new ArrayList<>(futures.size());
-            for (var f : futures) cards.add(f.join());
-
             server.execute(() -> {
+                List<ScryfallModels.Card> cards = new ArrayList<>(futures.size());
+                for (var f : futures) {
+                    cards.add(f.getNow(null));
+                }
+
                 int totalItems = 0;
+                int resolvedScryLines = 0;
 
                 // Price scryfall lines
                 for (int i = 0; i < cards.size(); i++) {
@@ -203,6 +210,7 @@ public final class CardStorePurchaseService {
                     var line = scryLines.get(i);
                     if (c == null || c.id == null || c.id.isBlank()) continue;
 
+                    resolvedScryLines++;
                     boolean preferFoil = false;
                     int unitItems = priceItemsForCard(c, preferFoil);
                     long add = (long) unitItems * (long) line.qty();
@@ -222,6 +230,11 @@ public final class CardStorePurchaseService {
                 MtgcardConfig cfg = MtgcardConfig.get();
                 Item currency = resolveCurrencyItem(cfg);
                 int costItems = totalItems;
+
+                if (resolvedScryLines == 0 && customLines.isEmpty()) {
+                    player.sendSystemMessage(Component.literal("Failed fetching cards from Scryfall."), true);
+                    return;
+                }
 
                 if (!creative) {
                     int have = countInInv(player, currency);
@@ -250,6 +263,11 @@ public final class CardStorePurchaseService {
                     ItemStack template = CardStackBuilders.buildCustomStackFromId(l.collectorNumber(), false);
                     if (template == null || template.isEmpty()) continue;
                     queueNoStack(store, player.getUUID(), template, l.qty());
+                }
+
+                if (!store.isDelivering()) {
+                    player.sendSystemMessage(Component.literal("No cards could be fetched from Scryfall."), true);
+                    return;
                 }
 
                 player.sendSystemMessage(Component.literal(creative

@@ -21,33 +21,29 @@ public final class ScryfallExactFetch {
     public static CompletableFuture<ScryfallModels.Card> fetchBySetCollectorAsync(ServerLevel world, String setCode, String collectorNumber) {
         String set = (setCode == null) ? "" : setCode.trim().toLowerCase(Locale.ROOT);
 
-        // ✅ DO NOT lowercase collector number
-        String cn  = (collectorNumber == null) ? "" : collectorNumber.trim();
+        // Keep collector number case intact.
+        String cn = (collectorNumber == null) ? "" : collectorNumber.trim();
 
         final String baseUrl = "https://api.scryfall.com/cards/" + enc(set) + "/" + enc(cn);
 
-        // Preferred language
         String lang = MtgcardConfig.get().Card_Language;
         lang = (lang == null) ? "" : lang.trim().toLowerCase(Locale.ROOT);
 
-        // ✅ fallback query (works when printing route fails)
         final String searchUrl = "https://api.scryfall.com/cards/search?q="
                 + enc("set:" + set + " cn:" + cn);
 
         if (!lang.isBlank() && !"en".equals(lang)) {
             final String langUrl = baseUrl + "/" + enc(lang);
 
-            return ScryfallService.supplyAsync(() -> {
+            return ScryfallService.supplyAsync("exact printing " + set + "/" + cn + " lang=" + lang, () -> {
                 try {
                     String body = ScryfallHttp.get(langUrl);
                     return ScryfallJson.parseCard(body);
                 } catch (Throwable ignored) {
-                    // 2) fallback to English/default printing endpoint
                     try {
                         String body = ScryfallHttp.get(baseUrl);
                         return ScryfallJson.parseCard(body);
                     } catch (Throwable ignored2) {
-                        // 3) final fallback: search endpoint, first result
                         String body = ScryfallHttp.get(searchUrl);
                         return ScryfallJson.parseFirstCardFromSearch(body);
                     }
@@ -55,8 +51,7 @@ public final class ScryfallExactFetch {
             });
         }
 
-        // English/default with fallback
-        return ScryfallService.supplyAsync(() -> {
+        return ScryfallService.supplyAsync("exact printing " + set + "/" + cn, () -> {
             try {
                 String body = ScryfallHttp.get(baseUrl);
                 return ScryfallJson.parseCard(body);
@@ -65,9 +60,7 @@ public final class ScryfallExactFetch {
                 return ScryfallJson.parseFirstCardFromSearch(body);
             }
         });
-
     }
-    // in ScryfallHttp
 
     public static CompletableFuture<List<ScryfallModels.Card>> fetchCollectionBySetCollectorAsync(
             ServerLevel world,
@@ -75,14 +68,14 @@ public final class ScryfallExactFetch {
     ) {
         if (hits == null || hits.isEmpty()) return CompletableFuture.completedFuture(List.of());
 
-        final int CHUNK = 75;
+        final int chunk = 75;
         final String url = "https://api.scryfall.com/cards/collection";
 
-        return ScryfallService.supplyAsync(() -> {
+        return ScryfallService.supplyAsync("collection batch hits=" + hits.size(), () -> {
             ArrayList<ScryfallModels.Card> all = new ArrayList<>();
 
-            for (int i = 0; i < hits.size(); i += CHUNK) {
-                int end = Math.min(hits.size(), i + CHUNK);
+            for (int i = 0; i < hits.size(); i += chunk) {
+                int end = Math.min(hits.size(), i + chunk);
                 List<ScryfallCardSearchFetch.Hit> slice = hits.subList(i, end);
 
                 JsonArray identifiers = new JsonArray();
@@ -116,14 +109,14 @@ public final class ScryfallExactFetch {
     ) {
         if (hits == null || hits.isEmpty()) return CompletableFuture.completedFuture(List.of());
 
-        final int CHUNK = 75;
+        final int chunk = 75;
         final String url = "https://api.scryfall.com/cards/collection";
 
-        return ScryfallService.supplyAsync(() -> {
+        return ScryfallService.supplyAsync("collection print hits=" + hits.size(), () -> {
             ArrayList<ScryfallModels.Card> all = new ArrayList<>();
 
-            for (int i = 0; i < hits.size(); i += CHUNK) {
-                int end = Math.min(hits.size(), i + CHUNK);
+            for (int i = 0; i < hits.size(); i += chunk) {
+                int end = Math.min(hits.size(), i + chunk);
                 List<ScryfallPrintSearchFetch.PrintHit> slice = hits.subList(i, end);
 
                 JsonArray identifiers = new JsonArray();

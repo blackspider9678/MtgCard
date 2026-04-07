@@ -12,9 +12,13 @@ import java.time.format.DateTimeFormatter;
 
 final class ScryfallHttp {
     private static final Logger LOGGER = LoggerFactory.getLogger("MtgCard/Scryfall");
+    private static final long REQUEST_TIMEOUT_SECONDS = 10L;
+    private static final long CONNECT_TIMEOUT_SECONDS = 5L;
+    private static final long MAX_RETRY_BACKOFF_MS = 5_000L;
+    private static final int MAX_ATTEMPTS = 3;
 
     private static final HttpClient CLIENT = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
+            .connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))
             .followRedirects(HttpClient.Redirect.NORMAL)
             .version(HttpClient.Version.HTTP_1_1)
             .build();
@@ -67,7 +71,7 @@ final class ScryfallHttp {
         return HttpRequest.newBuilder(URI.create(url))
                 .header("User-Agent", "mtgcard-fabric-mod/1.0")
                 .header("Accept", "application/json")
-                .timeout(Duration.ofSeconds(25));
+                .timeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS));
     }
 
     private static String sendWithRetry(HttpRequest req, String url) throws Exception {
@@ -83,7 +87,7 @@ final class ScryfallHttp {
                 resp = CLIENT.send(req, HttpResponse.BodyHandlers.ofString());
             } catch (IOException | InterruptedException e) {
                 LOGGER.warn("Scryfall request failed (attempt {}): {} -> {}", attempts, url, e.toString());
-                if (attempts >= 3) throw e;
+                if (attempts >= MAX_ATTEMPTS) throw e;
                 long waitMs = 250L * attempts;
                 backoff(waitMs);
                 sleep(waitMs);
@@ -97,15 +101,15 @@ final class ScryfallHttp {
 
             // Rate limit: honor Retry-After and push GLOBAL backoff
             if (code == 429) {
-                long waitMs = parseRetryAfterMs(resp);
+                long waitMs = clampBackoff(parseRetryAfterMs(resp));
                 LOGGER.warn("Scryfall 429 retry in {}ms (attempt {}): {}", waitMs, attempts, url);
                 backoff(waitMs);
-                if (attempts < 4) continue;
+                if (attempts < MAX_ATTEMPTS) continue;
             }
 
             // Transient server errors
-            if (code >= 500 && code <= 599 && attempts < 4) {
-                long waitMs = 750L * attempts;
+            if (code >= 500 && code <= 599 && attempts < MAX_ATTEMPTS) {
+                long waitMs = clampBackoff(750L * attempts);
                 LOGGER.warn("Scryfall {} retry in {}ms (attempt {}): {}", code, waitMs, attempts, url);
                 backoff(waitMs);
                 continue;
@@ -124,7 +128,7 @@ final class ScryfallHttp {
     private static long parseRetryAfterMs(HttpResponse<?> resp) {
         try {
             var h = resp.headers().firstValue("Retry-After");
-            if (h.isEmpty()) return 60_000L;
+            if (h.isEmpty()) return MAX_RETRY_BACKOFF_MS;
             String v = h.get().trim();
 
             // seconds
@@ -142,11 +146,19 @@ final class ScryfallHttp {
                 // fall through
             }
         } catch (Throwable ignored) {}
-        return 60_000L; // be conservative if header missing/unparseable
+        return MAX_RETRY_BACKOFF_MS;
+    }
+
+    private static long clampBackoff(long ms) {
+        return Math.max(250L, Math.min(MAX_RETRY_BACKOFF_MS, ms));
     }
 
     private static void sleep(long ms) {
-        try { Thread.sleep(ms); } catch (InterruptedException ignored) {}
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private ScryfallHttp() {}

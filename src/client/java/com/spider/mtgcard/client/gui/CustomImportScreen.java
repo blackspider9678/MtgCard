@@ -1,26 +1,25 @@
 // CustomImportScreen.java
 package com.spider.mtgcard.client.gui;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import com.spider.mtgcard.net.CustomCardPackets;
 import com.spider.mtgcard.util.Cockatrice;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.narration.NarrationMessageBuilder;
-import net.minecraft.client.gui.screen.narration.NarrationPart;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.ClickableWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.input.CharInput;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.texture.NativeImageBackedTexture;
-import net.minecraft.text.OrderedText;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.narration.NarratedElementType;
+import net.minecraft.client.gui.narration.NarrationElementOutput;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 import javax.imageio.ImageIO;
@@ -54,13 +53,13 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
 
         // --- Thumbnail texture ---
         public Identifier thumbId;
-        public NativeImageBackedTexture thumbTex;
+        public DynamicTexture thumbTex;
         public int thumbW;
         public int thumbH;
 
         // --- Hover preview texture (lazy) ---
         public Identifier previewId;
-        public NativeImageBackedTexture previewTex;
+        public DynamicTexture previewTex;
 
         // runtime linking info
         public Link link = new Link();
@@ -282,8 +281,8 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
             final String finalExt = enc.ext;
 
             // Now hop to client thread to mutate UI + entries
-            if (this.client != null) {
-                this.client.execute(() -> {
+            if (this.minecraft != null) {
+                this.minecraft.execute(() -> {
                     if (cancelRequested) return;
 
                     // Find existing entry with same base waiting for other face
@@ -424,8 +423,8 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     private final List<Entry> entries = new ArrayList<>();
     private int selected = -1;
 
-    private ButtonWidget createBtn, rarityBtn, dfcToggleBtn;
-    private TextFieldWidget nameF, manaF, typeF, setF, powF, touF, loyF;
+    private Button createBtn, rarityBtn, dfcToggleBtn;
+    private EditBox nameF, manaF, typeF, setF, powF, touF, loyF;
     private SimpleTextArea textF; // multiline Oracle Text (custom widget below)
 
     // Metadata cache from Cockatrice XMLs
@@ -466,7 +465,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     private volatile int xmlImportFailed = 0;
     private volatile String xmlImportPhase = "";
 
-    private ButtonWidget removeBtn, linkFrontBtn, linkBackBtn, clearLinkBtn;
+    private Button removeBtn, linkFrontBtn, linkBackBtn, clearLinkBtn;
 
     // Shared GLFW cursors (created once)
     private static final int CURSOR_ARROW = 0;
@@ -477,22 +476,22 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     }
     private static void applyCursor(int which) {
         ensureCursors();
-        var win = MinecraftClient.getInstance().getWindow();
+        var win = Minecraft.getInstance().getWindow();
         if (win == null) return;
-        long handle = win.getHandle();
+        long handle = win.handle();
         long cur = (which == CURSOR_IBEAM) ? MOUSE_CURSOR_IBEAM : MOUSE_CURSOR_ARROW;
         GLFW.glfwSetCursor(handle, cur);
     }
 
 
     public static void open() {
-        var mc = MinecraftClient.getInstance();
+        var mc = Minecraft.getInstance();
         mc.execute(() -> mc.setScreen(new CustomImportScreen()));
     }
 
-    public CustomImportScreen() { super(Text.literal("Import Custom Cards")); }
+    public CustomImportScreen() { super(Component.literal("Import Custom Cards")); }
 
-    @Override public boolean shouldPause() { return false; }
+    @Override public boolean isPauseScreen() { return false; }
 
     // ---- Lifecycle ----
     @Override
@@ -502,29 +501,29 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
 
         int bottomY = this.height - 30;
 
-        createBtn = ButtonWidget.builder(Text.literal("Create (send to server)"), b -> sendToServer())
-                .dimensions(this.width - 210, bottomY, 200, 20).build();
-        addDrawableChild(createBtn);
+        createBtn = Button.builder(Component.literal("Create (send to server)"), b -> sendToServer())
+                .bounds(this.width - 210, bottomY, 200, 20).build();
+        addRenderableWidget(createBtn);
 
         // --- Bottom controls (left): Remove + Link flow ---
-        removeBtn = ButtonWidget.builder(Text.literal("Remove"), b -> removeSelected())
-                .dimensions(10, bottomY, 70, 20).build();
-        addDrawableChild(removeBtn);
+        removeBtn = Button.builder(Component.literal("Remove"), b -> removeSelected())
+                .bounds(10, bottomY, 70, 20).build();
+        addRenderableWidget(removeBtn);
 
         int linkW = 95, gap = 6;
         int linkX = 90;
 
-        linkFrontBtn = ButtonWidget.builder(Text.literal("Link as FRONT"), b -> linkSelectedAs(true))
-                .dimensions(linkX, bottomY, linkW, 20).build();
-        addDrawableChild(linkFrontBtn);
+        linkFrontBtn = Button.builder(Component.literal("Link as FRONT"), b -> linkSelectedAs(true))
+                .bounds(linkX, bottomY, linkW, 20).build();
+        addRenderableWidget(linkFrontBtn);
 
-        linkBackBtn = ButtonWidget.builder(Text.literal("Link as BACK"), b -> linkSelectedAs(false))
-                .dimensions(linkX + (linkW + gap), bottomY, linkW, 20).build();
-        addDrawableChild(linkBackBtn);
+        linkBackBtn = Button.builder(Component.literal("Link as BACK"), b -> linkSelectedAs(false))
+                .bounds(linkX + (linkW + gap), bottomY, linkW, 20).build();
+        addRenderableWidget(linkBackBtn);
 
-        clearLinkBtn = ButtonWidget.builder(Text.literal("Clear Link"), b -> clearLinkForSelected())
-                .dimensions(linkX + 2*(linkW + gap), bottomY, 80, 20).build();
-        addDrawableChild(clearLinkBtn);
+        clearLinkBtn = Button.builder(Component.literal("Clear Link"), b -> clearLinkForSelected())
+                .bounds(linkX + 2*(linkW + gap), bottomY, 80, 20).build();
+        addRenderableWidget(clearLinkBtn);
 
         buildEditorWidgets();
         syncEditorFromSelected();
@@ -544,7 +543,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     @Override
     public void resize(int width, int height) {
         super.resize(width, height);
-        this.clearChildren();
+        this.clearWidgets();
         this.init();
         updateMaxScroll();
     }
@@ -553,15 +552,15 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     public void removed() {
         cancelAllAsyncWork(); // <-- important: stops future scheduling + stops queued sends
 
-        if (client == null) return;
-        var tm = client.getTextureManager();
+        if (minecraft == null) return;
+        var tm = minecraft.getTextureManager();
         for (var e : entries) {
-            if (e.thumbId != null) tm.destroyTexture(e.thumbId);
+            if (e.thumbId != null) tm.release(e.thumbId);
             if (e.thumbTex != null) e.thumbTex.close();
             e.thumbId = null;
             e.thumbTex = null;
 
-            if (e.previewId != null) tm.destroyTexture(e.previewId);
+            if (e.previewId != null) tm.release(e.previewId);
             if (e.previewTex != null) e.previewTex.close();
             e.previewId = null;
             e.previewTex = null;
@@ -571,7 +570,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
 
     // ---- Render ----
     @Override
-    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
         // Solid dim (avoid 1.21 blur crash)
         ctx.fill(0, 0, this.width, this.height, 0xB0000000);
 
@@ -619,7 +618,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                     int texW = (e.thumbW > 0 ? e.thumbW : imgW);
                     int texH = (e.thumbH > 0 ? e.thumbH : imgH);
 
-                    ctx.drawTexture(
+                    ctx.blit(
                             RenderPipelines.GUI_TEXTURED,
                             e.thumbId,
                             x+2, y+2,
@@ -637,7 +636,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                     int maxLines = 3; // up to 3 lines on thumbnail
                     drawWrappedThumbLabel(ctx, label, x, y, BOX, BOX_H, pad, maxLines);
                 } else {
-                    ctx.drawText(this.textRenderer, "IMG", x + BOX / 2 - 10, y + BOX_H / 2 - 4, 0xFFAAAAAA, false);
+                    ctx.drawString(this.font, "IMG", x + BOX / 2 - 10, y + BOX_H / 2 - 4, 0xFFAAAAAA, false);
                 }
 
                 // Linking target cue
@@ -664,10 +663,10 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
 
 
         // --- Banner text (on top of the window)
-        ctx.drawText(this.textRenderer,
+        ctx.drawString(this.font,
                 "Drag images (*.png, *.jpg, *.webp) or a Cockatrice XML here",
                 10, 10, 0xFFEFEFEF, true);
-        ctx.drawText(this.textRenderer,
+        ctx.drawString(this.font,
                 "Images added: " + entries.size(),
                 10, 26, 0xFFB0FFB0, true);
 
@@ -676,7 +675,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
 
         // Editor panel bg + title
         ctx.fill(panelX - 8, 20, panelX + panelW, this.height - 40, 0xAA101010);
-        ctx.drawText(this.textRenderer, "Edit Image", panelX, 22, 0xFFFFE070, false); // keep yellow
+        ctx.drawString(this.font, "Edit Image", panelX, 22, 0xFFFFE070, false); // keep yellow
 
         // --- Progress UI at the bottom of the right panel (with yellow text)
         renderRightPanelProgress(ctx);
@@ -695,21 +694,21 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         return null;
     }
 
-    private void drawCornerBadge(DrawContext ctx, int x, int y, String text) {
+    private void drawCornerBadge(GuiGraphics ctx, int x, int y, String text) {
         if (text == null || text.isEmpty()) return;
         int padX = 4, padY = 2;
-        int tw = this.textRenderer.getWidth(text);
-        int h = this.textRenderer.fontHeight;
+        int tw = this.font.width(text);
+        int h = this.font.lineHeight;
         int w = tw + padX * 2;
 
         // badge background + subtle border
         ctx.fill(x - 1, y - 1, x + w + 1, y + h + padY * 2 + 1, 0x66000000);
         ctx.fill(x, y, x + w, y + h + padY * 2, 0xCC0E0E0E);
         // text
-        ctx.drawText(this.textRenderer, Text.literal(text).asOrderedText(), x + padX, y + padY, 0xFFFFE070, false);
+        ctx.drawString(this.font, Component.literal(text).getVisualOrderText(), x + padX, y + padY, 0xFFFFE070, false);
     }
 
-    private void renderLinkHint(DrawContext ctx) {
+    private void renderLinkHint(GuiGraphics ctx) {
         if (linkPendingMode == LinkMode.NONE) return;
 
         String msg = (linkPendingMode == LinkMode.LINK_AS_FRONT)
@@ -719,16 +718,16 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         int yTop = GRID_TOP + 8;               // clear of “Images added”
         int xLeft = 10;
         int pad = 6;
-        int textW = this.textRenderer.getWidth(msg);
-        int h = this.textRenderer.fontHeight + pad * 2;
+        int textW = this.font.width(msg);
+        int h = this.font.lineHeight + pad * 2;
         int w = Math.min(textW + pad * 2, panelX - 20);
 
         ctx.fill(xLeft - 2, yTop - 2, xLeft + w + 2, yTop + h + 2, 0x80202020);
         ctx.fill(xLeft, yTop, xLeft + w, yTop + h, 0xC0101010);
-        ctx.drawText(this.textRenderer, msg, xLeft + pad, yTop + pad, 0xFFFFE070, false);
+        ctx.drawString(this.font, msg, xLeft + pad, yTop + pad, 0xFFFFE070, false);
     }
 
-    private void renderRightPanelProgress(DrawContext ctx) {
+    private void renderRightPanelProgress(GuiGraphics ctx) {
         // Prefer showing upload progress after clicking Create
         boolean showUpload = uploadUiActive;
         boolean showXml = (xmlImportFound != 0 || xmlImportDone != 0 || xmlImportFailed != 0 || xmlImportInProgress);
@@ -797,21 +796,21 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         double pct = progressed / (double) total;
         int fillW = (int) Math.round(barW * pct);
 
-        int lh = this.textRenderer.fontHeight;
+        int lh = this.font.lineHeight;
         int textX = panelX + padding;
         int textY = barY - 2 - (2 * lh);
 
         // Draw line 1 (wrapped to panel width if needed, first line only)
         int textMaxW = barW;
-        var wrapped1 = this.textRenderer.wrapLines(Text.literal(line1), textMaxW);
+        var wrapped1 = this.font.split(Component.literal(line1), textMaxW);
         if (!wrapped1.isEmpty()) {
-            ctx.drawText(this.textRenderer, wrapped1.get(0), textX, textY, UI_YELLOW, false);
+            ctx.drawString(this.font, wrapped1.get(0), textX, textY, UI_YELLOW, false);
         } else {
-            ctx.drawText(this.textRenderer, line1, textX, textY, UI_YELLOW, false);
+            ctx.drawString(this.font, line1, textX, textY, UI_YELLOW, false);
         }
 
         // Draw line 2
-        ctx.drawText(this.textRenderer, line2 == null ? "" : line2, textX, textY + lh, UI_YELLOW, false);
+        ctx.drawString(this.font, line2 == null ? "" : line2, textX, textY + lh, UI_YELLOW, false);
 
         // Bar bg + fill
         ctx.fill(barX - 1, barY - 1, barX + barW + 1, barY + barH + 1, PROG_BORDER);
@@ -824,7 +823,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
 
     // ---- Input ----
     @Override
-    public boolean mouseClicked(Click click, boolean bl) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean bl) {
         double mx = click.x();
         double my = click.y();
 
@@ -897,7 +896,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     }
 
     @Override
-    public boolean mouseDragged(Click click, double dx, double dy) {
+    public boolean mouseDragged(MouseButtonEvent click, double dx, double dy) {
         if (barDragging) {
             dragScrollbarTo((int) click.y());
             return true;
@@ -906,7 +905,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     }
 
     @Override
-    public boolean mouseReleased(Click click) {
+    public boolean mouseReleased(MouseButtonEvent click) {
         barDragging = false;
         return super.mouseReleased(click);
     }
@@ -1069,14 +1068,14 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                     final byte[] finalBytes = enc.bytes;
                     final String finalExt = enc.ext;
 
-                    if (this.client == null) {
+                    if (this.minecraft == null) {
                         manualInFlight = false;
                         manualImportCooldownTicks = 1;
                         return;
                     }
 
                     // ✅ Do ALL UI mutations + texture work on client thread
-                    this.client.execute(() -> {
+                    this.minecraft.execute(() -> {
                         try {
                             if (cancelRequested) return;
 
@@ -1165,29 +1164,29 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         typeF = addField(sx, sy, w, h, "Type Line", v -> withSel(e -> e.meta.typeLine = v)); sy += h + pad;
         setF  = addField(sx, sy, w, h, "Set", v -> withSel(e -> e.meta.set = v)); sy += h + pad;
 
-        rarityBtn = ButtonWidget.builder(Text.literal("Rarity: common"), b -> {
-            withSel(e -> { e.meta.rarity = nextRarity(e.meta.rarity); rarityBtn.setMessage(Text.literal("Rarity: " + e.meta.rarity)); });
-        }).dimensions(sx, sy, (w/2)-5, h).build();
-        addDrawableChild(rarityBtn);
+        rarityBtn = Button.builder(Component.literal("Rarity: common"), b -> {
+            withSel(e -> { e.meta.rarity = nextRarity(e.meta.rarity); rarityBtn.setMessage(Component.literal("Rarity: " + e.meta.rarity)); });
+        }).bounds(sx, sy, (w/2)-5, h).build();
+        addRenderableWidget(rarityBtn);
 
-        dfcToggleBtn = ButtonWidget.builder(Text.literal("Single Face"), b -> {
+        dfcToggleBtn = Button.builder(Component.literal("Single Face"), b -> {
             withSel(e -> {
                 e.meta.doubleFaced = !e.meta.doubleFaced;
-                dfcToggleBtn.setMessage(Text.literal(e.meta.doubleFaced ? "Double-Faced" : "Single Face"));
+                dfcToggleBtn.setMessage(Component.literal(e.meta.doubleFaced ? "Double-Faced" : "Single Face"));
                 updateLinkButtonsVisibility();
             });
-        }).dimensions(sx + (w/2)+5, sy, (w/2)-5, h).build();
+        }).bounds(sx + (w/2)+5, sy, (w/2)-5, h).build();
 
-        addDrawableChild(dfcToggleBtn);
+        addRenderableWidget(dfcToggleBtn);
         sy += h + pad;
 
         // Oracle Text -> multiline area (custom)
         int oracleH = 90;
-        textF = new SimpleTextArea(sx, sy, w, oracleH, Text.literal("Oracle Text"));
+        textF = new SimpleTextArea(sx, sy, w, oracleH, Component.literal("Oracle Text"));
         textF.setPlaceholder("Oracle Text");
         textF.setMaxLength(1_000_000);
         textF.setChangedListener(v -> withSel(e -> e.meta.oracleText = v));
-        addDrawableChild(textF);
+        addRenderableWidget(textF);
         sy += oracleH + pad;
 
         // 3-up line
@@ -1197,12 +1196,12 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         loyF  = addField(sx + 2*(col+10), sy, col, h, "Loyalty",   v -> withSel(e -> e.meta.loyalty = v));
     }
 
-    private TextFieldWidget addField(int x, int y, int w, int h, String placeholder, Consumer<String> onChange) {
-        TextFieldWidget tf = new TextFieldWidget(this.textRenderer, x, y, w, h, Text.literal(placeholder));
-        tf.setPlaceholder(Text.literal(placeholder));
-        tf.setChangedListener(onChange);
+    private EditBox addField(int x, int y, int w, int h, String placeholder, Consumer<String> onChange) {
+        EditBox tf = new EditBox(this.font, x, y, w, h, Component.literal(placeholder));
+        tf.setHint(Component.literal(placeholder));
+        tf.setResponder(onChange);
         tf.setMaxLength(1_000_000); // uncap
-        addDrawableChild(tf);
+        addRenderableWidget(tf);
         return tf;
     }
 
@@ -1231,8 +1230,8 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                     if (ni == null) return;
                     int tw = ni.getWidth();
                     int th = ni.getHeight();
-                    if (client != null) {
-                        client.execute(() -> installThumbTexture(e, ni, tw, th));
+                    if (minecraft != null) {
+                        minecraft.execute(() -> installThumbTexture(e, ni, tw, th));
                     } else {
                         ni.close();
                     }
@@ -1254,7 +1253,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                     int w = ni.getWidth(), h = ni.getHeight();
                     BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
                     for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
-                        int abgr = ni.getColorArgb(x, y);
+                        int abgr = ni.getPixel(x, y);
                         int a = (abgr >>> 24) & 0xFF;
                         int b = (abgr >>> 16) & 0xFF;
                         int g = (abgr >>> 8) & 0xFF;
@@ -1310,22 +1309,22 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                 int gg = (c >>> 8) & 0xFF;
                 int b = c & 0xFF;
                 int abgr = (a << 24) | (b << 16) | (gg << 8) | r;
-                niOut.setColor(x, y, abgr);
+                niOut.setPixelABGR(x, y, abgr);
             }
         }
         return niOut;
     }
 
     private void installThumbTexture(Entry e, NativeImage thumb, int tw, int th) {
-        if (client == null) { thumb.close(); return; }
+        if (minecraft == null) { thumb.close(); return; }
 
-        var tm = client.getTextureManager();
-        if (e.thumbId != null) tm.destroyTexture(e.thumbId);
+        var tm = minecraft.getTextureManager();
+        if (e.thumbId != null) tm.release(e.thumbId);
         if (e.thumbTex != null) e.thumbTex.close();
 
-        var tex = new NativeImageBackedTexture(() -> "mtgcard/thumb", thumb);
-        var id  = Identifier.of("mtgcard", "thumb/" + UUID.randomUUID());
-        tm.registerTexture(id, tex);
+        var tex = new DynamicTexture(() -> "mtgcard/thumb", thumb);
+        var id  = Identifier.fromNamespaceAndPath("mtgcard", "thumb/" + UUID.randomUUID());
+        tm.register(id, tex);
 
         e.thumbId = id;
         e.thumbTex = tex;
@@ -1355,7 +1354,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                     int w = ni.getWidth(), h = ni.getHeight();
                     BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
                     for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
-                        int abgr = ni.getColorArgb(x, y);
+                        int abgr = ni.getPixel(x, y);
                         int a = (abgr >>> 24) & 0xFF;
                         int b = (abgr >>> 16) & 0xFF;
                         int g = (abgr >>> 8) & 0xFF;
@@ -1418,7 +1417,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                 int gg = (c >>> 8) & 0xFF;
                 int b = c & 0xFF;
                 int abgr = (a << 24) | (b << 16) | (gg << 8) | r;
-                niOut.setColor(x, y, abgr);
+                niOut.setPixelABGR(x, y, abgr);
             }
         }
         return niOut;
@@ -1449,16 +1448,16 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                 .thenAccept(ni -> {
                     if (ni == null) { e.previewBuilding = false; return; }
                     int tw = ni.getWidth(), th = ni.getHeight();
-                    if (client != null) {
-                        client.execute(() -> {
+                    if (minecraft != null) {
+                        minecraft.execute(() -> {
                             try {
-                                var tm = client.getTextureManager();
-                                if (e.previewId != null) tm.destroyTexture(e.previewId);
+                                var tm = minecraft.getTextureManager();
+                                if (e.previewId != null) tm.release(e.previewId);
                                 if (e.previewTex != null) e.previewTex.close();
 
-                                var tex = new NativeImageBackedTexture(() -> "mtgcard/preview", ni);
-                                var id  = Identifier.of("mtgcard", "preview/" + UUID.randomUUID());
-                                tm.registerTexture(id, tex);
+                                var tex = new DynamicTexture(() -> "mtgcard/preview", ni);
+                                var id  = Identifier.fromNamespaceAndPath("mtgcard", "preview/" + UUID.randomUUID());
+                                tm.register(id, tex);
 
                                 e.previewId = id;
                                 e.previewTex = tex;
@@ -1474,7 +1473,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     }
 
 
-    private void drawHoverPreview(DrawContext ctx, int mouseX, int mouseY) {
+    private void drawHoverPreview(GuiGraphics ctx, int mouseX, int mouseY) {
         if (hoveredIndex < 0 || hoveredIndex >= entries.size()) return;
         Entry e = entries.get(hoveredIndex);
 
@@ -1508,16 +1507,16 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         ctx.fill(x - 1, y - 1, x + w + 1, y + h + 1, 0xFF000000);
 
         // Draw preview
-        ctx.drawTexture(RenderPipelines.GUI_TEXTURED, e.previewId, x, y, 0f, 0f, w, h, PREVIEW_TEX_W, PREVIEW_TEX_H);
+        ctx.blit(RenderPipelines.GUI_TEXTURED, e.previewId, x, y, 0f, 0f, w, h, PREVIEW_TEX_W, PREVIEW_TEX_H);
 
         // Small label (name)
         String label = (e.meta.name == null || e.meta.name.isEmpty()) ? e.fileName : e.meta.name;
-        int tw = this.textRenderer.getWidth(label);
+        int tw = this.font.width(label);
         int lx = x + 6;
         int ly = y + h + 6;
-        if (ly + this.textRenderer.fontHeight + 6 < this.height - 40) {
-            ctx.fill(x - 1, ly - 3, Math.min(x + w + 1, lx + Math.min(tw, w - 12) + 10), ly + this.textRenderer.fontHeight + 3, 0xAA000000);
-            ctx.drawText(this.textRenderer, label, lx, ly, 0xFFEFEFEF, false);
+        if (ly + this.font.lineHeight + 6 < this.height - 40) {
+            ctx.fill(x - 1, ly - 3, Math.min(x + w + 1, lx + Math.min(tw, w - 12) + 10), ly + this.font.lineHeight + 3, 0xAA000000);
+            ctx.drawString(this.font, label, lx, ly, 0xFFEFEFEF, false);
         }
     }
     private static final int ART_CHUNK_SIZE = 128 * 1024;
@@ -1800,8 +1799,8 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     }
 
     private void toast(String s) {
-        if (client != null && client.player != null)
-            client.player.sendMessage(Text.literal(s), false);
+        if (minecraft != null && minecraft.player != null)
+            minecraft.player.displayClientMessage(Component.literal(s), false);
     }
 
     // ---- Image helpers ----
@@ -1915,8 +1914,8 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                         }
 
                         Entry finalE = e;
-                        if (this.client != null) {
-                            this.client.execute(() -> {
+                        if (this.minecraft != null) {
+                            this.minecraft.execute(() -> {
                                 buildThumbnail(finalE);
                                 entries.add(finalE);
 
@@ -1944,7 +1943,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                 xmlImportPhase = "Import error";
             }
         }).whenComplete((v, err) -> {
-            if (this.client != null) this.client.execute(() -> {
+            if (this.minecraft != null) this.minecraft.execute(() -> {
                 xmlImportInProgress = false;
                 if (err != null) {
                     System.out.println("[MTGCard/XML] Importer threw: " + err);
@@ -1964,7 +1963,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     }
 
     // --- grid scrollbar helpers ---
-    private void drawGridScrollbar(DrawContext ctx) {
+    private void drawGridScrollbar(GuiGraphics ctx) {
         int trackX = panelX - 6;
         int trackW = 4;
         int trackY = GRID_TOP;
@@ -2005,7 +2004,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     }
 
     // --- Simple multiline text area (full editor behaviors) ---
-    private final class SimpleTextArea extends ClickableWidget {
+    private final class SimpleTextArea extends AbstractWidget {
         private String value = "";
         private String placeholder = "";
         private int maxLength = 1_000_000;
@@ -2043,9 +2042,9 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
             int end;   // exclusive (no newline)
         }
 
-        SimpleTextArea(int x, int y, int w, int h, Text message) {
+        SimpleTextArea(int x, int y, int w, int h, Component message) {
             super(x, y, w, h, message);
-            this.lineHeight = Math.max(9, textRenderer.fontHeight);
+            this.lineHeight = Math.max(9, font.lineHeight);
             this.active = true;
             this.visible = true;
         }
@@ -2146,7 +2145,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                     int lo = lineStart, hi = hardEnd;
                     while (lo < hi) {
                         int mid = (lo + hi + 1) >>> 1;
-                        int w = textRenderer.getWidth(value.substring(lineStart, mid));
+                        int w = font.width(value.substring(lineStart, mid));
                         if (w <= wrapW) lo = mid; else hi = mid - 1;
                     }
                     int fitEnd = (lo == lineStart) ? Math.min(lineStart + 1, hardEnd) : lo;
@@ -2168,7 +2167,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                 if (i == lines.size() - 1 && caret > L.end) lineIdx = i;
             }
             Line L = lines.get(lineIdx);
-            int x = textRenderer.getWidth(value.substring(L.start, Math.min(caret, L.end)));
+            int x = font.width(value.substring(L.start, Math.min(caret, L.end)));
             return new int[]{ lineIdx, x };
         }
 
@@ -2187,17 +2186,17 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
 
             int relX = (int) (mx - drawX);
             if (relX <= 0) return L.start;
-            int width = textRenderer.getWidth(seg);
+            int width = font.width(seg);
             if (relX >= width) return L.end;
 
             int lo = 0, hi = seg.length();
             while (lo < hi) {
                 int mid = (lo + hi) >>> 1;
-                int w = textRenderer.getWidth(seg.substring(0, mid));
+                int w = font.width(seg.substring(0, mid));
                 if (w < relX) lo = mid + 1; else hi = mid;
             }
-            int leftW = (lo == 0) ? 0 : textRenderer.getWidth(seg.substring(0, lo-1));
-            int hereW = textRenderer.getWidth(seg.substring(0, lo));
+            int leftW = (lo == 0) ? 0 : font.width(seg.substring(0, lo-1));
+            int hereW = font.width(seg.substring(0, lo));
             int choose = (Math.abs(relX - leftW) <= Math.abs(hereW - relX)) ? (lo - 1) : lo;
             choose = Math.max(0, Math.min(choose, seg.length()));
             return L.start + choose;
@@ -2224,7 +2223,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         }
 
         @Override
-        protected void renderWidget(DrawContext ctx, int mouseX, int mouseY, float delta) {
+        protected void renderWidget(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
             ensureCursors();
             if (this.isMouseOver(mouseX, mouseY)) applyCursor(CURSOR_IBEAM);
             else applyCursor(CURSOR_ARROW);
@@ -2260,22 +2259,22 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                     int y = drawY0 + (i * lineHeight - scrollY);
                     if (y + lineHeight < drawY0 || y > drawY0 + viewH) continue;
 
-                    int x0 = drawX + textRenderer.getWidth(value.substring(L.start, lo));
-                    int x1 = drawX + textRenderer.getWidth(value.substring(L.start, hi));
+                    int x0 = drawX + font.width(value.substring(L.start, lo));
+                    int x1 = drawX + font.width(value.substring(L.start, hi));
                     ctx.fill(x0, y, Math.max(x0+1, x1), y + lineHeight, 0x803072C4);
                 }
             }
 
             // text / placeholder
             if (value.isEmpty()) {
-                ctx.drawText(textRenderer, Text.literal(placeholder).asOrderedText(), drawX, drawY0, 0xFF7F7F7F, false);
+                ctx.drawString(font, Component.literal(placeholder).getVisualOrderText(), drawX, drawY0, 0xFF7F7F7F, false);
             } else {
                 int firstLine = Math.max(0, scrollY / lineHeight);
                 int lastLine = Math.min(lines.size() - 1, (scrollY + viewH) / lineHeight);
                 for (int i = firstLine; i <= lastLine; i++) {
                     Line L = lines.get(i);
                     int y = drawY0 + (i * lineHeight - scrollY);
-                    ctx.drawText(textRenderer, Text.literal(value.substring(L.start, L.end)).asOrderedText(), drawX, y, 0xFFEFEFEF, false);
+                    ctx.drawString(font, Component.literal(value.substring(L.start, L.end)).getVisualOrderText(), drawX, y, 0xFFEFEFEF, false);
                 }
             }
 
@@ -2305,8 +2304,8 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         }
 
         @Override
-        protected void appendClickableNarrations(NarrationMessageBuilder builder) {
-            builder.put(NarrationPart.TITLE, getMessage());
+        protected void updateWidgetNarration(NarrationElementOutput builder) {
+            builder.add(NarratedElementType.TITLE, getMessage());
         }
 
         // wheel
@@ -2318,7 +2317,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         }
 
         @Override
-        public boolean mouseClicked(Click click, boolean bl) {
+        public boolean mouseClicked(MouseButtonEvent click, boolean bl) {
             double mx = click.x(), my = click.y();
             if (!this.isMouseOver(mx, my)) return false;
 
@@ -2388,7 +2387,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         }
 
         @Override
-        public boolean mouseDragged(Click click, double dx, double dy) {
+        public boolean mouseDragged(MouseButtonEvent click, double dx, double dy) {
             double mx = click.x(), my = click.y();
             if (draggingBar) {
                 int viewH = getHeight() - padding*2;
@@ -2425,13 +2424,13 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         }
 
         @Override
-        public boolean mouseReleased(Click click) {
+        public boolean mouseReleased(MouseButtonEvent click) {
             draggingBar = false;
             selectingWithMouse = false;
             return false;
         }
 
-        public boolean charTyped(CharInput ch) {
+        public boolean charTyped(CharacterEvent ch) {
             int cp = 0;
             try { cp = (int) ch.getClass().getMethod("codePoint").invoke(ch); } catch (Throwable ignored) {}
             if (cp == 0) { try { cp = (int) ch.getClass().getMethod("character").invoke(ch); } catch (Throwable ignored) {} }
@@ -2440,7 +2439,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
             try { mods = (int) ch.getClass().getMethod("modifiers").invoke(ch); } catch (Throwable ignored) {}
             return this.charTyped((char) cp, mods);
         }
-        public boolean keyPressed(KeyInput key) {
+        public boolean keyPressed(KeyEvent key) {
             int kc = 0, sc = 0, mods = 0;
             try { kc = (int) key.getClass().getMethod("keyCode").invoke(key); } catch (Throwable ignored) {}
             if (kc == 0) { try { kc = (int) key.getClass().getMethod("key").invoke(key); } catch (Throwable ignored) {} }
@@ -2564,20 +2563,20 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                         }
                         if (keyCode == 67) { // C
                             if (hasSelection()) {
-                                MinecraftClient.getInstance().keyboard.setClipboard(value.substring(selMin(), selMax()));
+                                Minecraft.getInstance().keyboardHandler.setClipboard(value.substring(selMin(), selMax()));
                             }
                             return true;
                         }
                         if (keyCode == 88) { // X
                             if (hasSelection()) {
-                                MinecraftClient.getInstance().keyboard.setClipboard(value.substring(selMin(), selMax()));
+                                Minecraft.getInstance().keyboardHandler.setClipboard(value.substring(selMin(), selMax()));
                                 deleteSelectionIfAny();
                                 ensureCaretVisible();
                             }
                             return true;
                         }
                         if (keyCode == 86) { // V
-                            String clip = MinecraftClient.getInstance().keyboard.getClipboard();
+                            String clip = Minecraft.getInstance().keyboardHandler.getClipboard();
                             if (clip != null && !clip.isEmpty()) {
                                 deleteSelectionIfAny();
                                 clip = clip.replace("\r\n", "\n").replace('\r', '\n');
@@ -2629,11 +2628,11 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
             int lo = 0, hi = seg.length();
             while (lo < hi) {
                 int mid = (lo + hi) >>> 1;
-                int w = textRenderer.getWidth(seg.substring(0, mid));
+                int w = font.width(seg.substring(0, mid));
                 if (w < x) lo = mid + 1; else hi = mid;
             }
-            int leftW = (lo == 0) ? 0 : textRenderer.getWidth(seg.substring(0, lo-1));
-            int hereW = textRenderer.getWidth(seg.substring(0, lo));
+            int leftW = (lo == 0) ? 0 : font.width(seg.substring(0, lo-1));
+            int hereW = font.width(seg.substring(0, lo));
             int choose = (Math.abs(x - leftW) <= Math.abs(hereW - x)) ? (lo - 1) : lo;
             choose = Math.max(0, Math.min(choose, seg.length()));
 
@@ -2657,26 +2656,26 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         if (selected < 0 || selected >= entries.size()) return;
         var m = entries.get(selected).meta;
 
-        nameF.setText(nz(m.name));
-        manaF.setText(nz(m.manaCost));
-        typeF.setText(nz(m.typeLine));
-        setF.setText(nz(m.set));
+        nameF.setValue(nz(m.name));
+        manaF.setValue(nz(m.manaCost));
+        typeF.setValue(nz(m.typeLine));
+        setF.setValue(nz(m.set));
 
         if (!(textF != null && textF.isFocused())) {
             textF.setText(nz(m.oracleText));
         }
 
-        powF.setText(nz(m.power));
-        touF.setText(nz(m.toughness));
-        loyF.setText(nz(m.loyalty));
-        rarityBtn.setMessage(Text.literal("Rarity: " + (m.rarity == null || m.rarity.isEmpty() ? "common" : m.rarity)));
-        dfcToggleBtn.setMessage(Text.literal(m.doubleFaced ? "Double-Faced" : "Single Face"));
+        powF.setValue(nz(m.power));
+        touF.setValue(nz(m.toughness));
+        loyF.setValue(nz(m.loyalty));
+        rarityBtn.setMessage(Component.literal("Rarity: " + (m.rarity == null || m.rarity.isEmpty() ? "common" : m.rarity)));
+        dfcToggleBtn.setMessage(Component.literal(m.doubleFaced ? "Double-Faced" : "Single Face"));
 
         updateLinkButtonsVisibility();
     }
 
     @Override
-    public boolean charTyped(CharInput ch) {
+    public boolean charTyped(CharacterEvent ch) {
         if (textF != null && textF.isFocused()) {
             final int cp   = ciCodePoint(ch);
             final int mods = ciModifiers(ch);
@@ -2686,7 +2685,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     }
 
     @Override
-    public boolean keyPressed(KeyInput key) {
+    public boolean keyPressed(KeyEvent key) {
         // Allow Esc to cancel link mode globally
         int kc = kiKeyCode(key);
         if (kc == 256 /* ESC */ && linkPendingMode != LinkMode.NONE) {
@@ -2703,7 +2702,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     }
 
     // ---- mapping-agnostic helpers ----
-    private static int ciCodePoint(CharInput ch) {
+    private static int ciCodePoint(CharacterEvent ch) {
         try { return (int) ch.getClass().getMethod("codePoint").invoke(ch); } catch (Throwable ignored) {}
         try { return (int) ch.getClass().getMethod("character").invoke(ch); } catch (Throwable ignored) {}
         try { return (int) ch.getClass().getMethod("codepoint").invoke(ch); } catch (Throwable ignored) {}
@@ -2712,26 +2711,26 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         try { var f = ch.getClass().getDeclaredField("codepoint"); f.setAccessible(true); return f.getInt(ch); } catch (Throwable ignored) {}
         return 0;
     }
-    private static int ciModifiers(CharInput ch) {
+    private static int ciModifiers(CharacterEvent ch) {
         try { return (int) ch.getClass().getMethod("modifiers").invoke(ch); } catch (Throwable ignored) {}
         try { var f = ch.getClass().getDeclaredField("modifiers"); f.setAccessible(true); return f.getInt(ch); } catch (Throwable ignored) {}
         return 0;
     }
-    private static int kiKeyCode(KeyInput key) {
+    private static int kiKeyCode(KeyEvent key) {
         try { return (int) key.getClass().getMethod("keyCode").invoke(key); } catch (Throwable ignored) {}
         try { return (int) key.getClass().getMethod("key").invoke(key); } catch (Throwable ignored) {}
         try { var f = key.getClass().getDeclaredField("keyCode"); f.setAccessible(true); return f.getInt(key); } catch (Throwable ignored) {}
         try { var f = key.getClass().getDeclaredField("key"); f.setAccessible(true); return f.getInt(key); } catch (Throwable ignored) {}
         return 0;
     }
-    private static int kiScanCode(KeyInput key) {
+    private static int kiScanCode(KeyEvent key) {
         try { return (int) key.getClass().getMethod("scanCode").invoke(key); } catch (Throwable ignored) {}
         try { return (int) key.getClass().getMethod("scancode").invoke(key); } catch (Throwable ignored) {}
         try { var f = key.getClass().getDeclaredField("scanCode"); f.setAccessible(true); return f.getInt(key); } catch (Throwable ignored) {}
         try { var f = key.getClass().getDeclaredField("scancode"); f.setAccessible(true); return f.getInt(key); } catch (Throwable ignored) {}
         return 0;
     }
-    private static int kiModifiers(KeyInput key) {
+    private static int kiModifiers(KeyEvent key) {
         try { return (int) key.getClass().getMethod("modifiers").invoke(key); } catch (Throwable ignored) {}
         try { var f = key.getClass().getDeclaredField("modifiers"); f.setAccessible(true); return f.getInt(key); } catch (Throwable ignored) {}
         return 0;
@@ -2741,18 +2740,18 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     private static long MOUSE_CURSOR_ARROW = 0L, MOUSE_CURSOR_IBEAM = 0L;
 
     private static void setCursor(int which) {
-        var win = MinecraftClient.getInstance().getWindow();
-        long handle = win.getHandle();
+        var win = Minecraft.getInstance().getWindow();
+        long handle = win.handle();
         long cur = (which == CURSOR_IBEAM) ? MOUSE_CURSOR_IBEAM : MOUSE_CURSOR_ARROW;
         GLFW.glfwSetCursor(handle, cur);
     }
     private static boolean isShiftDown() {
-        long h = MinecraftClient.getInstance().getWindow().getHandle();
+        long h = Minecraft.getInstance().getWindow().handle();
         return GLFW.glfwGetKey(h, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
                 || GLFW.glfwGetKey(h, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
     }
     private static boolean isCtrlOrCmdDown() {
-        long h = MinecraftClient.getInstance().getWindow().getHandle();
+        long h = Minecraft.getInstance().getWindow().handle();
         boolean ctrl = GLFW.glfwGetKey(h, GLFW.GLFW_KEY_LEFT_CONTROL) == GLFW.GLFW_PRESS
                 || GLFW.glfwGetKey(h, GLFW.GLFW_KEY_RIGHT_CONTROL) == GLFW.GLFW_PRESS;
         boolean cmd  = GLFW.glfwGetKey(h, GLFW.GLFW_KEY_LEFT_SUPER)   == GLFW.GLFW_PRESS
@@ -2760,17 +2759,17 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         return ctrl || cmd;
     }
 
-    private void drawWrappedThumbLabel(DrawContext ctx, String text, int x, int y, int boxW, int boxH, int pad, int maxLines) {
+    private void drawWrappedThumbLabel(GuiGraphics ctx, String text, int x, int y, int boxW, int boxH, int pad, int maxLines) {
         if (text == null) text = "";
         int innerX = x + 2;
         int innerW = boxW - 4;
 
-        var wrapped = this.textRenderer.wrapLines(Text.literal(text), innerW - pad * 2);
+        var wrapped = this.font.split(Component.literal(text), innerW - pad * 2);
         if (wrapped.isEmpty()) return;
 
         int linesToDraw = Math.min(maxLines, wrapped.size());
 
-        int lineH = this.textRenderer.fontHeight;
+        int lineH = this.font.lineHeight;
         int overlayH = pad + linesToDraw * lineH + pad;
 
         int overlayTop = y + boxH - overlayH;
@@ -2784,21 +2783,21 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         int drawX = overlayLeft + pad;
         int drawY = overlayTop + pad;
         for (int i = 0; i < linesToDraw; i++) {
-            ctx.drawText(this.textRenderer, wrapped.get(i), drawX, drawY, 0xFFEFEFEF, false);
+            ctx.drawString(this.font, wrapped.get(i), drawX, drawY, 0xFFEFEFEF, false);
             drawY += lineH;
         }
 
         if (wrapped.size() > maxLines) {
-            int dotsW = this.textRenderer.getWidth("…");
+            int dotsW = this.font.width("…");
             int dotsX = overlayRight - pad - dotsW;
             int dotsY = overlayTop + pad + (linesToDraw - 1) * lineH;
-            ctx.drawText(this.textRenderer, "…", dotsX, dotsY, 0xFFEFEFEF, false);
+            ctx.drawString(this.font, "…", dotsX, dotsY, 0xFFEFEFEF, false);
         }
     }
 
-    private void blurAllExcept(ClickableWidget keep) {
+    private void blurAllExcept(AbstractWidget keep) {
         for (var w : this.children()) {
-            if (w instanceof ClickableWidget cw && cw != keep) cw.setFocused(false);
+            if (w instanceof AbstractWidget cw && cw != keep) cw.setFocused(false);
         }
     }
 
@@ -2822,9 +2821,9 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         }
 
         // Destroy textures for victim
-        if (client != null) {
-            var tm = client.getTextureManager();
-            if (victim.thumbId != null) tm.destroyTexture(victim.thumbId);
+        if (minecraft != null) {
+            var tm = minecraft.getTextureManager();
+            if (victim.thumbId != null) tm.release(victim.thumbId);
             if (victim.thumbTex != null) victim.thumbTex.close();
         }
 
@@ -2959,7 +2958,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                     for (int y = 0; y < h; y++) {
                         for (int x = 0; x < w; x++) {
                             // NativeImage.getColor returns ABGR (Minecraft format)
-                            int abgr = ni.getColorArgb(x, y);
+                            int abgr = ni.getPixel(x, y);
                             int a = (abgr >>> 24) & 0xFF;
                             int b = (abgr >>> 16) & 0xFF;
                             int g = (abgr >>> 8) & 0xFF;
@@ -3049,7 +3048,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                     int w = ni.getWidth(), h = ni.getHeight();
                     BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
                     for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
-                        int abgr = ni.getColorArgb(x, y);
+                        int abgr = ni.getPixel(x, y);
                         int a = (abgr >>> 24) & 0xFF;
                         int b = (abgr >>> 16) & 0xFF;
                         int g = (abgr >>> 8) & 0xFF;

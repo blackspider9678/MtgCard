@@ -1,40 +1,39 @@
 package com.spider.mtgcard.client.deckcontrol;
 
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.spider.mtgcard.deckcontrol.DeckControlBlockEntity;
 import com.spider.mtgcard.registry.ModBlocks;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.render.LightmapTextureManager;
-import net.minecraft.client.render.OverlayTexture;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.RenderLayers;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.command.ModelCommandRenderer;
-import net.minecraft.client.render.command.OrderedRenderCommandQueue;
-import net.minecraft.client.render.state.CameraRenderState;
-import net.minecraft.client.render.block.entity.BlockEntityRenderer;
-import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
-import net.minecraft.client.render.block.entity.state.BlockEntityRenderState;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.RotationAxis;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
+import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
+import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
+import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
+import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.client.renderer.state.CameraRenderState;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.Mth;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 
 public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckControlBlockEntity, DeckControlEntityRenderer.State> {
 
     // ✅ Exists in 1.21.11: enchanting-table glyph sheet
-    private static final Identifier SGA_TEX = Identifier.of("minecraft", "textures/font/ascii_sga.png");
+    private static final Identifier SGA_TEX = Identifier.fromNamespaceAndPath("minecraft", "textures/font/ascii_sga.png");
     // 26 real SGA glyph textures (the ones enchant.json references)
     private static final Identifier[] SGA = new Identifier[26];
     static {
         for (int i = 0; i < 26; i++) {
             char c = (char) ('a' + i);
-            SGA[i] = Identifier.of("minecraft", "textures/particle/sga_" + c + ".png");
+            SGA[i] = Identifier.fromNamespaceAndPath("minecraft", "textures/particle/sga_" + c + ".png");
         }
     }
 
@@ -42,7 +41,7 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
     private static final float CELL = 1.0f / 16.0f;
 
     public static class State extends BlockEntityRenderState {
-        public BlockPos pos = BlockPos.ORIGIN;
+        public BlockPos pos = BlockPos.ZERO;
         public boolean hasDeckbox;
         public boolean hasGraveyard;
         public double time;
@@ -50,7 +49,7 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
         public Direction facing = Direction.UP; // NEW
     }
 
-    public DeckControlEntityRenderer(BlockEntityRendererFactory.Context ctx) {}
+    public DeckControlEntityRenderer(BlockEntityRendererProvider.Context ctx) {}
 
     @Override
     public State createRenderState() {
@@ -58,43 +57,43 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
     }
 
     @Override
-    public void updateRenderState(
+    public void extractRenderState(
             DeckControlBlockEntity be,
             State state,
             float tickProgress,
-            Vec3d cameraPos,
-            @Nullable ModelCommandRenderer.CrumblingOverlayCommand crumblingOverlay
+            Vec3 cameraPos,
+            @Nullable ModelFeatureRenderer.CrumblingOverlay crumblingOverlay
     ) {
-        BlockEntityRenderer.super.updateRenderState(be, state, tickProgress, cameraPos, crumblingOverlay);
+        BlockEntityRenderer.super.extractRenderState(be, state, tickProgress, cameraPos, crumblingOverlay);
 
-        World world = be.getWorld();
+        Level world = be.getLevel();
         if (world == null) return;
 
-        BlockPos pos = be.getPos();
+        BlockPos pos = be.getBlockPos();
         state.pos = pos;
 
         state.hasDeckbox = hasAdjacent(world, pos, ModBlocks.DECKBOX);
         state.hasGraveyard = hasAdjacent(world, pos, ModBlocks.GRAVEYARD);
 
         BlockState bs = world.getBlockState(pos);
-        if (bs.contains(com.spider.mtgcard.deckcontrol.DeckControlBlock.FACING)) {
-            state.facing = bs.get(com.spider.mtgcard.deckcontrol.DeckControlBlock.FACING);
+        if (bs.hasProperty(com.spider.mtgcard.deckcontrol.DeckControlBlock.FACING)) {
+            state.facing = bs.getValue(com.spider.mtgcard.deckcontrol.DeckControlBlock.FACING);
         } else {
             state.facing = Direction.UP;
         }
 
         // smooth animation time
         double seed = (pos.asLong() & 0xFFL) * 0.01;
-        state.time = world.getTime() + tickProgress + seed;
+        state.time = world.getGameTime() + tickProgress + seed;
     }
 
     @Override
-    public void render(State state, MatrixStack matrices, OrderedRenderCommandQueue queue, CameraRenderState cameraState) {
+    public void submit(State state, PoseStack matrices, SubmitNodeCollector queue, CameraRenderState cameraState) {
         if (!state.hasDeckbox && !state.hasGraveyard) return;
 
-        int fullBright = LightmapTextureManager.MAX_LIGHT_COORDINATE;
+        int fullBright = LightTexture.FULL_BRIGHT;
 
-        matrices.push();
+        matrices.pushPose();
         try {
             if (state.hasDeckbox) {
                 renderRing(queue, cameraState, matrices, fullBright, state.time,
@@ -108,21 +107,21 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
                         0.60, 0.30, 40, +0.06);
             }
         } finally {
-            matrices.pop();
+            matrices.popPose();
         }
     }
 
-    private static boolean hasAdjacent(World world, BlockPos pos, net.minecraft.block.Block block) {
+    private static boolean hasAdjacent(Level world, BlockPos pos, net.minecraft.world.level.block.Block block) {
         for (Direction d : Direction.values()) { // includes UP + DOWN
-            if (world.getBlockState(pos.offset(d)).isOf(block)) return true;
+            if (world.getBlockState(pos.relative(d)).is(block)) return true;
         }
         return false;
     }
 
     private static void renderRing(
-            OrderedRenderCommandQueue queue,
+            SubmitNodeCollector queue,
             CameraRenderState cameraState,
-            MatrixStack matrices,
+            PoseStack matrices,
             int light,
             double time,
             Direction facing,
@@ -131,12 +130,12 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
             int count,
             double omega
     ) {
-        final double step = MathHelper.TAU / (double) count;
+        final double step = Mth.TWO_PI / (double) count;
         final double base = time * omega;
 
         final double chord = 2.0 * radius * Math.sin(step * 0.5);
         float size = (float) (chord * 0.42);
-        size = MathHelper.clamp(size, 0.02f, 0.20f);
+        size = Mth.clamp(size, 0.02f, 0.20f);
 
         for (int i = 0; i < count; i++) {
             final double a = base + i * step;
@@ -154,19 +153,19 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
             F3 p = rotatePointAroundCenter(lx, ly, lz, facing);
 
             Identifier glyphTex = SGA[i % 26];
-            RenderLayer layer = RenderLayers.entityCutoutNoCull(glyphTex);
+            RenderType layer = RenderTypes.entityCutoutNoCull(glyphTex);
 
-            matrices.push();
+            matrices.pushPose();
             matrices.translate(p.x, p.y, p.z);
 
             // Billboard in world space (correct for all facings)
-            matrices.multiply(cameraState.orientation);
+            matrices.mulPose(cameraState.orientation);
 
             matrices.scale(size, size, size);
 
-            queue.submitCustom(matrices, layer, (entry, vc) -> {
-                Matrix4f mat = entry.getPositionMatrix();
-                int overlay = OverlayTexture.DEFAULT_UV;
+            queue.submitCustomGeometry(matrices, layer, (entry, vc) -> {
+                Matrix4f mat = entry.pose();
+                int overlay = OverlayTexture.NO_OVERLAY;
                 int alpha = 220;
 
                 put(vc, mat, -1f, -1f, 0f, 0f, 1f, light, overlay, alpha);
@@ -175,7 +174,7 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
                 put(vc, mat,  1f, -1f, 0f, 1f, 1f, light, overlay, alpha);
             });
 
-            matrices.pop();
+            matrices.popPose();
         }
     }
 
@@ -216,11 +215,11 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
                             float u, float v,
                             int light, int overlay,
                             int alpha) {
-        vc.vertex(mat, x, y, z)
-                .color(255, 255, 255, alpha)
-                .texture(u, v)
-                .overlay(overlay)
-                .light(light)
-                .normal(0f, 0f, 1f);
+        vc.addVertex(mat, x, y, z)
+                .setColor(255, 255, 255, alpha)
+                .setUv(u, v)
+                .setOverlay(overlay)
+                .setLight(light)
+                .setNormal(0f, 0f, 1f);
     }
 }

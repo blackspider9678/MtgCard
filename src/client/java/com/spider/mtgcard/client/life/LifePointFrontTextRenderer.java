@@ -4,16 +4,18 @@ import com.spider.mtgcard.life.LifePointBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
+import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
 import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
-import net.minecraft.client.renderer.SubmitNodeCollector;
-import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
+import net.minecraft.client.renderer.state.CameraRenderState;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.network.chat.Component;
 import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 import org.joml.Quaternionf;
 
 public final class LifePointFrontTextRenderer
@@ -38,7 +40,16 @@ public final class LifePointFrontTextRenderer
         return new State();
     }
 
-    public void updateRenderState(LifePointBlockEntity be, State st, float tickDelta) {
+    @Override
+    public void extractRenderState(
+            LifePointBlockEntity be,
+            State st,
+            float tickDelta,
+            Vec3 cameraPos,
+            ModelFeatureRenderer.CrumblingOverlay crumblingOverlay
+    ) {
+        BlockEntityRenderer.super.extractRenderState(be, st, tickDelta, cameraPos, crumblingOverlay);
+
         // Only show during a running game (your requirement)
         st.render = be.isGameStarted();
 

@@ -19,12 +19,11 @@ public final class MtgLootInject {
             if (!"minecraft".equals(id.getNamespace())) return;
             if (!id.getPath().startsWith("chests/")) return;
 
-            LootPool pool = LootPool.lootPool()
-                    .when(LootItemRandomChanceCondition.randomChance(PACK_CHANCE))
-                    .add(LootItem.lootTableItem(ModItems.MTG_PACK))
-                    .build();
-
-            tableBuilder.pool(pool);
+            tableBuilder.withPool(
+                    LootPool.lootPool()
+                            .when(LootItemRandomChanceCondition.randomChance(PACK_CHANCE))
+                            .add(LootItem.lootTableItem(ModItems.MTG_PACK))
+            );
         });
     }
 

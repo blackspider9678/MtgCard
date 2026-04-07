@@ -33,7 +33,7 @@ public class FlatButtonWidget extends AbstractWidget {
         int color = this.active ? TEXT : TEXT_OFF;
         int textX = getX() + (width - tr.width(getMessage())) / 2;
         int textY = getY() + (height - 8) / 2;
-        ctx.text(tr, getMessage(), textX, textY, color);
+        ctx.drawString(tr, getMessage(), textX, textY, color);
     }
 
     @Override

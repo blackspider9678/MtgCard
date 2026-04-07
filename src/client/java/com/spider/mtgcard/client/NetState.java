@@ -4,10 +4,8 @@ package com.spider.mtgcard.client;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import com.mojang.serialization.Codec;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.datafix.DataFixTypes;
-import net.minecraft.world.level.storage.SavedDataStorage;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.saveddata.SavedDataType;
 
@@ -53,7 +51,7 @@ public final class NetState extends SavedData {
 
     private static final SavedDataType<NetState> TYPE =
             new SavedDataType<>(
-                    Identifier.fromNamespaceAndPath("mtgcard", "net"),
+                    "mtgcard_net",
                     NetState::new,             // supplier for new/empty state
                     CODEC,                     // how to (de)serialize
                     DataFixTypes.LEVEL         // pick LEVEL (or WORLD) in your mappings
@@ -61,7 +59,7 @@ public final class NetState extends SavedData {
 
     /* -------------------- Access -------------------- */
     public static NetState get(MinecraftServer server) {
-        SavedDataStorage mgr = server.overworld().getDataStorage();
+        var mgr = server.overworld().getDataStorage();
         return mgr.computeIfAbsent(TYPE);
     }
 }

@@ -116,23 +116,12 @@ public final class PackGenerator {
         }
 
         // ---------- Async pack opening ----------
-        public static void openPackAsync(MinecraftServer server, ServerPlayer player, String packUid) {
+        public static void openPackAsync(MinecraftServer server, ServerPlayer player, String desiredSet) {
                 final int TOTAL = 15;
 
                 final PackOpenManager.Active active = PackOpenManager.get(player);
 
                 final Set<String> seenIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
-
-                ItemStack pack = (packUid != null && !packUid.isEmpty()) ? findPackByUid(player, packUid) : ItemStack.EMPTY;
-                if (pack.isEmpty()) pack = findAnyPackInHandsOrInv(player);
-
-                if (pack.isEmpty()) {
-                        player.sendSystemMessage(Component.literal("No MTG pack found to open."), true);
-                        PackOpenManager.finish(player);
-                        return;
-                }
-
-                final String desiredSet = detectPackSet(pack);
                 final CustomMode customMode = customModeForPack(server, desiredSet);
 
                 ModPayloads.sendUnpackProgress(player, 0);
@@ -448,53 +437,6 @@ public final class PackGenerator {
                 } catch (Throwable t) {
                         return false;
                 }
-        }
-
-        // ---------- Pack lookup ----------
-        private static ItemStack findPackByUid(ServerPlayer player, String packUid) {
-                if (packUid == null || packUid.isEmpty()) return ItemStack.EMPTY;
-
-                ItemStack[] hands = { player.getMainHandItem(), player.getOffhandItem() };
-                for (ItemStack st : hands) {
-                        if (!st.isEmpty()
-                                && st.is(ModItems.MTG_PACK)
-                                && uidEquals(st, packUid)) {
-                                return st;
-                        }
-                }
-
-                var inv = player.getInventory();
-                for (int i = 0; i < inv.getContainerSize(); i++) {
-                        ItemStack st = inv.getItem(i);
-                        if (!st.isEmpty()
-                                && st.is(ModItems.MTG_PACK)
-                                && uidEquals(st, packUid)) {
-                                return st;
-                        }
-                }
-                return ItemStack.EMPTY;
-        }
-
-        private static boolean uidEquals(ItemStack st, String uid) {
-                var comp = st.get(DataComponents.CUSTOM_DATA);
-                if (comp == null) return false;
-                CompoundTag root = comp.copyTag();
-                CompoundTag tag  = root.getCompound("mtg_pack").orElse(null);
-                if (tag == null) return false;
-                String have = tag.getString("uid").orElse("");
-                return !have.isEmpty() && have.equals(uid);
-        }
-
-        private static ItemStack findAnyPackInHandsOrInv(ServerPlayer player) {
-                for (ItemStack st : new ItemStack[]{ player.getMainHandItem(), player.getOffhandItem() }) {
-                        if (!st.isEmpty() && st.is(ModItems.MTG_PACK)) return st;
-                }
-                var inv = player.getInventory();
-                for (int i = 0; i < inv.getContainerSize(); i++) {
-                        ItemStack st = inv.getItem(i);
-                        if (!st.isEmpty() && st.is(ModItems.MTG_PACK)) return st;
-                }
-                return ItemStack.EMPTY;
         }
 
         // ---------- Set detection ----------

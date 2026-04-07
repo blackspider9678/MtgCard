@@ -416,7 +416,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         q.add(start);
         out.add(start);
 
-        // Only expand along the screen plane (right/left/up/down on the screen), not “through” the wall.
+        // Only expand along the screen plane (right/left/up/down on the screen), not â€œthroughâ€ the wall.
         Direction right = screenRight(screenFace);
         Direction left  = right.getOpposite();
         Direction up    = Direction.UP;
@@ -472,7 +472,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
 
         boolean isRect = (tiles.size() == w * h);
 
-        // Optional: extra safety — ensure every cell exists (catches weird cases)
+        // Optional: extra safety â€” ensure every cell exists (catches weird cases)
         if (isRect) {
             for (int dv = 0; dv < h; dv++) {
                 BlockPos rowStart = controller.below(dv);
@@ -544,7 +544,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         BlockEntity be = world.getBlockEntity(pos);
         if (!(be instanceof DisplayBlockEntity dbe)) return false;
 
-        // If our screen has no link, treat it as standalone (don’t merge with linked ones)
+        // If our screen has no link, treat it as standalone (donâ€™t merge with linked ones)
         if (dimId == null || lifePos == null) return false;
 
         return dbe.getLinkedDimId().map(dimId::equals).orElse(false)
@@ -624,7 +624,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         // Fill (OPAQUE)
         queue.submitCustomGeometry(
                 matrices,
-                RenderTypes.entityCutoutCull(WHITE),
+                RenderTypes.entityCutout(WHITE),
                 (entry, vc) -> {
                     Matrix4f mat = entry.pose();
                     drawPanelQuad(mat, vc,
@@ -641,7 +641,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         // Border (also OPAQUE)
         queue.submitCustomGeometry(
                 matrices,
-                RenderTypes.entityCutoutCull(WHITE),
+                RenderTypes.entityCutout(WHITE),
                 (entry, vc) -> {
                     Matrix4f mat = entry.pose();
                     drawPanelQuad(mat, vc,
@@ -667,7 +667,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
 
             queue.submitCustomGeometry(
                     matrices,
-                    RenderTypes.entityCutoutCull(WHITE),
+                    RenderTypes.entityCutout(WHITE),
                     (entry, vc) -> {
                         Matrix4f mat = entry.pose();
                         drawPanelQuad(mat, vc,
@@ -700,7 +700,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         // --- BACKPLATE: hides the front UI when looking from behind ---
         queue.submitCustomGeometry(
                 matrices,
-                RenderTypes.entityCutoutCull(WHITE),
+                RenderTypes.entityCutout(WHITE),
                 (entry, vc) -> {
                     Matrix4f mat = entry.pose();
                     // push slightly behind the front plane (negative z in our oriented screen space)
@@ -843,7 +843,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
 
         int lifeARGB = 0xFF000000 | (s.lifeColor & 0x00FFFFFF);
 
-// Optional “glow shadow” (actually just a dark shadow to make color readable)
+// Optional â€œglow shadowâ€ (actually just a dark shadow to make color readable)
         if (s.lifeGlowAlpha > 0) {
             int shadow = ((s.lifeGlowAlpha & 0xFF) << 24) | 0x000000; // alpha black
             queue.submitText(
@@ -898,7 +898,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
 
         // If no link/name, either skip or show placeholder
         String name = (s.hasLife && s.name != null) ? s.name.trim() : "";
-        if (name.isBlank()) return; // or: name = "—";
+        if (name.isBlank()) return; // or: name = "â€”";
 
         // Position: bottom-center, with a little padding above the bezel
         float cx = (x0 + x1) * 0.5f;
@@ -1025,7 +1025,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         // Draw the icon quad
         queue.submitCustomGeometry(
                 matrices,
-                RenderTypes.entityCutoutCull(tex),
+                RenderTypes.entityCutout(tex),
                 (entry, vc) -> {
                     Matrix4f mat = entry.pose();
                     drawPanelQuad(mat, vc,
@@ -1093,7 +1093,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
 
             queue.submitCustomGeometry(
                     matrices,
-                    RenderTypes.entityCutoutCull(WHITE),
+                    RenderTypes.entityCutout(WHITE),
                     (entry, vc) -> {
                         Matrix4f mat = entry.pose();
                         // Outline
@@ -1170,7 +1170,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         // Draw the icon quad
         queue.submitCustomGeometry(
                 matrices,
-                RenderTypes.entityCutoutCull(SKULL_TEX),
+                RenderTypes.entityCutout(SKULL_TEX),
                 (entry, vc) -> {
                     Matrix4f mat = entry.pose();
                     drawPanelQuad(mat, vc,
