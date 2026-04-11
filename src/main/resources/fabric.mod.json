@@ -13,6 +13,9 @@
     "client": [
       "com.spider.mtgcard.client.MtgcardClient"
     ],
+    "jei_mod_plugin": [
+      "com.spider.mtgcard.client.compat.jei.MtgcardJeiPlugin"
+    ],
     "main": [
       "com.spider.mtgcard.Mtgcard"
     ]
