@@ -98,6 +98,14 @@ public final class LifePointScreen extends LegacyScreen {
     private static final int BOTTOM_HUD_STRIP_H = 34;
     private static final int HUD_STRIP_BG = 0xCC101010;
     private static final int HUD_STRIP_LINE = 0xFF2B2B2B;
+    private static final String PLUS_MINUS = "\u00B1";
+    private static final String TIMES = "\u00D7";
+    private static final String UNCHECKED_PREFIX = "\u2610 ";
+    private static final String CHECKED_PREFIX = "\u2611 ";
+    private static final String TRIANGLE_UP = "\u25B2";
+    private static final String TRIANGLE_DOWN = "\u25BC";
+    private static final String SELECTED_PREFIX = "\u25B6 ";
+    private static final String LOCKED_PREFIX = "[Locked] ";
 
     private static final int COL_BG = 0xAA141414;
     private static final int COL_BG_EDGE = 0xFF2B2B2B;
@@ -607,6 +615,7 @@ public final class LifePointScreen extends LegacyScreen {
         }
 
         buildBottomHudScaled(st);
+        sanitizeWidgetMessages();
     }
 
     private void buildTopHudScaled(CompoundTag st) {
@@ -812,7 +821,7 @@ public final class LifePointScreen extends LegacyScreen {
     }
 
     private void addHeader(int x, int y, int w, String txt) {
-        var b = Button.builder(Component.literal(txt), bb -> {})
+        var b = Button.builder(Component.literal(sanitizeUiText(txt)), bb -> {})
                 .bounds(x, y, w, 18).build();
         b.active = false;
         addRenderableWidget(b);
@@ -820,7 +829,7 @@ public final class LifePointScreen extends LegacyScreen {
 
     private void addHintLabel(int x, int y, int w, String txt) {
         int ww = Math.max(40, w); // safety
-        var b = Button.builder(Component.literal(txt), bb -> {})
+        var b = Button.builder(Component.literal(sanitizeUiText(txt)), bb -> {})
                 .bounds(x, y, ww, 18)
                 .build();
         b.active = false;
@@ -844,6 +853,31 @@ public final class LifePointScreen extends LegacyScreen {
         }
 
         addHintLabel(x, y, w, txt);
+    }
+
+    private static String sanitizeUiText(String s) {
+        if (s == null) return "";
+
+        return s
+                .replace("Ã‚Â±", PLUS_MINUS)
+                .replace("Â±", PLUS_MINUS)
+                .replace("Ãƒâ€”", TIMES)
+                .replace("Ã—", TIMES)
+                .replace("â˜", UNCHECKED_PREFIX.trim())
+                .replace("â˜‘", CHECKED_PREFIX.trim())
+                .replace("â–²", TRIANGLE_UP)
+                .replace("â–¼", TRIANGLE_DOWN)
+                .replace("â–¶", SELECTED_PREFIX.trim())
+                .replace("Ã°Å¸â€â€™", LOCKED_PREFIX.trim());
+    }
+
+    private void sanitizeWidgetMessages() {
+        for (var child : this.children()) {
+            if (child instanceof Button button) {
+                String cleaned = sanitizeUiText(button.getMessage().getString());
+                button.setMessage(Component.literal(cleaned));
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -1366,6 +1400,7 @@ public final class LifePointScreen extends LegacyScreen {
                     ? "ðŸ”’ " + name + " (In pod " + otherPod + ")"
                     : "â˜ " + name;
 
+            label = sanitizeUiText(label);
             int bx = availX + 6;
             int by = listY + i * rowH;
             int bw = colW - 12;
@@ -2039,6 +2074,7 @@ public final class LifePointScreen extends LegacyScreen {
             drawIcon(ctx, tex, ix, iy, iconSz, iconSz);
 
             String label = (sel ? "â–¶ " : "  ") + k + "   " + v;
+            label = sanitizeUiText(label);
             ctx.drawString(font, Component.literal(label), rx + 6 + iconSz + 6, y + 5, 0xFFFFFFFF);
         }
 
@@ -2193,7 +2229,8 @@ public final class LifePointScreen extends LegacyScreen {
             if (nm == null || nm.isBlank()) nm = LifePointClientState.get(other).getString("DisplayName").orElse("");
             if (nm == null || nm.isBlank()) nm = shortPos(other);
 
-            ctx.drawString(font, Component.literal((sel ? "â–¶ " : "  ") + nm), r.x + 6, r.y + 5, 0xFFFFFFFF);
+            String rowLabel = sanitizeUiText((sel ? "â–¶ " : "  ") + nm);
+            ctx.drawString(font, Component.literal(rowLabel), r.x + 6, r.y + 5, 0xFFFFFFFF);
         }
 
         ctx.disableScissor();
@@ -2257,6 +2294,7 @@ public final class LifePointScreen extends LegacyScreen {
             if (name == null || name.isBlank()) name = "Pod";
 
             String label = (sel ? "â–¶ " : "  ") + name + "  (" + size + "/" + MAX_GROUP_MEMBERS + ")";
+            label = sanitizeUiText(label);
             ctx.drawString(font, Component.literal(label), r.x + 6, r.y + 5, 0xFFFFFFFF);
         }
 
@@ -2397,7 +2435,8 @@ public final class LifePointScreen extends LegacyScreen {
             boolean hov = mouseX >= rr.x && mouseX < rr.x + rr.w && mouseY >= rr.y && mouseY < rr.y + rr.h;
             drawFlatRow(ctx, rr, sel, hov);
 
-            ctx.drawString(font, Component.literal((sel ? "â–¶ " : "  ") + k), rr.x + 6, rr.y + 5, 0xFFFFFFFF);
+            String rowLabel = sanitizeUiText((sel ? "â–¶ " : "  ") + k);
+            ctx.drawString(font, Component.literal(rowLabel), rr.x + 6, rr.y + 5, 0xFFFFFFFF);
         }
 
         ctx.disableScissor();

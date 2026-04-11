@@ -70,6 +70,32 @@ public class CardLargeViewScreen extends LegacyScreen {
 
     @SuppressWarnings("unused")
     private static final Identifier FLIP_ICON = Identifier.withDefaultNamespace("widget/turn_back");
+    private static final String EM_DASH = "\u2014";
+    private static final String BULLET = "\u2022";
+    private static final String EURO = "\u20AC";
+    private static final String FLIP_GLYPH_FRONT = "\u21BB";
+    private static final String FLIP_GLYPH_BACK = "\u21BA";
+    private static final String ROTATE_GLYPH = "\u27F3";
+
+    private static String sanitizeUiText(String s) {
+        if (s == null) return EM_DASH;
+
+        return s
+                .replace("Ã¢â‚¬â€", EM_DASH)
+                .replace("â€”", EM_DASH)
+                .replace("Ã¢â‚¬Â¢", BULLET)
+                .replace("â€¢", BULLET)
+                .replace("Ã¢â€šÂ¬", EURO)
+                .replace("â‚¬", EURO)
+                .replace("Ã‚Â°", "\u00B0")
+                .replace("Â°", "\u00B0")
+                .replace("Ã¢â€ Â»", FLIP_GLYPH_FRONT)
+                .replace("â†»", FLIP_GLYPH_FRONT)
+                .replace("Ã¢â€ Âº", FLIP_GLYPH_BACK)
+                .replace("â†º", FLIP_GLYPH_BACK)
+                .replace("Ã¢Å¸Â³", ROTATE_GLYPH)
+                .replace("âŸ³", ROTATE_GLYPH);
+    }
 
     // ------------------------------------------------------------
     // Flip animation state
@@ -1415,11 +1441,11 @@ public class CardLargeViewScreen extends LegacyScreen {
         }
 
         // buttons
-        drawRotateButton(ctx, mouseX, mouseY);
+        drawRotateButtonClean(ctx, mouseX, mouseY);
         drawHideButton(ctx, mouseX, mouseY);
 
         if (isDoubleFaced()) {
-            drawFlipButton(ctx, mouseX, mouseY);
+            drawFlipButtonClean(ctx, mouseX, mouseY);
         }
 
         super.render(ctx, mouseX, mouseY, delta);
@@ -1502,6 +1528,92 @@ public class CardLargeViewScreen extends LegacyScreen {
 
     private static float clamp01(float v) {
         return v < 0f ? 0f : (v > 1f ? 1f : v);
+    }
+
+    private void drawFlipButtonClean(GuiGraphics ctx, int mouseX, int mouseY) {
+        int bx = cardX - BTN_PAD - FLIP_SIZE;
+        int by = cardY + (cardH - FLIP_SIZE) / 2;
+
+        bx = Math.max(8, bx);
+        by = Math.max(8, Math.min(by, this.height - FLIP_SIZE - 8));
+
+        flipX = bx;
+        flipY = by;
+        flipW = FLIP_SIZE;
+        flipH = FLIP_SIZE;
+
+        boolean hover = isMouseOverFlip(mouseX, mouseY);
+
+        int border = hover ? 0xFFFFE070 : 0xFF404040;
+        int bg = hover ? 0xCC1A1A1A : 0xAA101010;
+
+        float cxx = bx + FLIP_SIZE / 2f;
+        float cyy = by + FLIP_SIZE / 2f;
+        float radians = (float) (rotSteps * (Math.PI / 2.0));
+
+        var m = ctx.pose();
+        m.pushMatrix();
+        m.translate(cxx, cyy);
+        m.rotate(radians);
+        m.translate(-cxx, -cyy);
+
+        ctx.fill(bx - 1, by - 1, bx + FLIP_SIZE + 1, by + FLIP_SIZE + 1, border);
+        ctx.fill(bx, by, bx + FLIP_SIZE, by + FLIP_SIZE, bg);
+
+        String glyph = (faceIndex == 0) ? FLIP_GLYPH_FRONT : FLIP_GLYPH_BACK;
+        float scale = 2.6f;
+        int tw = this.font.width(glyph);
+        int th = this.font.lineHeight;
+        float drawX = cxx - (tw * scale) / 2f;
+        float drawY = cyy - (th * scale) / 2f;
+
+        m.pushMatrix();
+        m.translate(drawX, drawY);
+        m.scale(scale, scale);
+        ctx.drawString(this.font, glyph, 0, 0, 0xFFFFE070, false);
+        m.popMatrix();
+        m.popMatrix();
+
+        if (hover) {
+            ctx.setTooltipForNextFrame(this.font, Component.literal("Flip card (R)"), mouseX, mouseY);
+        }
+    }
+
+    private void drawRotateButtonClean(GuiGraphics ctx, int mouseX, int mouseY) {
+        int bx = cardX - BTN_PAD - FLIP_SIZE;
+        int by = cardY + (cardH - FLIP_SIZE) / 2 - (FLIP_SIZE + BTN_GAP);
+
+        bx = Math.max(8, bx);
+        by = Math.max(8, Math.min(by, this.height - FLIP_SIZE - 8));
+
+        rotX = bx;
+        rotY = by;
+        rotW = FLIP_SIZE;
+        rotH = FLIP_SIZE;
+
+        boolean hover = isMouseOverRotate(mouseX, mouseY);
+
+        int border = hover ? 0xFF70E0FF : 0xFF404040;
+        int bg = hover ? 0xCC1A1A1A : 0xAA101010;
+
+        ctx.fill(bx - 1, by - 1, bx + FLIP_SIZE + 1, by + FLIP_SIZE + 1, border);
+        ctx.fill(bx, by, bx + FLIP_SIZE, by + FLIP_SIZE, bg);
+
+        int tw = this.font.width(ROTATE_GLYPH);
+        int th = this.font.lineHeight;
+        float cxx = bx + FLIP_SIZE / 2f;
+        float cyy = by + FLIP_SIZE / 2f;
+
+        var m = ctx.pose();
+        m.pushMatrix();
+        m.translate(cxx, cyy);
+        m.scale(2.4f, 2.4f);
+        ctx.drawString(this.font, ROTATE_GLYPH, -tw / 2, -th / 2, 0xFF70E0FF, false);
+        m.popMatrix();
+
+        if (hover) {
+            ctx.setTooltipForNextFrame(this.font, Component.literal("Rotate 90\u00B0 (E)"), mouseX, mouseY);
+        }
     }
 
     private void drawFlipButton(GuiGraphics ctx, int mouseX, int mouseY) {
@@ -1768,7 +1880,7 @@ public class CardLargeViewScreen extends LegacyScreen {
             label = trimToWidth(label, 84); // keep aligned with value column
 
             ctx.drawString(this.font, label + ":", listX, rowY, 0xFFDDDDDD, false);
-            ctx.drawString(this.font, prettyLegality(status), listX + 88, rowY, legalityColor(status), false);
+            ctx.drawString(this.font, sanitizeUiText(prettyLegality(status)), listX + 88, rowY, legalityColor(status), false);
         }
 
         ctx.disableScissor();
@@ -2165,6 +2277,8 @@ public class CardLargeViewScreen extends LegacyScreen {
     }
 
     private int drawKv(GuiGraphics ctx, int x, int y, String k, String v, int keyColor, int valueColor) {
+        k = sanitizeUiText(k);
+        v = sanitizeUiText(v);
         if (v == null) v = "â€”";
         if (v.endsWith("â€”")) v = "â€”";
         ctx.drawString(this.font, k + ":", x, y, keyColor, false);
@@ -2328,6 +2442,7 @@ public class CardLargeViewScreen extends LegacyScreen {
     }
 
     private String trimToWidth(String s, int maxPx) {
+        s = sanitizeUiText(s);
         if (s == null) return "â€”";
         if (this.font.width(s) <= maxPx) return s;
 

@@ -4,28 +4,35 @@ import com.spider.mtgcard.deckbox.DeckboxBlockItem;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
-import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
+import net.minecraft.world.item.component.CustomData;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public final class DeckClientIO {
 
     private static final String MTG_CARD_ID = "mtgcard:card";
+    private static final String SEC = "\u00A7";
 
     public static void handleExport(String rawName) {
         Minecraft mc = Minecraft.getInstance();
@@ -33,17 +40,19 @@ public final class DeckClientIO {
 
         String name = sanitizeFilename(rawName);
         Path dir = decksDir();
-        try { Files.createDirectories(dir); } catch (IOException ignored) {}
+        try {
+            Files.createDirectories(dir);
+        } catch (IOException ignored) {}
 
         ItemStack hand = mc.player.getMainHandItem();
         if (hand.isEmpty() || !(hand.getItem() instanceof DeckboxBlockItem)) {
-            mc.player.displayClientMessage(Component.literal("Â§cHold a Deckbox in your main hand to export."), false);
+            mc.player.displayClientMessage(Component.literal(SEC + "cHold a Deckbox in your main hand to export."), false);
             return;
         }
 
         List<ExportRow> rows = readDeckboxExportRows(hand);
         if (rows.isEmpty()) {
-            mc.player.displayClientMessage(Component.literal("Â§eDeckbox has no MTG cards to export."), false);
+            mc.player.displayClientMessage(Component.literal(SEC + "eDeckbox has no MTG cards to export."), false);
             return;
         }
 
@@ -73,19 +82,18 @@ public final class DeckClientIO {
             Files.writeString(txt, txtOut.toString(), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
             Files.writeString(csv, csvOut.toString(), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         } catch (IOException e) {
-            mc.player.displayClientMessage(Component.literal("Â§cExport failed: Â§7" + e.getMessage()), false);
+            mc.player.displayClientMessage(Component.literal(SEC + "cExport failed: " + SEC + "7" + e.getMessage()), false);
             return;
         }
 
-        mc.player.displayClientMessage(Component.literal("Â§aExported deck:"), false);
+        mc.player.displayClientMessage(Component.literal(SEC + "aExported deck:"), false);
         mc.player.displayClientMessage(
-                Component.literal("Â§7- ").append(openFileLink("Â§f" + txt.getFileName(), txt)), false);
+                Component.literal(SEC + "7- ").append(openFileLink(SEC + "f" + txt.getFileName(), txt)), false);
         mc.player.displayClientMessage(
-                Component.literal("Â§7- ").append(openFileLink("Â§f" + csv.getFileName(), csv)), false);
-        // Optional: also link the folder
+                Component.literal(SEC + "7- ").append(openFileLink(SEC + "f" + csv.getFileName(), csv)), false);
         mc.player.displayClientMessage(
-                Component.literal("Â§7Folder: ").append(openFileLink("Â§eopen decks folder", dir)), false);
-        mc.player.displayClientMessage(Component.literal("Â§7Saved to: Â§e" + dir.toAbsolutePath()), false);
+                Component.literal(SEC + "7Folder: ").append(openFileLink(SEC + "eopen decks folder", dir)), false);
+        mc.player.displayClientMessage(Component.literal(SEC + "7Saved to: " + SEC + "e" + dir.toAbsolutePath()), false);
     }
 
     public static void handleList() {
@@ -94,8 +102,8 @@ public final class DeckClientIO {
 
         Path dir = decksDir();
         if (!Files.exists(dir)) {
-            mc.player.displayClientMessage(Component.literal("Â§aDecks (Found Â§e0Â§a)."), false);
-            mc.player.displayClientMessage(Component.literal("Â§7Folder: Â§e" + dir.toAbsolutePath()), false);
+            mc.player.displayClientMessage(Component.literal(SEC + "aDecks (Found " + SEC + "e0" + SEC + "a)."), false);
+            mc.player.displayClientMessage(Component.literal(SEC + "7Folder: " + SEC + "e" + dir.toAbsolutePath()), false);
             return;
         }
 
@@ -110,19 +118,31 @@ public final class DeckClientIO {
                     .sorted()
                     .toList();
         } catch (IOException e) {
-            mc.player.displayClientMessage(Component.literal("Â§cFailed to list decks: Â§7" + e.getMessage()), false);
+            mc.player.displayClientMessage(Component.literal(SEC + "cFailed to list decks: " + SEC + "7" + e.getMessage()), false);
             return;
         }
 
-        mc.player.displayClientMessage(Component.literal("Â§aDecks (Found Â§e" + files.size() + "Â§a):"), false);
-        if (files.isEmpty()) mc.player.displayClientMessage(Component.literal("Â§7- (none)"), false);
-        else for (String fn : files) mc.player.displayClientMessage(Component.literal("Â§7- Â§f" + fn), false);
+        mc.player.displayClientMessage(Component.literal(SEC + "aDecks (Found " + SEC + "e" + files.size() + SEC + "a):"), false);
+        if (files.isEmpty()) {
+            mc.player.displayClientMessage(Component.literal(SEC + "7- (none)"), false);
+        } else {
+            for (String fn : files) {
+                mc.player.displayClientMessage(Component.literal(SEC + "7- " + SEC + "f" + fn), false);
+            }
+        }
     }
 
-    // ---------- deck parsing ----------
-
-    private record ExportRow(String key, String name, String set, String collectorNumber, String id,
-                             String rarity, String manaCost, String source, int count) {}
+    private record ExportRow(
+            String key,
+            String name,
+            String set,
+            String collectorNumber,
+            String id,
+            String rarity,
+            String manaCost,
+            String source,
+            int count
+    ) {}
 
     private static List<ExportRow> readDeckboxExportRows(ItemStack deckbox) {
         CustomData comp = deckbox.get(DataComponents.CUSTOM_DATA);
@@ -147,8 +167,6 @@ public final class DeckClientIO {
             if (stackOpt.isEmpty()) continue;
 
             CompoundTag st = stackOpt.get();
-
-            // include ALL slots as long as Stack.id == mtgcard:card
             String itemId = st.getString("id").orElse("");
             if (!MTG_CARD_ID.equals(itemId)) continue;
 
@@ -172,7 +190,7 @@ public final class DeckClientIO {
             String rarity = meta.getString("rarity").orElse("");
             String manaCost = meta.getString("mana_cost").orElse("");
 
-            boolean isCustom = meta.getByte("is_custom").orElse((byte)0) != 0;
+            boolean isCustom = meta.getByte("is_custom").orElse((byte) 0) != 0;
             String mtgUid = meta.getString("mtg_uid").orElse("");
             String customId = meta.getString("custom_id").orElse("");
             String idFallback = meta.getString("id").orElse("");
@@ -215,11 +233,15 @@ public final class DeckClientIO {
     }
 
     private static final class MutableAgg {
-        String name, set, collectorNumber, id, rarity, manaCost, source;
-        int count = 0;
+        String name;
+        String set;
+        String collectorNumber;
+        String id;
+        String rarity;
+        String manaCost;
+        String source;
+        int count;
     }
-
-    // ---------- filesystem/helpers ----------
 
     private static Path decksDir() {
         return FabricLoader.getInstance().getConfigDir().resolve("mtgcard").resolve("decks");
@@ -231,7 +253,9 @@ public final class DeckClientIO {
         s = s.replace("\\", "").replace("/", "").replace("..", "");
         s = s.replaceAll("[\\\\/:*?\"<>|]", "");
         s = s.replaceAll("\\s+", " ").trim();
-        if (s.isEmpty()) s = "Deckbox_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"));
+        if (s.isEmpty()) {
+            s = "Deckbox_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"));
+        }
         return s;
     }
 
@@ -240,7 +264,7 @@ public final class DeckClientIO {
         String file = path.getFileName().toString();
         int dot = file.lastIndexOf('.');
         String base = dot >= 0 ? file.substring(0, dot) : file;
-        String ext  = dot >= 0 ? file.substring(dot) : "";
+        String ext = dot >= 0 ? file.substring(dot) : "";
         Path dir = path.getParent();
         for (int i = 2; i < 10_000; i++) {
             Path p = dir.resolve(base + " (" + i + ")" + ext);
@@ -255,7 +279,9 @@ public final class DeckClientIO {
         return a;
     }
 
-    private static String nullToEmpty(String s) { return s == null ? "" : s; }
+    private static String nullToEmpty(String s) {
+        return s == null ? "" : s;
+    }
 
     private static String csvEscape(String s) {
         if (s == null) return "";
@@ -271,12 +297,8 @@ public final class DeckClientIO {
                 .setStyle(Style.EMPTY
                         .withUnderlined(true)
                         .withClickEvent(new ClickEvent.OpenFile(abs))
-                        .withHoverEvent(new HoverEvent.ShowText(Component.literal(abs)))
-                );
+                        .withHoverEvent(new HoverEvent.ShowText(Component.literal(abs))));
     }
-
-
 
     private DeckClientIO() {}
 }
-

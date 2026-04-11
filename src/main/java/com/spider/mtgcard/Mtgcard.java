@@ -42,9 +42,6 @@ public final class Mtgcard implements ModInitializer {
         ModPayloads.registerServerReceivers();
         CounterPackets.registerReceivers();
 
-        // If CardStorePackets has server receivers, you STILL need this:
-        CardStorePackets.registerServer();
-
         // Other server/common systems
         MtgcardConfig.load();
         ArtServerPackets.registerServerReceiver();

@@ -84,11 +84,17 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     private static final class UploadJob {
         final Runnable run;
         final int cardsCreated; // 0 for art jobs, >0 for create batch jobs
-        UploadJob(Runnable run, int cardsCreated) {
+        final int estimatedBytes;
+        UploadJob(Runnable run, int cardsCreated, int estimatedBytes) {
             this.run = run;
             this.cardsCreated = cardsCreated;
+            this.estimatedBytes = Math.max(1, estimatedBytes);
         }
     }
+    private static final int ART_CHUNK_SIZE = 64 * 1024;
+    private static final int UPLOAD_MAX_JOBS_PER_TICK = 4;
+    private static final int UPLOAD_MAX_BYTES_PER_TICK = 128 * 1024;
+    private static final int CONTROL_PACKET_ESTIMATE = 256;
     private final java.util.ArrayDeque<UploadJob> uploadQueue = new java.util.ArrayDeque<>();
     private boolean uploadsRunning = false;
     private int uploadCooldownTicks = 0; // spacing between sends
@@ -161,7 +167,6 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     @Override
     public void tick() {
         super.tick();
-        final int JOBS_PER_TICK = 12; // try 8–20; higher = faster, too high = risk packet flood
 
         // ---- Manual drag-drop images -> add to grid one-by-one (sequential) ----
         if (manualImportRunning && !cancelRequested) {
@@ -190,10 +195,13 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
             return;
         }
 
-        for (int n = 0; n < JOBS_PER_TICK; n++) {
+        int jobsBudget = UPLOAD_MAX_JOBS_PER_TICK;
+        int bytesBudget = UPLOAD_MAX_BYTES_PER_TICK;
+
+        while (jobsBudget > 0) {
             if (cancelRequested) break;
 
-            UploadJob job = uploadQueue.pollFirst();
+            UploadJob job = uploadQueue.peekFirst();
             netQueued = uploadQueue.size();
 
             if (job == null) {
@@ -207,10 +215,17 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                 break;
             }
 
+            if (jobsBudget != UPLOAD_MAX_JOBS_PER_TICK && job.estimatedBytes > bytesBudget) {
+                break;
+            }
+
+            uploadQueue.pollFirst();
             try {
                 job.run.run();
                 uploadJobsSent++;
                 netSent++;
+                jobsBudget--;
+                bytesBudget = Math.max(0, bytesBudget - job.estimatedBytes);
 
                 // ---- ETA sampling / EMA update (jobs/sec) ----
                 long now = System.currentTimeMillis();
@@ -339,12 +354,16 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         }));
     }
 
-    private void enqueueUpload(Runnable r) { enqueueUpload(r, 0); }
+    private void enqueueUpload(Runnable r) { enqueueUpload(r, 0, CONTROL_PACKET_ESTIMATE); }
 
     private void enqueueUpload(Runnable r, int cardsCreated) {
+        enqueueUpload(r, cardsCreated, CONTROL_PACKET_ESTIMATE);
+    }
+
+    private void enqueueUpload(Runnable r, int cardsCreated, int estimatedBytes) {
         if (r == null) return;
         if (cancelRequested) return;
-        uploadQueue.addLast(new UploadJob(r, cardsCreated));
+        uploadQueue.addLast(new UploadJob(r, cardsCreated, estimatedBytes));
         netQueued = uploadQueue.size();
     }
 
@@ -1519,8 +1538,6 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
             ctx.drawString(this.font, label, lx, ly, 0xFFEFEFEF, false);
         }
     }
-    private static final int ART_CHUNK_SIZE = 128 * 1024;
-
     private void enqueueArtUpload(String artKey, byte[] bytes) {
         if (artKey == null || artKey.isEmpty()) return;
         if (bytes == null || bytes.length == 0) return;
@@ -1548,7 +1565,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
 
             enqueueUpload(() -> ClientPlayNetworking.send(
                     new CustomCardPackets.CustomArtChunk(uploadId, idx, slice)
-            ));
+            ), 0, slice.length);
         }
 
         enqueueUpload(() -> ClientPlayNetworking.send(

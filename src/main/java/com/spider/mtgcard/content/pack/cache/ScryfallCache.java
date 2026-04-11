@@ -94,13 +94,7 @@ public final class ScryfallCache {
             String body = ScryfallHttp.get(url);
             ScryfallModels.Card card = ScryfallJson.parseCard(body);
 
-            // cache + persist
-            if (card != null && card.id != null && !card.id.isEmpty()) {
-                synchronized (ScryfallCache.class) {
-                    SESSION.put(card.id, card);
-                    store(world).put(card);
-                }
-            }
+            cacheCard(world, card);
             return card;
         }).exceptionally(ex -> {
             synchronized (ScryfallCache.class) {
@@ -151,13 +145,42 @@ public final class ScryfallCache {
     public static Set<String> getBlackout(ServerLevel world){ return Set.of(); }
 
     // ---- caches ----
+    private static final int QUERY_POOL_TARGET = 36;
+    private static final int QUERY_POOL_LOW_WATER = 8;
+    private static final int SCRYFALL_SEARCH_PAGE_SIZE = 175;
+    private static final int MAX_RANDOM_SEARCH_PAGE = 50;
     private static final Random RNG = new Random();
     private static final Map<String, ScryfallModels.Card> SESSION = new HashMap<>();
+    private static final Map<String, QueryPool> QUERY_POOLS = new HashMap<>();
     private static PersistentCardStore PERSISTENT; // lazy
+
+    private static final class QueryPool {
+        private final ArrayList<ScryfallModels.Card> cards = new ArrayList<>();
+        private CompletableFuture<List<ScryfallModels.Card>> refill;
+    }
 
     private static PersistentCardStore store(ServerLevel w) {
         if (PERSISTENT == null) PERSISTENT = PersistentCardStore.load(w);
         return PERSISTENT;
+    }
+
+    private static void cacheCard(ServerLevel world, ScryfallModels.Card card) {
+        if (card == null || card.id == null || card.id.isEmpty()) return;
+        synchronized (ScryfallCache.class) {
+            SESSION.put(card.id, card);
+            store(world).put(card);
+        }
+    }
+
+    private static void cacheCards(ServerLevel world, Collection<ScryfallModels.Card> cards) {
+        if (cards == null || cards.isEmpty()) return;
+        for (ScryfallModels.Card card : cards) cacheCard(world, card);
+    }
+
+    private static QueryPool queryPool(String key) {
+        synchronized (ScryfallCache.class) {
+            return QUERY_POOLS.computeIfAbsent(key, ignored -> new QueryPool());
+        }
     }
 
     /** Flexible picker (kept for other callers). */
@@ -165,38 +188,287 @@ public final class ScryfallCache {
             ServerLevel world, Context ctx, Query q, boolean foil, boolean allowVariant
     ) {
         final String query = buildQuery(ctx, q, foil, allowVariant);
+        return pickFromPoolAsync(world, ctx, q, query)
+                .exceptionally(ex -> null)
+                .thenCompose(card -> {
+                    if (card != null) return CompletableFuture.completedFuture(card);
+                    return fetchRandomRemoteAsync(world, ctx, q, query);
+                })
+                .exceptionally(ex -> {
+                    ScryfallModels.Card fallback = fallbackFromLocalCache(world, ctx, q);
+                    if (fallback != null) return fallback;
+                    throw new RuntimeException("Scryfall fetch failed: " + ex.getMessage(), ex);
+                });
+    }
+
+    private static CompletableFuture<ScryfallModels.Card> pickFromPoolAsync(
+            ServerLevel world, Context ctx, Query q, String query
+    ) {
+        QueryPool pool = queryPool(query);
+
+        ScryfallModels.Card cached = takeFromPool(pool, ctx, q);
+        if (cached != null) {
+            if (poolSize(pool) < QUERY_POOL_LOW_WATER) ensurePoolRefill(world, query, pool);
+            return CompletableFuture.completedFuture(cached);
+        }
+
+        if (seedPoolFromLocalCache(world, ctx, q, pool) > 0) {
+            ScryfallModels.Card seeded = takeFromPool(pool, ctx, q);
+            if (seeded != null) {
+                if (poolSize(pool) < QUERY_POOL_LOW_WATER) ensurePoolRefill(world, query, pool);
+                return CompletableFuture.completedFuture(seeded);
+            }
+        }
+
+        return ensurePoolRefill(world, query, pool)
+                .exceptionally(ex -> List.of())
+                .thenApply(ignored -> {
+                    ScryfallModels.Card refilled = takeFromPool(pool, ctx, q);
+                    if (refilled != null && poolSize(pool) < QUERY_POOL_LOW_WATER) {
+                        ensurePoolRefill(world, query, pool);
+                    }
+                    return refilled;
+                });
+    }
+
+    private static CompletableFuture<ScryfallModels.Card> fetchRandomRemoteAsync(
+            ServerLevel world, Context ctx, Query q, String query
+    ) {
         final String url = "https://api.scryfall.com/cards/random?q=" + url(query) + "&unique=prints";
         System.out.println("[mtgcard:packs] ScryfallFetch url=" + url + " onlySet=" + ctx.onlySet());
 
         return ScryfallService.supplyAsync("random query " + query, () -> {
-            String body = ScryfallHttp.get(url);
-            ScryfallModels.Card card = ScryfallJson.parseCard(body);
-
-            if ((ctx.blacklist() != null && ctx.blacklist().contains(card.id))
-                    || (ctx.excludeSets() != null && ctx.excludeSets().contains(card.set))) {
-                String body2 = ScryfallHttp.get(url);
-                card = ScryfallJson.parseCard(body2);
-                System.out.println("[mtgcard:packs] ScryfallResult id=" + (card==null?"null":card.id)
-                        + " name=" + (card==null?"null":card.name)
-                        + " set=" + (card==null?"null":card.set));
-            }
-
-            if (card.id != null && !card.id.isEmpty()) {
-                synchronized (ScryfallCache.class) {
-                    SESSION.put(card.id, card);
-                    store(world).put(card);
+            for (int attempt = 0; attempt < 2; attempt++) {
+                String body = ScryfallHttp.get(url);
+                ScryfallModels.Card card = ScryfallJson.parseCard(body);
+                if (matchesQuery(card, ctx, q)) {
+                    cacheCard(world, card);
+                    return card;
                 }
             }
-            return card;
-        }).exceptionally(ex -> {
-            synchronized (ScryfallCache.class) {
-                if (!SESSION.isEmpty()) {
-                    return new ArrayList<>(SESSION.values())
-                            .get(RNG.nextInt(SESSION.size()));
-                }
-                throw new RuntimeException("Scryfall fetch failed: " + ex.getMessage(), ex);
-            }
+            throw new RuntimeException("No matching Scryfall result for query: " + query);
         });
+    }
+
+    private static CompletableFuture<List<ScryfallModels.Card>> ensurePoolRefill(
+            ServerLevel world, String query, QueryPool pool
+    ) {
+        synchronized (pool) {
+            if (pool.refill != null && !pool.refill.isDone()) return pool.refill;
+
+            CompletableFuture<List<ScryfallModels.Card>> refill = refillPoolAsync(world, query);
+            pool.refill = refill;
+            refill.whenComplete((cards, ex) -> {
+                synchronized (pool) {
+                    if (ex == null && cards != null && !cards.isEmpty()) addToPool(pool, cards);
+                    if (pool.refill == refill) pool.refill = null;
+                }
+            });
+            return refill;
+        }
+    }
+
+    private static CompletableFuture<List<ScryfallModels.Card>> refillPoolAsync(ServerLevel world, String query) {
+        return ScryfallPrintSearchFetch.fetchSearchAsync(query, 1).thenCompose(firstPage -> {
+            if (firstPage == null || firstPage.totalCards() <= 0 || firstPage.hits().isEmpty()) {
+                return CompletableFuture.completedFuture(List.of());
+            }
+
+            int totalPages = Math.max(1, (int) Math.ceil(firstPage.totalCards() / (double) SCRYFALL_SEARCH_PAGE_SIZE));
+            int pageCap = Math.max(1, Math.min(totalPages, MAX_RANDOM_SEARCH_PAGE));
+            int chosenPage = 1 + RNG.nextInt(pageCap);
+
+            CompletableFuture<ScryfallPrintSearchFetch.Page> pageFuture =
+                    (chosenPage == 1)
+                            ? CompletableFuture.completedFuture(firstPage)
+                            : ScryfallPrintSearchFetch.fetchSearchAsync(query, chosenPage)
+                            .exceptionally(ex -> firstPage);
+
+            return pageFuture.thenCompose(page -> {
+                List<ScryfallPrintSearchFetch.PrintHit> sample = sampleHits(page.hits(), QUERY_POOL_TARGET);
+                if (sample.isEmpty() && page != firstPage) {
+                    sample = sampleHits(firstPage.hits(), QUERY_POOL_TARGET);
+                }
+                if (sample.isEmpty()) return CompletableFuture.completedFuture(List.of());
+
+                return ScryfallExactFetch.fetchCollectionByPrintHitsAsync(sample).thenApply(cards -> {
+                    List<ScryfallModels.Card> usable = sanitize(cards);
+                    cacheCards(world, usable);
+                    return usable;
+                });
+            });
+        });
+    }
+
+    private static List<ScryfallPrintSearchFetch.PrintHit> sampleHits(
+            List<ScryfallPrintSearchFetch.PrintHit> hits, int count
+    ) {
+        if (hits == null || hits.isEmpty() || count <= 0) return List.of();
+        ArrayList<ScryfallPrintSearchFetch.PrintHit> copy = new ArrayList<>(hits);
+        Collections.shuffle(copy, RNG);
+        if (copy.size() > count) copy.subList(count, copy.size()).clear();
+        return copy;
+    }
+
+    private static List<ScryfallModels.Card> sanitize(List<ScryfallModels.Card> cards) {
+        if (cards == null || cards.isEmpty()) return List.of();
+        ArrayList<ScryfallModels.Card> usable = new ArrayList<>();
+        HashSet<String> seen = new HashSet<>();
+        for (ScryfallModels.Card card : cards) {
+            if (card == null || card.id == null || card.id.isBlank()) continue;
+            if (seen.add(card.id)) usable.add(card);
+        }
+        return usable;
+    }
+
+    private static int seedPoolFromLocalCache(
+            ServerLevel world, Context ctx, Query q, QueryPool pool
+    ) {
+        synchronized (pool) {
+            if (!pool.cards.isEmpty()) return 0;
+        }
+
+        ArrayList<ScryfallModels.Card> matches = new ArrayList<>();
+        HashSet<String> seen = new HashSet<>();
+
+        synchronized (ScryfallCache.class) {
+            for (ScryfallModels.Card card : SESSION.values()) {
+                if (matchesQuery(card, ctx, q) && seen.add(card.id)) matches.add(card);
+            }
+        }
+        for (ScryfallModels.Card card : store(world).snapshot()) {
+            if (matchesQuery(card, ctx, q) && seen.add(card.id)) matches.add(card);
+        }
+
+        if (matches.isEmpty()) return 0;
+        Collections.shuffle(matches, RNG);
+        if (matches.size() > QUERY_POOL_TARGET) matches.subList(QUERY_POOL_TARGET, matches.size()).clear();
+
+        synchronized (pool) {
+            addToPool(pool, matches);
+            return pool.cards.size();
+        }
+    }
+
+    private static void addToPool(QueryPool pool, List<ScryfallModels.Card> cards) {
+        HashSet<String> existing = new HashSet<>();
+        for (ScryfallModels.Card card : pool.cards) {
+            if (card != null && card.id != null && !card.id.isBlank()) existing.add(card.id);
+        }
+        for (ScryfallModels.Card card : cards) {
+            if (card == null || card.id == null || card.id.isBlank()) continue;
+            if (existing.add(card.id)) pool.cards.add(card);
+        }
+        while (pool.cards.size() > QUERY_POOL_TARGET * 2) {
+            pool.cards.remove(RNG.nextInt(pool.cards.size()));
+        }
+    }
+
+    private static ScryfallModels.Card takeFromPool(QueryPool pool, Context ctx, Query q) {
+        synchronized (pool) {
+            if (pool.cards.isEmpty()) return null;
+
+            ArrayList<Integer> matching = new ArrayList<>();
+            for (int i = 0; i < pool.cards.size(); i++) {
+                if (matchesQuery(pool.cards.get(i), ctx, q)) matching.add(i);
+            }
+            if (matching.isEmpty()) return null;
+
+            int chosen = matching.get(RNG.nextInt(matching.size()));
+            return pool.cards.remove(chosen);
+        }
+    }
+
+    private static int poolSize(QueryPool pool) {
+        synchronized (pool) {
+            return pool.cards.size();
+        }
+    }
+
+    private static ScryfallModels.Card fallbackFromLocalCache(ServerLevel world, Context ctx, Query q) {
+        ArrayList<ScryfallModels.Card> matches = new ArrayList<>();
+        HashSet<String> seen = new HashSet<>();
+
+        synchronized (ScryfallCache.class) {
+            for (ScryfallModels.Card card : SESSION.values()) {
+                if (matchesQuery(card, ctx, q) && seen.add(card.id)) matches.add(card);
+            }
+        }
+        if (matches.isEmpty()) {
+            for (ScryfallModels.Card card : store(world).snapshot()) {
+                if (matchesQuery(card, ctx, q) && seen.add(card.id)) matches.add(card);
+            }
+        }
+        if (!matches.isEmpty()) return matches.get(RNG.nextInt(matches.size()));
+        return null;
+    }
+
+    private static boolean matchesQuery(ScryfallModels.Card card, Context ctx, Query q) {
+        if (card == null || card.id == null || card.id.isBlank()) return false;
+
+        String id = card.id;
+        String set = lower(card.set);
+        if (ctx != null) {
+            if (ctx.blacklist() != null && ctx.blacklist().contains(id)) return false;
+            if (ctx.excludeSets() != null && !set.isBlank() && ctx.excludeSets().contains(set)) return false;
+        }
+
+        if (q == null) return true;
+
+        String onlySet = (ctx == null || ctx.onlySet() == null) ? "" : lower(ctx.onlySet());
+        if (!onlySet.isBlank()) {
+            if (q instanceof Query.TokenExtra) {
+                if (!set.equals(onlySet) && !set.equals("t" + onlySet)) return false;
+            } else if (!set.equals(onlySet)) {
+                return false;
+            }
+        }
+
+        String typeLine = lower(card.typeLine);
+        String layout = lower(card.layout);
+        boolean isBasic = typeLine.contains("basic land");
+        boolean isTokenLike = card.isTokenLike
+                || typeLine.contains("token")
+                || typeLine.contains("emblem")
+                || typeLine.contains("dungeon")
+                || typeLine.contains("art series")
+                || layout.contains("art_series");
+
+        if (q instanceof Query.TokenExtra) return isTokenLike;
+        if (q instanceof Query.BasicLand) return isBasic;
+        if (isBasic || isTokenLike) return false;
+
+        String rarity = normalizeRarityCode(card.rarity);
+        if (q instanceof Query.Rarity r) return rarity.equals(normalizeRarityCode(r.rarity()));
+        if (q instanceof Query.RarityMax r) return rarityRank(rarity) <= rarityRank(normalizeRarityCode(r.code()));
+        if (q instanceof Query.RarityMin r) return rarityRank(rarity) >= rarityRank(normalizeRarityCode(r.code()));
+        if (q instanceof Query.Legendary) return typeLine.contains("legendary");
+        return true;
+    }
+
+    private static String normalizeRarityCode(String rarity) {
+        if (rarity == null) return "";
+        return switch (rarity.trim().toLowerCase(Locale.ROOT)) {
+            case "c", "common" -> "c";
+            case "u", "uncommon" -> "u";
+            case "r", "rare" -> "r";
+            case "m", "mythic", "mythic rare" -> "m";
+            default -> rarity.trim().toLowerCase(Locale.ROOT);
+        };
+    }
+
+    private static int rarityRank(String rarity) {
+        return switch (normalizeRarityCode(rarity)) {
+            case "c" -> 1;
+            case "u" -> 2;
+            case "r" -> 3;
+            case "m" -> 4;
+            default -> Integer.MAX_VALUE;
+        };
+    }
+
+    private static String lower(String s) {
+        return s == null ? "" : s.trim().toLowerCase(Locale.ROOT);
     }
 
     // ---- query building (flexible path) ----

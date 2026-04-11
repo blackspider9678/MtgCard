@@ -450,6 +450,7 @@ public final class SearchEngine {
                 r -> nullLow(r == null ? null : r.name),
                 String.CASE_INSENSITIVE_ORDER
         );
+        boolean handledDirection = false;
 
         if (sort != null) {
             switch (sort) {
@@ -461,10 +462,27 @@ public final class SearchEngine {
                 case COLOR_ID -> cmp = Comparator.comparing(r -> colorKey(r.colorId), String.CASE_INSENSITIVE_ORDER);
                 case FOIL -> cmp = Comparator.comparing(r -> r.foil);        // false < true
                 case TOKEN -> cmp = Comparator.comparing(r -> r.tokenLike);  // false < true
+                case PRICE -> {
+                    cmp = compareByPrice(ascending);
+                    handledDirection = true;
+                }
+                case TYPE -> cmp = Comparator.comparing(r -> nullLow(r.typeLine), String.CASE_INSENSITIVE_ORDER);
+                case POWER -> {
+                    cmp = compareByStat(r -> r == null ? null : r.powerRaw, ascending);
+                    handledDirection = true;
+                }
+                case TOUGHNESS -> {
+                    cmp = compareByStat(r -> r == null ? null : r.toughnessRaw, ascending);
+                    handledDirection = true;
+                }
             }
         }
 
-        if (!ascending) cmp = cmp.reversed();
+        if (sort != ScryfallQuery.SortKey.NAME) {
+            cmp = cmp.thenComparing(r -> nullLow(r == null ? null : r.name), String.CASE_INSENSITIVE_ORDER);
+        }
+
+        if (!handledDirection && !ascending) cmp = cmp.reversed();
         return cmp;
     }
 
@@ -484,11 +502,72 @@ public final class SearchEngine {
                 case "color_id"  -> key = ScryfallQuery.SortKey.COLOR_ID;
                 case "foil"      -> key = ScryfallQuery.SortKey.FOIL;
                 case "token"     -> key = ScryfallQuery.SortKey.TOKEN;
+                case "price", "usd" -> key = ScryfallQuery.SortKey.PRICE;
+                case "type" -> key = ScryfallQuery.SortKey.TYPE;
+                case "power" -> key = ScryfallQuery.SortKey.POWER;
+                case "toughness" -> key = ScryfallQuery.SortKey.TOUGHNESS;
                 default          -> key = ScryfallQuery.SortKey.NAME;
             }
         }
         return buildComparator(key, ascending);
     }
+
+    private static Comparator<Row> compareByPrice(boolean ascending) {
+        return (a, b) -> compareNullableDouble(
+                a == null ? Double.NaN : a.priceUsd,
+                b == null ? Double.NaN : b.priceUsd,
+                ascending
+        );
+    }
+
+    private static Comparator<Row> compareByStat(java.util.function.Function<Row, String> getter, boolean ascending) {
+        return (a, b) -> compareStatValues(
+                getter.apply(a),
+                getter.apply(b),
+                ascending
+        );
+    }
+
+    private static int compareNullableDouble(double a, double b, boolean ascending) {
+        boolean aMissing = Double.isNaN(a);
+        boolean bMissing = Double.isNaN(b);
+        if (aMissing != bMissing) return aMissing ? 1 : -1;
+        if (aMissing) return 0;
+
+        int cmp = Double.compare(a, b);
+        return ascending ? cmp : -cmp;
+    }
+
+    private static int compareStatValues(String aRaw, String bRaw, boolean ascending) {
+        StatValue a = parseStatValue(aRaw);
+        StatValue b = parseStatValue(bRaw);
+
+        if (a.missing != b.missing) return a.missing ? 1 : -1;
+        if (a.missing) return 0;
+
+        if (a.numeric != b.numeric) return a.numeric ? -1 : 1;
+
+        if (a.numeric) {
+            int cmp = Double.compare(a.numericValue, b.numericValue);
+            if (cmp != 0) return ascending ? cmp : -cmp;
+        }
+
+        int cmp = a.text.compareToIgnoreCase(b.text);
+        return ascending ? cmp : -cmp;
+    }
+
+    private static StatValue parseStatValue(String raw) {
+        String text = nullLow(raw).trim();
+        if (text.isEmpty()) return new StatValue(true, false, 0.0, "");
+
+        try {
+            return new StatValue(false, true, Double.parseDouble(text), text);
+        } catch (NumberFormatException ignored) {
+            return new StatValue(false, false, 0.0, text);
+        }
+    }
+
+    private record StatValue(boolean missing, boolean numeric, double numericValue, String text) {}
 
     private static String safeStr(String s) { return (s == null) ? "" : s; }
 

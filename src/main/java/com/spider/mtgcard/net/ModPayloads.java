@@ -178,6 +178,7 @@ public final class ModPayloads {
                 int slot = payload.slot();
                 String key = payload.key();
 
+                if (key == null || key.isBlank()) return;
                 if (slot < 0 || slot >= player.getInventory().getContainerSize()) return;
 
                 ItemStack st = player.getInventory().getItem(slot);
@@ -203,26 +204,6 @@ public final class ModPayloads {
 
                 com.spider.mtgcard.util.StackData.deleteCounterKey(st, payload.key());
                 display.setStack(st); // tracked data sync
-            });
-        });
-
-        ServerPlayNetworking.registerGlobalReceiver(DeleteCounterPayload.ID, (payload, ctx) -> {
-            ctx.server().execute(() -> {
-                var player = ctx.player();
-                int slot = payload.slot();
-                String key = payload.key();
-
-                if (key == null || key.isBlank()) return;
-                if (slot < 0 || slot >= player.getInventory().getContainerSize()) return;
-
-                ItemStack st = player.getInventory().getItem(slot);
-                if (st.isEmpty()) return;
-
-                // remove from mtg_meta
-                com.spider.mtgcard.util.StackData.deleteCounterKey(st, key);
-
-                player.getInventory().setChanged();
-                player.containerMenu.broadcastChanges();
             });
         });
 

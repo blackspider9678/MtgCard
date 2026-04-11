@@ -1,6 +1,5 @@
 package com.spider.mtgcard.content.pack;
 
-import com.spider.mtgcard.net.ModPayloads;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.Item.Properties;
 import net.minecraft.world.item.component.CustomData;
@@ -50,17 +49,16 @@ public class PackItem extends Item {
         }
 
         // ---- NEW: snapshot EXACT pack for refund (count=1, includes custom name, custom data, etc.) ----
-        ItemStack refundOne = stack.copy();
-        refundOne.setCount(1);
+        ItemStack refundOne = player.isCreative() ? ItemStack.EMPTY : stack.copy();
+        if (!refundOne.isEmpty()) {
+            refundOne.setCount(1);
+        }
 
         // ---- NEW: acquire the active lock BEFORE decrement/async ----
         if (!PackOpenManager.tryStart(player, refundOne)) {
             player.sendSystemMessage(net.minecraft.network.chat.Component.literal("You're already opening a pack."), true);
             return InteractionResult.FAIL;
         }
-
-        // Start HUD
-        ModPayloads.sendUnpackProgress(player, 0);
 
         // Consume immediately (unless Creative)
         if (!player.isCreative()) {

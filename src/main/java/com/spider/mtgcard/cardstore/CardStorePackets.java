@@ -31,6 +31,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class CardStorePackets {
+    private static boolean serverRegistered = false;
 
     // ---------- C2S: Confirm purchase ----------
     public record ConfirmPurchaseC2S(BlockPos pos, int lineCount, List<Line> lines) implements CustomPacketPayload {
@@ -419,6 +420,8 @@ public final class CardStorePackets {
 
     // ---------- Server receivers ----------
     public static void registerServer() {
+        if (serverRegistered) return;
+        serverRegistered = true;
 
         var cfg = com.spider.mtgcard.config.MtgcardConfig.get();
         String priceItemId = cfg.Price_Item;

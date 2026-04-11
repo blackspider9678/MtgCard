@@ -244,8 +244,8 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         switch (facing) {
             case SOUTH -> { /* no rotation */ }
             case NORTH -> matrices.mulPose(Axis.YP.rotationDegrees(180f));
-            case WEST  -> matrices.mulPose(Axis.YP.rotationDegrees(90f));
-            case EAST  -> matrices.mulPose(Axis.YP.rotationDegrees(-90f));
+            case EAST  -> matrices.mulPose(Axis.YP.rotationDegrees(90f));
+            case WEST  -> matrices.mulPose(Axis.YP.rotationDegrees(-90f));
             case UP    -> matrices.mulPose(Axis.XP.rotationDegrees(-90f)); // +Z -> +Y
             case DOWN  -> matrices.mulPose(Axis.XP.rotationDegrees(90f));  // +Z -> -Y
         }

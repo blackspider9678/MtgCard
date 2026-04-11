@@ -12,6 +12,7 @@ import net.minecraft.client.DeltaTracker;
 public final class UnpackHud implements HudRenderCallback {
     private static volatile int progress = 0;
     private static volatile long lastUpdateNs = 0L;
+    private static volatile boolean active = false;
 
     private static final long KEEP_ALIVE_AFTER_DONE_NS = 2_000_000_000L;
 
@@ -20,12 +21,27 @@ public final class UnpackHud implements HudRenderCallback {
     }
 
     public static void setProgressFromServer(int percent) {
-        progress = Math.max(0, Math.min(100, percent));
+        int next = Math.max(0, Math.min(100, percent));
+        if (next == 0) {
+            if (active) {
+                reset();
+                return;
+            }
+
+            active = true;
+            progress = 0;
+            lastUpdateNs = System.nanoTime();
+            return;
+        }
+
+        progress = next;
         lastUpdateNs = System.nanoTime();
+        active = next < 100;
     }
 
     /** NEW: call this on disconnect/world leave to stop the HUD immediately. */
     public static void reset() {
+        active = false;
         progress = 0;
         lastUpdateNs = 0L;
     }
@@ -38,8 +54,12 @@ public final class UnpackHud implements HudRenderCallback {
         if (lastUpdateNs == 0L) return;
 
         long sinceNs = System.nanoTime() - lastUpdateNs;
-        boolean visible = (progress < 100) || (sinceNs < KEEP_ALIVE_AFTER_DONE_NS);
-        if (!visible) return;
+        if (!active) {
+            if (progress < 100 || sinceNs >= KEEP_ALIVE_AFTER_DONE_NS) {
+                reset();
+                return;
+            }
+        }
 
         int w = ctx.guiWidth();
         int h = ctx.guiHeight();

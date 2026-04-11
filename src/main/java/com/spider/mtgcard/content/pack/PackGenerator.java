@@ -145,18 +145,11 @@ public final class PackGenerator {
                         chain = chain.thenCompose(v -> {
                                 if (active != null && active.cancelled) return CompletableFuture.completedFuture(null);
 
-                                // IMPORTANT: if a single card fails, don't blow up the whole pack.
                                 return makeCardAsyncNoDupe(server, player, slot, desiredSet, customMode, seenIds, 6)
-                                        .exceptionally(ex -> {
-                                                server.execute(() -> {
-                                                        player.sendSystemMessage(Component.literal("[MTGCard] Pack slot failed: " + ex.getClass().getSimpleName()), true);
-                                                });
-                                                return placeholderCard();
-                                        })
+                                        .thenApply(st -> requireResolvedCard(slot, st))
                                         .thenAccept(st -> {
                                                 if (active != null && active.cancelled) return;
 
-                                                if (st == null || st.isEmpty()) st = placeholderCard();
                                                 out.add(st);
 
                                                 int percent = Math.min(100, (int) Math.round((out.size() * 100.0) / TOTAL));
@@ -175,16 +168,24 @@ public final class PackGenerator {
 
                         if (ex != null) {
                                 // refund exactly once
-                                if (active != null) {
-                                        ItemStack refund = active.refundPackOne.copy();
-                                        if (!player.getInventory().add(refund)) player.drop(refund, false);
-                                }
+                                refundPackIfNeeded(player, active);
 
                                 PackOpenManager.finish(player);
                                 ModPayloads.sendUnpackProgress(player, 0);
 
                                 // Log it so we can see the real cause
                                 com.spider.mtgcard.Mtgcard.LOGGER.error("[MTGCard] Pack opening failed", ex);
+                                player.sendSystemMessage(Component.literal("[MTGCard] Pack refunded because a card could not be generated."), true);
+                                return;
+                        }
+
+                        if (out.size() != TOTAL || out.stream().anyMatch(st -> !isResolvedPackCard(st))) {
+                                refundPackIfNeeded(player, active);
+
+                                PackOpenManager.finish(player);
+                                ModPayloads.sendUnpackProgress(player, 0);
+                                player.sendSystemMessage(Component.literal("[MTGCard] Pack refunded because a card could not be generated."), true);
+                                com.spider.mtgcard.Mtgcard.LOGGER.error("[MTGCard] Pack opening produced unresolved cards: {}", out.size());
                                 return;
                         }
 
@@ -197,7 +198,6 @@ public final class PackGenerator {
                         ItemStack bundle = new ItemStack(Items.BUNDLE);
 
                         List<ItemStack> templates = out.stream()
-                                .filter(stack -> stack != null && !stack.isEmpty())
                                 .map(ItemStack::copy)
                                 .toList();
 
@@ -219,6 +219,19 @@ public final class PackGenerator {
                 return st;
         }
 
+        private static void refundPackIfNeeded(ServerPlayer player, PackOpenManager.Active active) {
+                if (player == null || active == null || active.refundPackOne == null || active.refundPackOne.isEmpty()) {
+                        return;
+                }
+
+                ItemStack refund = active.refundPackOne.copy();
+                if (refund.isEmpty()) return;
+
+                if (!player.getInventory().add(refund)) {
+                        player.drop(refund, false);
+                }
+        }
+
         private static CompletableFuture<ItemStack> makeCardAsyncNoDupe(
                 MinecraftServer server,
                 ServerPlayer player,
@@ -230,11 +243,14 @@ public final class PackGenerator {
         ) {
                 return makeCardAsync(server, player, slot, desiredSet, customMode)
                         .thenCompose(st -> {
-                                if (st == null || st.isEmpty()) return CompletableFuture.completedFuture(st);
+                                if (!isResolvedPackCard(st)) {
+                                        if (attemptsLeft <= 0) {
+                                                return CompletableFuture.failedFuture(new IllegalStateException("Could not resolve " + slot + " pack card"));
+                                        }
+                                        return makeCardAsyncNoDupe(server, player, slot, desiredSet, customMode, seenIds, attemptsLeft - 1);
+                                }
 
                                 String id = readMtgId(st);
-                                if (id == null || id.isBlank()) return CompletableFuture.completedFuture(st);
-
                                 if (seenIds.contains(id)) {
                                         if (attemptsLeft <= 0) return CompletableFuture.completedFuture(st);
                                         return makeCardAsyncNoDupe(server, player, slot, desiredSet, customMode, seenIds, attemptsLeft - 1);
@@ -283,7 +299,7 @@ public final class PackGenerator {
                                 ? tryCustomCard(world, setCode, slot, true)
                                 : tryCustomCard(world, null, slot, false);
 
-                        if (!custom.isEmpty()) {
+                        if (isResolvedPackCard(custom)) {
                                 if (foilVisual) custom.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
                                 return CompletableFuture.completedFuture(custom);
                         }
@@ -308,16 +324,7 @@ public final class PackGenerator {
 
                 final String finalScrySet = scrySet;
 
-                return fetchOneCardAsync(world, finalScrySet, q, slot).thenApply(card -> {
-                        ItemStack built = CardStackBuilders.buildScryfallStackFromModel(card, foilVisual);
-
-                        // Safety: if token slipped (shouldn’t, but just in case), only allow in TOKEN slot
-                        if (slot != RaritySlot.TOKEN_OR_ART && isTokenLike(built)) {
-                                return new ItemStack(ModItems.CARD);
-                        }
-                        if (foilVisual) built.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
-                        return built;
-                });
+                return fetchResolvedScryfallStackAsync(world, slot, q, finalScrySet, foilVisual);
         }
 
         /** Per-slot roll (only used for unnamed packs). */
@@ -437,6 +444,56 @@ public final class PackGenerator {
                 } catch (Throwable t) {
                         return false;
                 }
+        }
+
+        private static boolean isResolvedPackCard(ItemStack st) {
+                return st != null && !st.isEmpty() && readMtgId(st) != null;
+        }
+
+        private static ItemStack requireResolvedCard(RaritySlot slot, ItemStack st) {
+                if (isResolvedPackCard(st)) return st;
+                throw new IllegalStateException("Pack slot " + slot + " produced an unresolved card stack");
+        }
+
+        private static CompletableFuture<ItemStack> fetchResolvedScryfallStackAsync(
+                ServerLevel world,
+                RaritySlot slot,
+                ScryfallCache.Query q,
+                @org.jetbrains.annotations.Nullable String preferredSet,
+                boolean foilVisual
+        ) {
+                return fetchOneCardAsync(world, preferredSet, q, slot)
+                        .thenCompose(card -> {
+                                ItemStack built = buildResolvedScryfallStack(card, slot, foilVisual);
+                                if (isResolvedPackCard(built)) {
+                                        return CompletableFuture.completedFuture(built);
+                                }
+
+                                boolean alreadyGlobal = preferredSet == null || preferredSet.isBlank();
+                                if (alreadyGlobal) {
+                                        return CompletableFuture.failedFuture(new IllegalStateException("Could not build " + slot + " card from Scryfall"));
+                                }
+
+                                return fetchOneCardAsync(world, null, q, slot)
+                                        .thenApply(globalCard -> requireResolvedCard(slot, buildResolvedScryfallStack(globalCard, slot, foilVisual)));
+                        });
+        }
+
+        private static ItemStack buildResolvedScryfallStack(
+                ScryfallModels.Card card,
+                RaritySlot slot,
+                boolean foilVisual
+        ) {
+                ItemStack built = CardStackBuilders.buildScryfallStackFromModel(card, false);
+                if (!isResolvedPackCard(built)) return ItemStack.EMPTY;
+
+                // Safety: if token slipped, only allow it in the token slot.
+                if (slot != RaritySlot.TOKEN_OR_ART && isTokenLike(built)) {
+                        return ItemStack.EMPTY;
+                }
+
+                if (foilVisual) built.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+                return built;
         }
 
         // ---------- Set detection ----------

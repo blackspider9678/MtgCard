@@ -12,10 +12,10 @@ import java.time.format.DateTimeFormatter;
 
 final class ScryfallHttp {
     private static final Logger LOGGER = LoggerFactory.getLogger("MtgCard/Scryfall");
-    private static final long REQUEST_TIMEOUT_SECONDS = 10L;
-    private static final long CONNECT_TIMEOUT_SECONDS = 5L;
+    private static final long REQUEST_TIMEOUT_SECONDS = 20L;
+    private static final long CONNECT_TIMEOUT_SECONDS = 10L;
     private static final long MAX_RETRY_BACKOFF_MS = 5_000L;
-    private static final int MAX_ATTEMPTS = 3;
+    private static final int MAX_ATTEMPTS = 2;
 
     private static final HttpClient CLIENT = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))

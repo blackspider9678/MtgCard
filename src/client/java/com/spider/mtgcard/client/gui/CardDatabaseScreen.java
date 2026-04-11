@@ -26,6 +26,8 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
 
     private static final int DB_W  = 194;
     private static final int DB_H  = 252;
+    private static final String CLEAR_GLYPH = "\u00D7";
+    private static final String STORE_ALL_GLYPH = "\u21EA";
 
     private static final int DBX_W = 212;
     private static final int DBX_H = 238;
@@ -209,6 +211,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
             triggerSearchFromUI();
         }).bounds(clearX, headerY, clearW, fieldH).build();
         this.addRenderableWidget(this.btnClear);
+        this.btnClear.setMessage(Component.literal(CLEAR_GLYPH));
 
         // ----------------------------
         // Left gutter buttons (your requested stack)
@@ -225,6 +228,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
                 this.minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId, CardDatabaseScreenHandler.BTN_STORE_ALL);
             }
         });
+        this.btnStoreAll.setMessage(Component.literal(STORE_ALL_GLYPH));
 
         // Sort dropdown
         this.btnSort = addGutterButton(gx, gy + (row++ * step), "S", "Sort options", this::toggleSortMenu);
@@ -280,12 +284,16 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
     @Override
     public boolean mouseScrolled(double mx, double my, double hx, double vy) {
         if (vy == 0) return false;
-        boolean overWindow =
-                mx >= this.leftPos + CardDatabaseScreenHandler.DB_GRID_X &&
-                        mx <  this.leftPos + CardDatabaseScreenHandler.DB_GRID_X + 9 * 18 &&
-                        my >= this.topPos + CardDatabaseScreenHandler.DB_GRID_Y &&
-                        my <  this.topPos + CardDatabaseScreenHandler.DB_GRID_Y + 6 * 18;
-        if (!overWindow) return false;
+
+        boolean insideGui =
+                mx >= this.leftPos &&
+                        mx < this.leftPos + this.imageWidth &&
+                        my >= this.topPos &&
+                        my < this.topPos + this.imageHeight;
+        boolean overSlot = this.hoveredSlot != null && isMouseOverSlotArea(this.hoveredSlot, (int) mx, (int) my);
+
+        if (!insideGui && !overSlot) return false;
+
         int id = (vy < 0) ? CardDatabaseScreenHandler.SCROLL_ROW_DOWN
                 : CardDatabaseScreenHandler.SCROLL_ROW_UP;
         if (this.minecraft != null && this.minecraft.gameMode != null) {

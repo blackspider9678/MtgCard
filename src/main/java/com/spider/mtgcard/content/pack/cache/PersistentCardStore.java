@@ -44,6 +44,10 @@ public final class PersistentCardStore {
         if (c != null && c.id != null && !c.id.isEmpty()) byId.put(c.id, c);
     }
 
+    public synchronized List<ScryfallModels.Card> snapshot() {
+        return new ArrayList<>(byId.values());
+    }
+
     public synchronized void save() {
         JsonObject root = new JsonObject();
         for (var e : byId.entrySet()) {

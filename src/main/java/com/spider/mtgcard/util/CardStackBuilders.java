@@ -115,7 +115,7 @@ public final class CardStackBuilders {
 
     public static ItemStack buildScryfallStackFromModel(ScryfallModels.Card c, boolean foilVisual) {
         ItemStack card = new ItemStack(ModItems.CARD);
-        if (c == null) return new ItemStack(ModItems.CARD);
+        if (c == null || c.id == null || c.id.isBlank()) return ItemStack.EMPTY;
 
         CompoundTag meta = new CompoundTag();
         if (c.id != null) meta.putString("id", c.id);
