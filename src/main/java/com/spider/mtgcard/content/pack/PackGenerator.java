@@ -1,5 +1,6 @@
 package com.spider.mtgcard.content.pack;
 
+import com.spider.mtgcard.advancement.ModAdvancements;
 import com.spider.mtgcard.content.pack.cache.ScryfallCache;
 import com.spider.mtgcard.content.pack.cache.ScryfallModels;
 import com.spider.mtgcard.item.ModItems;
@@ -207,6 +208,7 @@ public final class PackGenerator {
                                 player.drop(bundle, false);
                         }
 
+                        ModAdvancements.onBoosterPackOpened(player);
                         ModPayloads.sendUnpackProgress(player, 100);
                         PackOpenManager.finish(player);
                 }));

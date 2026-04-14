@@ -1,0 +1,23 @@
+{
+  "parent": "mtgcard:root",
+  "criteria": {
+    "crafted": {
+      "conditions": {
+        "recipe_id": "mtgcard:card_database"
+      },
+      "trigger": "minecraft:recipe_crafted"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancement.mtgcard.craft_card_database.description"
+    },
+    "icon": {
+      "count": 1,
+      "id": "mtgcard:card_database"
+    },
+    "title": {
+      "translate": "advancement.mtgcard.craft_card_database.title"
+    }
+  }
+}
