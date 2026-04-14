@@ -32,6 +32,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /**
  * Custom card importer
@@ -347,7 +348,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                         buildThumbnail(existing);
                     }
 
-                    updateMaxScroll();
+                    rebuildVisibleEntries();
                     lastStatus = "Imported: " + name;
                 });
             }
@@ -396,18 +397,250 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         int x0 = 10;
         int y0 = GRID_TOP - scrollY;
 
-        for (int i = 0; i < entries.size(); i++) {
-            int col = i % cols;
-            int row = i / cols;
+        for (int viewIndex = 0; viewIndex < visibleEntryIndexes.size(); viewIndex++) {
+            int entryIndex = visibleEntryIndexes.get(viewIndex);
+            int col = viewIndex % cols;
+            int row = viewIndex / cols;
             int x = x0 + col * (BOX + GAP);
             int y = y0 + row * (BOX_H + GAP);
 
             // Only allow hover if the THUMB is fully visible in the viewport
             if (y < gridY1() || (y + BOX_H) > gridY2()) continue;
 
-            if (mx >= x && mx <= x + BOX && my >= y && my <= y + BOX_H) return i;
+            if (mx >= x && mx <= x + BOX && my >= y && my <= y + BOX_H) return entryIndex;
         }
         return -1;
+    }
+
+    private void rebuildVisibleEntries() {
+        String raw = nz(searchQuery);
+        boolean blankOnly = hasBlankSearchToken(raw);
+        String query = stripBlankSearchToken(raw);
+        Predicate<Entry> predicate = buildImportSearchPredicate(query);
+
+        visibleEntryIndexes.clear();
+        for (int i = 0; i < entries.size(); i++) {
+            Entry entry = entries.get(i);
+            if (blankOnly && !isBlankName(entry)) continue;
+            if (!predicate.test(entry)) continue;
+            visibleEntryIndexes.add(i);
+        }
+
+        hoveredIndex = -1;
+        updateSearchClearButtonState();
+        updateMaxScroll();
+    }
+
+    private Predicate<Entry> buildImportSearchPredicate(String rawQuery) {
+        List<List<ImportSearchTerm>> groups = parseImportSearch(rawQuery);
+        if (groups.isEmpty()) return entry -> true;
+
+        List<Predicate<Entry>> ors = new ArrayList<>();
+        for (List<ImportSearchTerm> terms : groups) {
+            List<Predicate<Entry>> ands = new ArrayList<>();
+            for (ImportSearchTerm term : terms) {
+                Predicate<Entry> predicate = buildImportTermPredicate(term);
+                if (term.neg) predicate = predicate.negate();
+                ands.add(predicate);
+            }
+            ors.add(ands.stream().reduce(x -> true, Predicate::and));
+        }
+        return ors.stream().reduce(x -> false, Predicate::or);
+    }
+
+    private Predicate<Entry> buildImportTermPredicate(ImportSearchTerm term) {
+        String value = nz(term.value).trim();
+        if (value.isEmpty()) return entry -> true;
+
+        String field = term.field;
+        if (field == null || field.isBlank()) {
+            return entry -> containsIgnoreCase(entry.meta.name, value);
+        }
+
+        return switch (field) {
+            case "name" -> entry -> containsIgnoreCase(entry.meta.name, value);
+            case "mana" -> entry -> containsIgnoreCase(entry.meta.manaCost, value);
+            case "type" -> entry -> containsIgnoreCase(entry.meta.typeLine, value);
+            case "set" -> entry -> containsIgnoreCase(entry.meta.set, value);
+            case "rarity" -> entry -> containsIgnoreCase(entry.meta.rarity, value);
+            case "text" -> entry -> containsIgnoreCase(entry.meta.oracleText, value);
+            case "power" -> entry -> containsIgnoreCase(entry.meta.power, value);
+            case "toughness" -> entry -> containsIgnoreCase(entry.meta.toughness, value);
+            case "loyalty" -> entry -> containsIgnoreCase(entry.meta.loyalty, value);
+            case "id" -> entry -> containsIgnoreCase(entry.meta.id, value);
+            case "is" -> buildImportIsPredicate(value);
+            default -> entry -> panelContainsIgnoreCase(entry, value);
+        };
+    }
+
+    private Predicate<Entry> buildImportIsPredicate(String value) {
+        String flag = value.toLowerCase(Locale.ROOT);
+        return switch (flag) {
+            case "blank" -> CustomImportScreen::isBlankName;
+            case "token" -> CustomImportScreen::isTokenLike;
+            case "dfc", "doublefaced", "double-faced" -> entry -> entry.meta.doubleFaced;
+            case "single", "singleface", "single-face" -> entry -> !entry.meta.doubleFaced;
+            default -> entry -> panelContainsIgnoreCase(entry, value);
+        };
+    }
+
+    private static List<List<ImportSearchTerm>> parseImportSearch(String raw) {
+        String query = nz(raw).trim();
+        if (query.isEmpty()) return List.of(List.of());
+
+        String[] orParts = query.split("(?i)\\s+or\\s+");
+        List<List<ImportSearchTerm>> groups = new ArrayList<>();
+        for (String part : orParts) {
+            List<ImportSearchTerm> group = new ArrayList<>();
+            for (String token : lexImportQuery(part)) {
+                if (token == null || token.isBlank()) continue;
+                boolean neg = false;
+                String body = token;
+                if (body.startsWith("-")) {
+                    neg = true;
+                    body = body.substring(1);
+                }
+
+                String field = null;
+                String value = body;
+                int sep = firstFieldSeparator(body);
+                if (sep > 0) {
+                    field = normalizeImportField(body.substring(0, sep));
+                    value = body.substring(sep + 1);
+                }
+                group.add(new ImportSearchTerm(field, unquoteImportValue(value.trim()), neg));
+            }
+            groups.add(group);
+        }
+        return groups;
+    }
+
+    private static List<String> lexImportQuery(String input) {
+        ArrayList<String> out = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        boolean inQuotes = false;
+        for (int i = 0; i < input.length(); i++) {
+            char ch = input.charAt(i);
+            if (ch == '"') {
+                inQuotes = !inQuotes;
+                continue;
+            }
+            if (!inQuotes && Character.isWhitespace(ch)) {
+                if (cur.length() > 0) {
+                    out.add(cur.toString());
+                    cur.setLength(0);
+                }
+            } else {
+                cur.append(ch);
+            }
+        }
+        if (cur.length() > 0) out.add(cur.toString());
+        return out;
+    }
+
+    private static int firstFieldSeparator(String token) {
+        int colon = token.indexOf(':');
+        int equals = token.indexOf('=');
+        if (colon < 0) return equals;
+        if (equals < 0) return colon;
+        return Math.min(colon, equals);
+    }
+
+    private static String normalizeImportField(String rawField) {
+        String field = nz(rawField).trim().toLowerCase(Locale.ROOT);
+        return switch (field) {
+            case "", "n" -> "name";
+            case "mana", "cost", "manacost", "mc" -> "mana";
+            case "t" -> "type";
+            case "s" -> "set";
+            case "r", "rar" -> "rarity";
+            case "oracle" -> "text";
+            case "pow", "p" -> "power";
+            case "tou" -> "toughness";
+            case "loy" -> "loyalty";
+            default -> field;
+        };
+    }
+
+    private static String unquoteImportValue(String value) {
+        if (value == null) return "";
+        if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
+            return value.substring(1, value.length() - 1);
+        }
+        return value;
+    }
+
+    private static boolean panelContainsIgnoreCase(Entry entry, String needle) {
+        return containsIgnoreCase(entry.meta.name, needle)
+                || containsIgnoreCase(entry.meta.manaCost, needle)
+                || containsIgnoreCase(entry.meta.typeLine, needle)
+                || containsIgnoreCase(entry.meta.set, needle)
+                || containsIgnoreCase(entry.meta.rarity, needle)
+                || containsIgnoreCase(entry.meta.oracleText, needle)
+                || containsIgnoreCase(entry.meta.power, needle)
+                || containsIgnoreCase(entry.meta.toughness, needle)
+                || containsIgnoreCase(entry.meta.loyalty, needle)
+                || containsIgnoreCase(entry.meta.id, needle);
+    }
+
+    private static boolean containsIgnoreCase(String haystack, String needle) {
+        if (haystack == null || needle == null) return false;
+        return haystack.toLowerCase(Locale.ROOT).contains(needle.toLowerCase(Locale.ROOT));
+    }
+
+    private static final class ImportSearchTerm {
+        final String field;
+        final String value;
+        final boolean neg;
+
+        ImportSearchTerm(String field, String value, boolean neg) {
+            this.field = field;
+            this.value = value;
+            this.neg = neg;
+        }
+    }
+
+    private static boolean hasBlankSearchToken(String raw) {
+        if (raw == null || raw.isBlank()) return false;
+        for (String part : raw.trim().split("\\s+")) {
+            if (part.equalsIgnoreCase(BLANK_SEARCH_TOKEN)) return true;
+        }
+        return false;
+    }
+
+    private static String stripBlankSearchToken(String raw) {
+        if (raw == null || raw.isBlank()) return "";
+        List<String> keep = new ArrayList<>();
+        for (String part : raw.trim().split("\\s+")) {
+            if (!part.equalsIgnoreCase(BLANK_SEARCH_TOKEN)) keep.add(part);
+        }
+        return String.join(" ", keep).trim();
+    }
+
+    private static boolean isBlankName(Entry entry) {
+        return entry == null || nz(entry.meta.name).isBlank();
+    }
+
+    private static boolean isTokenLike(Entry entry) {
+        String typeLine = nz(entry.meta.typeLine).toLowerCase(Locale.ROOT);
+        return hasTypeWord(typeLine, "token")
+                || hasTypeWord(typeLine, "emblem")
+                || hasTypeWord(typeLine, "dungeon")
+                || hasTypeWord(typeLine, "attraction")
+                || hasTypeWord(typeLine, "sticker")
+                || hasTypeWord(typeLine, "contraption")
+                || hasTypeWord(typeLine, "scheme")
+                || hasTypeWord(typeLine, "plane")
+                || hasTypeWord(typeLine, "phenomenon")
+                || hasTypeWord(typeLine, "vanguard");
+    }
+
+    private static boolean hasTypeWord(String typeLine, String word) {
+        if (typeLine == null || typeLine.isBlank()) return false;
+        for (String part : typeLine.split("[^a-z]+")) {
+            if (part.equals(word)) return true;
+        }
+        return false;
     }
 
     public static final class Meta {
@@ -440,7 +673,11 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     private LinkMode linkPendingMode = LinkMode.NONE; // awaiting a partner click?
 
     private final List<Entry> entries = new ArrayList<>();
+    private final List<Integer> visibleEntryIndexes = new ArrayList<>();
     private int selected = -1;
+    private EditBox searchBox;
+    private Button searchClearBtn;
+    private String searchQuery = "";
 
     private Button createBtn, rarityBtn, dfcToggleBtn;
     private EditBox nameF, manaF, typeF, setF, powF, touF, loyF;
@@ -465,6 +702,8 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     private static final int GAP = 8;
 
     private static final int THUMB_SCALE = 10;
+    private static final String CLEAR_GLYPH = "\u00D7";
+    private static final String BLANK_SEARCH_TOKEN = "[Blank]";
 
     private static final int GRID_TOP = 44;     // area below banner text
     private int scrollY = 0;
@@ -544,9 +783,65 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                 .bounds(linkX + 2*(linkW + gap), bottomY, 80, 20).build();
         addRenderableWidget(clearLinkBtn);
 
+        buildSearchWidgets();
         buildEditorWidgets();
         syncEditorFromSelected();
-        updateMaxScroll();
+        rebuildVisibleEntries();
+    }
+
+    private void buildSearchWidgets() {
+        final int headerY = 22;
+        final int fieldH = 16;
+        final int clearW = 16;
+        final int labelRight = 10 + this.font.width("Images added: " + entries.size());
+        final int leftX = Math.max(140, labelRight + 14);
+        final int clearX = panelX - 18;
+        final int searchW = Math.max(70, clearX - 2 - leftX);
+
+        searchBox = new EditBox(this.font, leftX, headerY, searchW, fieldH, Component.literal(""));
+        searchBox.setBordered(true);
+        searchBox.setEditable(true);
+        searchBox.setHint(Component.literal("Search or " + BLANK_SEARCH_TOKEN));
+        searchBox.setMaxLength(256);
+        searchBox.setValue(searchQuery);
+        searchBox.setResponder(value -> {
+            searchQuery = value;
+            rebuildVisibleEntries();
+        });
+        addRenderableWidget(searchBox);
+
+        searchClearBtn = Button.builder(Component.literal(CLEAR_GLYPH), b -> {
+            searchBox.setValue("");
+            searchBox.setFocused(true);
+        }).bounds(clearX, headerY, clearW, fieldH).build();
+        searchClearBtn.setMessage(Component.literal(CLEAR_GLYPH));
+        addRenderableWidget(searchClearBtn);
+        updateSearchClearButtonState();
+    }
+
+    private void updateSearchClearButtonState() {
+        if (searchClearBtn != null) searchClearBtn.active = !nz(searchQuery).isEmpty();
+    }
+
+    private void blurSearchIfClickedAway(double mx, double my) {
+        if (searchBox == null || !searchBox.isFocused()) return;
+        boolean overSearch = searchBox.isMouseOver(mx, my);
+        boolean overClear = searchClearBtn != null && searchClearBtn.isMouseOver(mx, my);
+        if (!overSearch && !overClear) {
+            searchBox.setFocused(false);
+            this.setFocused(null);
+        }
+    }
+
+    private boolean focusSearchIfClicked(MouseButtonEvent click, boolean bl) {
+        if (searchBox == null) return false;
+        double mx = click.x();
+        double my = click.y();
+        if (!searchBox.isMouseOver(mx, my)) return false;
+        blurAllExcept(searchBox);
+        searchBox.setFocused(true);
+        this.setFocused(searchBox);
+        return searchBox.mouseClicked(click, bl);
     }
 
     private void updateLinkButtonsVisibility() {
@@ -564,7 +859,6 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         super.resize(width, height);
         this.clearWidgets();
         this.init();
-        updateMaxScroll();
     }
 
     @Override
@@ -610,14 +904,15 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
 
             hoveredIndex = -1;
 
-            for (int i = 0; i < entries.size(); i++) {
-                int col = i % cols;
-                int row = i / cols;
+            for (int viewIndex = 0; viewIndex < visibleEntryIndexes.size(); viewIndex++) {
+                int entryIndex = visibleEntryIndexes.get(viewIndex);
+                int col = viewIndex % cols;
+                int row = viewIndex / cols;
                 int x = x0 + col * (BOX + GAP);
                 int y = y0 + row * (BOX_H + GAP);
 
                 if (mouseX >= x && mouseX <= x + BOX && mouseY >= y && mouseY <= y + BOX_H) {
-                    hoveredIndex = i;
+                    hoveredIndex = entryIndex;
                     hoveredThumbX = x;
                     hoveredThumbY = y;
                 }
@@ -625,8 +920,8 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                 // Skip rows far outside viewport
                 if (y > gridY2 || y + BOX_H < gridY1 - 40) continue;
 
-                var e = entries.get(i);
-                int border = (i == selected) ? 0xFFFFD700 : 0xFF404040; // gold for selected
+                var e = entries.get(entryIndex);
+                int border = (entryIndex == selected) ? 0xFFFFD700 : 0xFF404040; // gold for selected
                 ctx.fill(x - 2, y - 2, x + BOX + 2, y + BOX_H + 2, border);
                 ctx.fill(x, y, x + BOX, y + BOX_H, 0xFF1A1A1A);
 
@@ -664,7 +959,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                     var sel = entries.get(selected);
                     if (sel.link != null) partnerIdx = sel.link.partnerIndex;
                 }
-                if (i == partnerIdx) {
+                if (entryIndex == partnerIdx) {
                     int t = 3; // thickness
                     int r = 0xFFFF2D2D;
                     ctx.fill(x - 2, y - 2, x + BOX + 2, y - 2 + t, r);
@@ -672,6 +967,11 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                     ctx.fill(x - 2, y - 2, x - 2 + t, y + BOX_H + 2, r);
                     ctx.fill(x + BOX + 2 - t, y - 2, x + BOX + 2, y + BOX_H + 2, r);
                 }
+            }
+
+            if (visibleEntryIndexes.isEmpty()) {
+                String empty = nz(searchQuery).isBlank() ? "No images added yet." : "No cards match that search.";
+                ctx.drawString(this.font, empty, x0, GRID_TOP + 8, 0xFFAAAAAA, false);
             }
         }
         ctx.disableScissor();
@@ -846,6 +1146,9 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         double mx = click.x();
         double my = click.y();
 
+        if (focusSearchIfClicked(click, bl)) return true;
+        blurSearchIfClickedAway(mx, my);
+
         // 1) Scrollbar first
         if (hitScrollbar(mx, my)) {
             startDragScrollbar((int) my);
@@ -871,16 +1174,18 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         int x0 = 10;
         int y0 = GRID_TOP - scrollY;
 
-        for (int i = 0; i < entries.size(); i++) {
-            int col = i % cols;
-            int row = i / cols;
+        for (int viewIndex = 0; viewIndex < visibleEntryIndexes.size(); viewIndex++) {
+            int entryIndex = visibleEntryIndexes.get(viewIndex);
+            int i = entryIndex;
+            int col = viewIndex % cols;
+            int row = viewIndex / cols;
             int x = x0 + col * (BOX + GAP);
             int y = y0 + row * (BOX_H + GAP);
             if (mx >= x && mx <= x + BOX && my >= y && my <= y + BOX_H) {
                 // If we're in link mode and clicked a partner, perform link instead of reselecting
-                if (linkPendingMode != LinkMode.NONE && selected >= 0 && i != selected) {
+                if (linkPendingMode != LinkMode.NONE && selected >= 0 && entryIndex != selected) {
                     boolean asFront = (linkPendingMode == LinkMode.LINK_AS_FRONT);
-                    linkWith(selected, i, asFront);
+                    linkWith(selected, entryIndex, asFront);
                     toast("Linked " + safeName(entries.get(selected)) + " (" + (asFront ? "FRONT" : "BACK")
                             + ") ↔ " + safeName(entries.get(i)) + " (" + (asFront ? "BACK" : "FRONT") + ")");
                     linkPendingMode = LinkMode.NONE;
@@ -888,7 +1193,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                     return true;
                 }
                 // Normal selection
-                selected = i;
+                selected = entryIndex;
                 syncEditorFromSelected();
                 return true;
             }
@@ -933,7 +1238,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         final int maxX = panelX - 12;
         int usableW = maxX - 10;
         int cols = Math.max(1, (usableW + GAP) / (BOX + GAP));
-        int rows = (int)Math.ceil(entries.size() / (double)cols);
+        int rows = (int)Math.ceil(visibleEntryIndexes.size() / (double)cols);
         int contentH = rows * (BOX_H + GAP);
         int viewportH = this.height - GRID_TOP - 12;
         maxScrollY = Math.max(0, contentH - viewportH);
@@ -1140,7 +1445,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                             manualPhase = "Manual import " + manualDone + "/" + manualFound
                                     + (manualFailed > 0 ? (" (failed " + manualFailed + ")") : "");
 
-                            updateMaxScroll();
+                            rebuildVisibleEntries();
                             if (selected < 0 && !entries.isEmpty()) {
                                 selected = entries.size() - 1;
                                 syncEditorFromSelected();
@@ -1178,13 +1483,14 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         int w  = panelW - 20; // padding inside panel
         int h = 16, pad = 4;
 
-        nameF = addField(sx, sy, w, h, "Name", v -> withSel(e -> e.meta.name = v)); sy += h + pad;
-        manaF = addField(sx, sy, w, h, "Mana Cost", v -> withSel(e -> e.meta.manaCost = v)); sy += h + pad;
-        typeF = addField(sx, sy, w, h, "Type Line", v -> withSel(e -> e.meta.typeLine = v)); sy += h + pad;
-        setF  = addField(sx, sy, w, h, "Set", v -> withSel(e -> e.meta.set = v)); sy += h + pad;
+        nameF = addField(sx, sy, w, h, "Name", v -> { withSel(e -> e.meta.name = v); rebuildVisibleEntries(); }); sy += h + pad;
+        manaF = addField(sx, sy, w, h, "Mana Cost", v -> { withSel(e -> e.meta.manaCost = v); rebuildVisibleEntries(); }); sy += h + pad;
+        typeF = addField(sx, sy, w, h, "Type Line", v -> { withSel(e -> e.meta.typeLine = v); rebuildVisibleEntries(); }); sy += h + pad;
+        setF  = addField(sx, sy, w, h, "Set", v -> { withSel(e -> e.meta.set = v); rebuildVisibleEntries(); }); sy += h + pad;
 
         rarityBtn = Button.builder(Component.literal("Rarity: common"), b -> {
             withSel(e -> { e.meta.rarity = nextRarity(e.meta.rarity); rarityBtn.setMessage(Component.literal("Rarity: " + e.meta.rarity)); });
+            rebuildVisibleEntries();
         }).bounds(sx, sy, (w/2)-5, h).build();
         addRenderableWidget(rarityBtn);
 
@@ -1194,6 +1500,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                 dfcToggleBtn.setMessage(Component.literal(e.meta.doubleFaced ? "Double-Faced" : "Single Face"));
                 updateLinkButtonsVisibility();
             });
+            rebuildVisibleEntries();
         }).bounds(sx + (w/2)+5, sy, (w/2)-5, h).build();
 
         addRenderableWidget(dfcToggleBtn);
@@ -1204,15 +1511,15 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         textF = new SimpleTextArea(sx, sy, w, oracleH, Component.literal("Oracle Text"));
         textF.setPlaceholder("Oracle Text");
         textF.setMaxLength(1_000_000);
-        textF.setChangedListener(v -> withSel(e -> e.meta.oracleText = v));
+        textF.setChangedListener(v -> { withSel(e -> e.meta.oracleText = v); rebuildVisibleEntries(); });
         addRenderableWidget(textF);
         sy += oracleH + pad;
 
         // 3-up line
         int col = (w - 2*10) / 3;
-        powF  = addField(sx,              sy, col, h, "Power",     v -> withSel(e -> e.meta.power = v));
-        touF  = addField(sx + col + 10,   sy, col, h, "Toughness", v -> withSel(e -> e.meta.toughness = v));
-        loyF  = addField(sx + 2*(col+10), sy, col, h, "Loyalty",   v -> withSel(e -> e.meta.loyalty = v));
+        powF  = addField(sx,              sy, col, h, "Power",     v -> { withSel(e -> e.meta.power = v); rebuildVisibleEntries(); });
+        touF  = addField(sx + col + 10,   sy, col, h, "Toughness", v -> { withSel(e -> e.meta.toughness = v); rebuildVisibleEntries(); });
+        loyF  = addField(sx + 2*(col+10), sy, col, h, "Loyalty",   v -> { withSel(e -> e.meta.loyalty = v); rebuildVisibleEntries(); });
     }
 
     private EditBox addField(int x, int y, int w, int h, String placeholder, Consumer<String> onChange) {
@@ -1941,7 +2248,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                                     selected = entries.size() - 1;
                                     syncEditorFromSelected(); // only on first selection
                                 }
-                                updateMaxScroll();
+                                rebuildVisibleEntries();
                             });
                         }
 
@@ -2499,8 +2806,10 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
 
             switch (keyCode) {
                 case KEY_ESCAPE:
-                    // Let ESC also cancel link mode for convenience
-                    linkPendingMode = LinkMode.NONE;
+                    if (linkPendingMode != LinkMode.NONE) {
+                        linkPendingMode = LinkMode.NONE;
+                        return true;
+                    }
                     return false;
 
                 case KEY_ENTER:
@@ -2693,6 +3002,9 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
 
     @Override
     public boolean charTyped(CharacterEvent ch) {
+        if (searchBox != null && searchBox.isFocused()) {
+            if (searchBox.charTyped(ch)) return true;
+        }
         if (textF != null && textF.isFocused()) {
             final int cp   = ciCodePoint(ch);
             final int mods = ciModifiers(ch);
@@ -2710,12 +3022,21 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
             return true;
         }
 
+        if (searchBox != null && searchBox.isFocused()) {
+            if (searchBox.keyPressed(key)) return true;
+        }
+
         if (textF != null && textF.isFocused()) {
             final int sc   = kiScanCode(key);
             final int mods = kiModifiers(key);
             if (textF.keyPressed(kc, sc, mods)) return true;
         }
         return super.keyPressed(key);
+    }
+
+    @Override
+    public boolean shouldCloseOnEsc() {
+        return linkPendingMode == LinkMode.NONE;
     }
 
     // ---- mapping-agnostic helpers ----
@@ -2863,7 +3184,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         else selected = Math.min(rem, entries.size() - 1);
 
         syncEditorFromSelected();
-        updateMaxScroll();
+        rebuildVisibleEntries();
     }
 
     private void clearLinkForSelected() {
@@ -2949,7 +3270,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         // Make sure ImageIO sees plugins (writer is already true in your log, but keep it safe)
         try {
             Thread.currentThread().setContextClassLoader(CustomImportScreen.class.getClassLoader());
-            ImageIO.scanForPlugins();
+            com.spider.mtgcard.util.ArtImageStorage.ensureWebpCodecsRegistered();
         } catch (Throwable ignored) {}
 
         BufferedImage img = null;
@@ -3013,10 +3334,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
             writer.setOutput(ios);
 
             var param = writer.getDefaultWriteParam();
-            if (param.canWriteCompressed()) {
-                param.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
-                param.setCompressionQuality(0.90f);
-            }
+            com.spider.mtgcard.util.ArtImageStorage.configureWebpWriteParam(param);
 
             writer.write(null, new javax.imageio.IIOImage(img, null, null), param);
             ios.close();
@@ -3097,7 +3415,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         // --- Try WebP ---
         try {
             Thread.currentThread().setContextClassLoader(CustomImportScreen.class.getClassLoader());
-            ImageIO.scanForPlugins();
+            com.spider.mtgcard.util.ArtImageStorage.ensureWebpCodecsRegistered();
 
             var writers = ImageIO.getImageWritersByFormatName("webp");
             if (writers.hasNext()) {
@@ -3107,10 +3425,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                     writer.setOutput(ios);
 
                     var param = writer.getDefaultWriteParam();
-                    if (param.canWriteCompressed()) {
-                        param.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
-                        param.setCompressionQuality(0.90f);
-                    }
+                    com.spider.mtgcard.util.ArtImageStorage.configureWebpWriteParam(param);
 
                     writer.write(null, new javax.imageio.IIOImage(img, null, null), param);
                     ios.close();

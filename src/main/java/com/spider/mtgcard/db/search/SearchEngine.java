@@ -241,6 +241,7 @@ public final class SearchEngine {
                     if (opRaw == null) {
                         // No explicit operator → treat as FREE term
                         field = null;
+                        value = t;
                     } else {
                         op = opRaw;
                     }
