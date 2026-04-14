@@ -14,6 +14,8 @@ import net.minecraft.world.item.trading.MerchantOffer;
 public final class ModTrades {
     private static final Identifier WANDERING_TRADER_DICE_POOL =
             Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "wandering_trader/dice");
+    private static final Identifier WANDERING_TRADER_PACK_POOL =
+            Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "wandering_trader/booster_pack");
 
     public static void init() {
         TradeOfferHelper.registerWanderingTraderOffers(builder ->
@@ -27,6 +29,10 @@ public final class ModTrades {
                         diceOffer(ModItems.D12_DICE, 5, 1, 12),
                         diceOffer(ModItems.D20_DICE, 8, 1, 12),
                         diceOffer(ModItems.D100_DICE, 16, 1, 6)
+                ).pool(
+                        WANDERING_TRADER_PACK_POOL,
+                        1,
+                        boosterPackOffer(3, 5, 1, 6)
                 )
         );
     }
@@ -39,6 +45,23 @@ public final class ModTrades {
                 0,
                 0.0F
         );
+    }
+
+    private static VillagerTrades.ItemListing boosterPackOffer(int minEmeraldCost, int maxEmeraldCost, int itemCount, int maxUses) {
+        return (level, entity, random) -> {
+            int emeraldCost = minEmeraldCost;
+            if (maxEmeraldCost > minEmeraldCost) {
+                emeraldCost += random.nextInt(maxEmeraldCost - minEmeraldCost + 1);
+            }
+
+            return new MerchantOffer(
+                    new ItemCost(Items.EMERALD, emeraldCost),
+                    new ItemStack(ModItems.MTG_PACK, itemCount),
+                    maxUses,
+                    0,
+                    0.0F
+            );
+        };
     }
 
     private ModTrades() {}
