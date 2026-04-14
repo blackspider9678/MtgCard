@@ -5,6 +5,7 @@ import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.cardstore.CardStorePackets;
 import com.spider.mtgcard.graveyard.GraveyardBlockEntity;
 import com.spider.mtgcard.net.payload.*;
+import com.spider.mtgcard.util.ArtImageStorage;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -264,23 +265,39 @@ public final class ModPayloads {
             var server = ctx.server();
             var player = ctx.player();
 
-            byte[] png = payload.imgBytes();
+            byte[] imageBytes = payload.imgBytes();
             String fileName = payload.fileName();
             String sourceUrl = payload.sourceUrl();
 
             server.execute(() -> {
                 try {
-                    String safe = (fileName == null ? "card.png" : fileName.trim());
-                    if (safe.isEmpty()) safe = "card.png";
+                    ArtImageStorage.StorageDecision decision = ArtImageStorage.normalizeForStorage(imageBytes, fileName);
+                    ArtImageStorage.StoredArt art = decision.art();
+                    if (art == null) {
+                        Mtgcard.LOGGER.warn("[MTGCard] XML art {} from {} could not be stored: {}",
+                                fileName, sourceUrl == null ? "" : sourceUrl, decision.note());
+                        return;
+                    }
+
+                    if (decision.fellBackFromWebp()) {
+                        Mtgcard.LOGGER.warn("[MTGCard] XML art {} from {} fell back to .{} (source .{}): {}",
+                                fileName, sourceUrl == null ? "" : sourceUrl, art.ext(), decision.sourceExt(), decision.note());
+                    } else {
+                        Mtgcard.LOGGER.info("[MTGCard] XML art {} from {} stored as .{}",
+                                fileName, sourceUrl == null ? "" : sourceUrl, art.ext());
+                    }
+
+                    String safe = (fileName == null ? "card" : fileName.trim());
+                    if (safe.isEmpty()) safe = "card";
                     safe = safe.replaceAll("[^a-zA-Z0-9._-]+", "_");
-                    if (!safe.toLowerCase(Locale.ROOT).endsWith(".png")) safe += ".png";
+                    safe = forceImageExt(safe, art.ext());
 
                     // If sourceUrl present, stabilize collisions with hash suffix
                     if (sourceUrl != null && !sourceUrl.isEmpty()) {
                         String hex = Integer.toHexString(sourceUrl.hashCode());
                         int dot = safe.lastIndexOf('.');
                         String stem = (dot > 0) ? safe.substring(0, dot) : safe;
-                        String ext  = (dot > 0) ? safe.substring(dot) : ".png";
+                        String ext  = (dot > 0) ? safe.substring(dot) : "." + art.ext();
                         safe = stem + "_" + hex + ext;
                     }
 
@@ -293,11 +310,11 @@ public final class ModPayloads {
                     while (Files.exists(out)) {
                         int dot = safe.lastIndexOf('.');
                         String stem = (dot > 0) ? safe.substring(0, dot) : safe;
-                        String ext  = (dot > 0) ? safe.substring(dot) : ".png";
+                        String ext  = (dot > 0) ? safe.substring(dot) : "." + art.ext();
                         out = artDir.resolve(stem + "_" + counter++ + ext);
                     }
 
-                    Files.write(out, png);
+                    Files.write(out, art.bytes());
                     player.sendSystemMessage(Component.literal("[MTGCard] Saved XML art to world: " + out.getFileName()));
                 } catch (Throwable t) {
                     player.sendSystemMessage(Component.literal("[MTGCard] Failed to save XML art: " + t.getClass().getSimpleName()));
@@ -356,6 +373,18 @@ public final class ModPayloads {
         Path clientStyle    = run.resolve("saves").resolve(levelName);
 
         return Files.exists(dedicatedStyle) ? dedicatedStyle : clientStyle;
+    }
+
+    private static String forceImageExt(String fileName, String ext) {
+        String safeExt = "." + ArtImageStorage.normalizeExt(ext);
+        String lower = fileName.toLowerCase(Locale.ROOT);
+
+        if (lower.endsWith(".webp") || lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+            int dot = fileName.lastIndexOf('.');
+            return (dot > 0 ? fileName.substring(0, dot) : fileName) + safeExt;
+        }
+
+        return fileName + safeExt;
     }
 
     private static net.minecraft.nbt.CompoundTag getMeta(net.minecraft.world.item.ItemStack st) {

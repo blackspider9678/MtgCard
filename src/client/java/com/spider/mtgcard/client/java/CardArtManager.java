@@ -318,11 +318,11 @@ public final class CardArtManager {
             return null;
         }
 
-        DISK_INDEX.putIfAbsent(artKey, artKey + ".png");
+        DISK_INDEX.putIfAbsent(artKey, artKey + ".webp");
         saveIndexAsync();
 
         // IMPORTANT: queue instead of sending immediately
-        enqueueRequest(artKey, "", artKey + ".png");
+        enqueueRequest(artKey, "", artKey + ".webp");
         return null;
     }
 
@@ -387,7 +387,7 @@ public final class CardArtManager {
         return border == null ? "" : border;
     }
 
-    // Called by the client networking receiver when the server sends PNG bytes.
+    // Called by the client networking receiver when the server sends image bytes.
     public static void onArtResponse(String artKey, byte[] imgBytes) {
         IN_FLIGHT.remove(artKey);
 
@@ -446,6 +446,7 @@ public final class CardArtManager {
     }
 
     private static BufferedImage readAnyImage(InputStream in) throws Exception {
+        com.spider.mtgcard.util.ArtImageStorage.ensureWebpCodecsRegistered();
         BufferedImage img = ImageIO.read(in);
         if (img == null) throw new IllegalArgumentException("Unsupported image format (ImageIO returned null)");
         if (img.getType() != BufferedImage.TYPE_INT_ARGB) {

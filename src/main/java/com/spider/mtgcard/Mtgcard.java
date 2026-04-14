@@ -15,6 +15,7 @@ import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.screen.ModScreenHandlers;
 import com.spider.mtgcard.trade.ModTrades;
 
+import com.spider.mtgcard.util.ArtImageStorage;
 import com.spider.mtgcard.util.ModDispenserBehaviors;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -28,6 +29,8 @@ public final class Mtgcard implements ModInitializer {
     @Override
     public void onInitialize() {
         Mtgcard.LOGGER.info("[Mtgcard] Mod Unpacked");
+        ArtImageStorage.ensureWebpCodecsRegistered();
+
         // 1) Register ALL payload CODECs (safe on both sides, must happen before receiver registration)
         ModPayloads.registerTypes();
 

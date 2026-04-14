@@ -1,5 +1,7 @@
 package com.spider.mtgcard.net;
 
+import com.spider.mtgcard.Mtgcard;
+import com.spider.mtgcard.util.ArtImageStorage;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -43,6 +45,12 @@ public final class ArtServerPackets {
                     if (Files.exists(cached)) {
                         byte[] bytes = Files.readAllBytes(cached);
                         if (bytes.length > 0) {
+                            String cachedExt = extensionOf(cached);
+                            if ("webp".equals(cachedExt)) {
+                                Mtgcard.LOGGER.info("[MTGCard] Art {} served from cache as .webp", artKey);
+                            } else {
+                                Mtgcard.LOGGER.info("[MTGCard] Art {} served from cache as .{}", artKey, cachedExt);
+                            }
                             sendChunks(server, player, artKey, bytes);
                         }
                         return;
@@ -54,18 +62,27 @@ public final class ArtServerPackets {
                         return;
                     }
 
-                    // 3) Download, size-check, write to disk cache, then send
-                    byte[] png = download(url);
-                    if (png == null || png.length == 0) return;
+                    // 3) Download, prefer webp on disk, then send the stored bytes
+                    byte[] downloaded = download(url);
+                    ArtImageStorage.StorageDecision decision = ArtImageStorage.normalizeForStorage(downloaded, url);
+                    ArtImageStorage.StoredArt art = decision.art();
+                    if (art == null) {
+                        Mtgcard.LOGGER.warn("[MTGCard] Art {} from {} could not be stored: {}", artKey, url, decision.note());
+                        return;
+                    }
 
-                    // write to world cache as .png (IMPORTANT: these are PNG bytes)
-                    Path out = serverCacheDir(server).resolve(artKey + ".png");
-                    Files.createDirectories(out.getParent());
-                    Files.write(out, png, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+                    if (decision.fellBackFromWebp()) {
+                        Mtgcard.LOGGER.warn("[MTGCard] Art {} from {} fell back to .{} (source .{}): {}",
+                                artKey, url, art.ext(), decision.sourceExt(), decision.note());
+                    } else {
+                        Mtgcard.LOGGER.info("[MTGCard] Art {} from {} stored as .{}", artKey, url, art.ext());
+                    }
 
-                    sendChunks(server, player, artKey, png);
+                    ArtImageStorage.write(serverCacheDir(server), artKey, art);
+                    sendChunks(server, player, artKey, art.bytes());
 
-                } catch (Throwable ignored) {
+                } catch (Throwable t) {
+                    Mtgcard.LOGGER.warn("[MTGCard] Art request failed for {} from {}: {}", artKey, url, t.toString());
                 }
             });
         });
@@ -97,7 +114,6 @@ public final class ArtServerPackets {
         return dir;
     }
 
-    /** Prefer .png; keep .webp only if you truly generate webp bytes later. */
     private static Path resolveServerCachedFile(MinecraftServer server, String artKey) {
         Path dir = serverCacheDir(server);
 
@@ -142,6 +158,12 @@ public final class ArtServerPackets {
         String s = k.trim().toLowerCase(Locale.ROOT);
         s = s.replaceAll("[^a-z0-9_\\-\\.]", "");
         return s;
+    }
+
+    private static String extensionOf(Path path) {
+        String name = path.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        return dot >= 0 ? name.substring(dot + 1).toLowerCase(Locale.ROOT) : "unknown";
     }
 
     private ArtServerPackets() {}

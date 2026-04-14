@@ -428,11 +428,22 @@ public final class ScryfallCache {
         String layout = lower(card.layout);
         boolean isBasic = typeLine.contains("basic land");
         boolean isTokenLike = card.isTokenLike
-                || typeLine.contains("token")
-                || typeLine.contains("emblem")
-                || typeLine.contains("dungeon")
-                || typeLine.contains("art series")
-                || layout.contains("art_series");
+                || layout.contains("art_series")
+                || layout.contains("token")
+                || layout.contains("emblem")
+                || layout.contains("planar")
+                || layout.contains("scheme")
+                || layout.contains("vanguard")
+                || hasTypeWord(typeLine, "token")
+                || hasTypeWord(typeLine, "emblem")
+                || hasTypeWord(typeLine, "dungeon")
+                || hasTypeWord(typeLine, "attraction")
+                || hasTypeWord(typeLine, "sticker")
+                || hasTypeWord(typeLine, "contraption")
+                || hasTypeWord(typeLine, "scheme")
+                || hasTypeWord(typeLine, "plane")
+                || hasTypeWord(typeLine, "phenomenon")
+                || hasTypeWord(typeLine, "vanguard");
 
         if (q instanceof Query.TokenExtra) return isTokenLike;
         if (q instanceof Query.BasicLand) return isBasic;
@@ -471,6 +482,14 @@ public final class ScryfallCache {
         return s == null ? "" : s.trim().toLowerCase(Locale.ROOT);
     }
 
+    private static boolean hasTypeWord(String typeLine, String word) {
+        if (typeLine == null || typeLine.isBlank()) return false;
+        for (String token : typeLine.split("[^a-z]+")) {
+            if (token.equals(word)) return true;
+        }
+        return false;
+    }
+
     // ---- query building (flexible path) ----
     private static String buildQuery(Context ctx, Query q, boolean foil, boolean allowVariant) {
         List<String> parts = new ArrayList<>();
@@ -502,6 +521,13 @@ public final class ScryfallCache {
         parts.add("-type:token");
         parts.add("-type:emblem");
         parts.add("-type:dungeon");
+        parts.add("-type:attraction");
+        parts.add("-type:sticker");
+        parts.add("-type:contraption");
+        parts.add("-type:scheme");
+        parts.add("-type:plane");
+        parts.add("-type:phenomenon");
+        parts.add("-type:vanguard");
         parts.add("-is:artseries");
         if (ctx.gamePaper) parts.add("game:paper");
         if (ctx.excludeSets != null) for (String s : ctx.excludeSets) parts.add("-set:" + s);

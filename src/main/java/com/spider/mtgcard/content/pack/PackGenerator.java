@@ -1,6 +1,7 @@
 package com.spider.mtgcard.content.pack;
 
 import com.spider.mtgcard.advancement.ModAdvancements;
+import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.content.pack.cache.ScryfallCache;
 import com.spider.mtgcard.content.pack.cache.ScryfallModels;
 import com.spider.mtgcard.item.ModItems;
@@ -486,6 +487,25 @@ public final class PackGenerator {
                 RaritySlot slot,
                 boolean foilVisual
         ) {
+                if (!scryfallMatchesSlot(card, slot)) {
+                        if (card != null) {
+                                Mtgcard.LOGGER.warn(
+                                        "[MTGCard] Rejected Scryfall card for slot {}: name='{}' set={} rarity={} layout={} typeLine={}",
+                                        slot,
+                                        card.name,
+                                        card.set,
+                                        card.rarity,
+                                        card.layout,
+                                        card.typeLine
+                                );
+                        }
+                        return ItemStack.EMPTY;
+                }
+
+                if (card != null && isExtraLikeScryfallCard(card)) {
+                        card.isTokenLike = true;
+                }
+
                 ItemStack built = CardStackBuilders.buildScryfallStackFromModel(card, false);
                 if (!isResolvedPackCard(built)) return ItemStack.EMPTY;
 
@@ -496,6 +516,76 @@ public final class PackGenerator {
 
                 if (foilVisual) built.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
                 return built;
+        }
+
+        private static boolean scryfallMatchesSlot(ScryfallModels.Card card, RaritySlot slot) {
+                if (card == null) return false;
+
+                String typeLine = lower(card.typeLine);
+                boolean isBasic = typeLine.contains("basic land");
+                boolean isExtra = isExtraLikeScryfallCard(card);
+
+                if (slot == RaritySlot.BASIC_LAND) return isBasic;
+                if (slot == RaritySlot.TOKEN_OR_ART) return isExtra;
+                if (isBasic || isExtra) return false;
+
+                String rarity = normalizeRarity(card.rarity);
+                return switch (slot) {
+                        case COMMON -> rarity.equals("c");
+                        case WILDCARD_C_OR_U -> rarity.equals("c") || rarity.equals("u");
+                        case UNCOMMON -> rarity.equals("u");
+                        case RARE_OR_MYTHIC -> rarity.equals("r") || rarity.equals("m");
+                        case RANDOM, FOIL_RANDOM -> true;
+                        case BASIC_LAND, TOKEN_OR_ART -> false;
+                };
+        }
+
+        private static boolean isExtraLikeScryfallCard(ScryfallModels.Card card) {
+                if (card == null) return false;
+
+                String typeLine = lower(card.typeLine);
+                String layout = lower(card.layout);
+
+                return card.isTokenLike
+                        || layout.contains("art_series")
+                        || layout.contains("token")
+                        || layout.contains("emblem")
+                        || layout.contains("planar")
+                        || layout.contains("scheme")
+                        || layout.contains("vanguard")
+                        || hasTypeWord(typeLine, "token")
+                        || hasTypeWord(typeLine, "emblem")
+                        || hasTypeWord(typeLine, "dungeon")
+                        || hasTypeWord(typeLine, "attraction")
+                        || hasTypeWord(typeLine, "sticker")
+                        || hasTypeWord(typeLine, "contraption")
+                        || hasTypeWord(typeLine, "scheme")
+                        || hasTypeWord(typeLine, "plane")
+                        || hasTypeWord(typeLine, "phenomenon")
+                        || hasTypeWord(typeLine, "vanguard");
+        }
+
+        private static String normalizeRarity(String rarity) {
+                if (rarity == null) return "";
+                return switch (rarity.trim().toLowerCase(Locale.ROOT)) {
+                        case "c", "common" -> "c";
+                        case "u", "uncommon" -> "u";
+                        case "r", "rare" -> "r";
+                        case "m", "mythic", "mythic rare" -> "m";
+                        default -> rarity.trim().toLowerCase(Locale.ROOT);
+                };
+        }
+
+        private static String lower(String s) {
+                return s == null ? "" : s.trim().toLowerCase(Locale.ROOT);
+        }
+
+        private static boolean hasTypeWord(String typeLine, String word) {
+                if (typeLine == null || typeLine.isBlank()) return false;
+                for (String token : typeLine.split("[^a-z]+")) {
+                        if (token.equals(word)) return true;
+                }
+                return false;
         }
 
         // ---------- Set detection ----------

@@ -19,6 +19,7 @@ import com.spider.mtgcard.client.cardstore.CardStoreClientPackets;
 import com.spider.mtgcard.life.LifePointRegistry;
 import com.spider.mtgcard.net.ModPayloads;
 import com.spider.mtgcard.screen.ModScreenHandlers;
+import com.spider.mtgcard.util.ArtImageStorage;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -44,6 +45,7 @@ public final class MtgcardClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         Mtgcard.LOGGER.info("[MtgcardClient] init");
+        ArtImageStorage.ensureWebpCodecsRegistered();
 
         // Safe early: payload types, networking receivers, screen registration, model loading plugin
         ModPayloads.registerTypes();

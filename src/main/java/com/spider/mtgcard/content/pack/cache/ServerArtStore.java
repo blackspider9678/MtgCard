@@ -1,13 +1,15 @@
 // src/main/java/com/spider/mtgcard/content/pack/cache/ServerArtStore.java
 package com.spider.mtgcard.content.pack.cache;
 
+import com.spider.mtgcard.Mtgcard;
+import com.spider.mtgcard.util.ArtImageStorage;
 import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.server.MinecraftServer;
 
 import java.io.InputStream;
 import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.file.*;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -44,15 +46,15 @@ public final class ServerArtStore {
             inFlight.remove(artKey);
             return Files.exists(f) ? f : null;
         }
-        try { downloadPng(f, url); return f; }
+        try { return downloadAndStore(f, url); }
         catch (Exception e1) {
             int q = url.indexOf('?'); // retry without query
-            if (q > 0) try { downloadPng(f, url.substring(0,q)); return f; } catch (Exception ignored) {}
+            if (q > 0) try { return downloadAndStore(f, url.substring(0,q)); } catch (Exception ignored) {}
             return null;
         } finally { inFlight.remove(artKey); }
     }
 
-    private static void downloadPng(Path dst, String url) throws Exception {
+    private static Path downloadAndStore(Path dst, String url) throws Exception {
         Files.createDirectories(dst.getParent());
 
         var conn = (HttpURLConnection) java.net.URI.create(url).toURL().openConnection();
@@ -71,6 +73,34 @@ public final class ServerArtStore {
             throw new RuntimeException("tiny");
         }
 
-        Files.move(tmp, dst, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        byte[] bytes = Files.readAllBytes(tmp);
+        Files.deleteIfExists(tmp);
+
+        String baseName = stripImageExt(dst.getFileName().toString());
+        ArtImageStorage.StorageDecision decision = ArtImageStorage.normalizeForStorage(bytes, url);
+        ArtImageStorage.StoredArt art = decision.art();
+        if (art == null) {
+            Mtgcard.LOGGER.warn("[MTGCard] ServerArtStore could not store {} from {}: {}", baseName, url, decision.note());
+            throw new RuntimeException("unsupported");
+        }
+
+        if (decision.fellBackFromWebp()) {
+            Mtgcard.LOGGER.warn("[MTGCard] ServerArtStore {} from {} fell back to .{} (source .{}): {}",
+                    baseName, url, art.ext(), decision.sourceExt(), decision.note());
+        } else {
+            Mtgcard.LOGGER.info("[MTGCard] ServerArtStore {} from {} stored as .{}",
+                    baseName, url, art.ext());
+        }
+
+        return ArtImageStorage.write(dst.getParent(), baseName, art);
+    }
+
+    private static String stripImageExt(String fileName) {
+        String lower = fileName.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".webp") || lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+            int dot = fileName.lastIndexOf('.');
+            return dot > 0 ? fileName.substring(0, dot) : fileName;
+        }
+        return fileName;
     }
 }

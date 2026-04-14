@@ -57,9 +57,25 @@ final class ScryfallJson {
         }
 
         // crude token/art detection
-        String layout = c.layout == null ? "" : c.layout;
+        String layout = c.layout == null ? "" : c.layout.toLowerCase(Locale.ROOT);
         String typeLn = c.typeLine == null ? "" : c.typeLine.toLowerCase(Locale.ROOT);
-        c.isTokenLike = layout.contains("art_series") || typeLn.contains("token") || typeLn.contains("emblem") || typeLn.contains("dungeon");
+        c.isTokenLike =
+                layout.contains("art_series")
+                        || layout.contains("token")
+                        || layout.contains("emblem")
+                        || layout.contains("planar")
+                        || layout.contains("scheme")
+                        || layout.contains("vanguard")
+                        || hasTypeWord(typeLn, "token")
+                        || hasTypeWord(typeLn, "emblem")
+                        || hasTypeWord(typeLn, "dungeon")
+                        || hasTypeWord(typeLn, "attraction")
+                        || hasTypeWord(typeLn, "sticker")
+                        || hasTypeWord(typeLn, "contraption")
+                        || hasTypeWord(typeLn, "scheme")
+                        || hasTypeWord(typeLn, "plane")
+                        || hasTypeWord(typeLn, "phenomenon")
+                        || hasTypeWord(typeLn, "vanguard");
 
         // prices block (some fields can be null)
         // prices block (Scryfall returns strings or null)
@@ -135,6 +151,14 @@ final class ScryfallJson {
         List<String> out = new ArrayList<>();
         for (JsonElement el : o.getAsJsonArray(key)) out.add(el.getAsString());
         return out;
+    }
+
+    private static boolean hasTypeWord(String typeLine, String word) {
+        if (typeLine == null || typeLine.isBlank()) return false;
+        for (String token : typeLine.split("[^a-z]+")) {
+            if (token.equals(word)) return true;
+        }
+        return false;
     }
 
     static String toJson(ScryfallModels.Card c) {
