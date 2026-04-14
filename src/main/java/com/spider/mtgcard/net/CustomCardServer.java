@@ -1,6 +1,8 @@
 package com.spider.mtgcard.net;
 
+import com.spider.mtgcard.config.ImportPerms;
 import com.spider.mtgcard.content.pack.custom.CustomCardStore;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -12,6 +14,10 @@ public final class CustomCardServer {
     /** Handles the C2S batch create payload. */
     public static void handleBatch(CustomCardPackets.CustomBatchCreate payload, ServerPlayer who) {
         if (payload == null || who == null) return;
+        if (!ImportPerms.canImport(who)) {
+            who.sendSystemMessage(Component.literal("You do not have permission to import custom cards."));
+            return;
+        }
 
         MinecraftServer server = who.level().getServer();
         if (server == null) return;

@@ -6,8 +6,8 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.spider.mtgcard.config.ImportPerms;
 import com.spider.mtgcard.net.CustomImportPackets;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.chat.Component;
@@ -32,7 +32,12 @@ public final class Custom_Command {
 
     public static LiteralArgumentBuilder<CommandSourceStack> node() {
         return literal("custom")
-                .then(literal("import").executes(ctx -> openImport(ctx.getSource())))
+                .then(literal("import")
+                        .requires(src -> {
+                            var p = src.getPlayer();
+                            return p != null && ImportPerms.canImport(p);
+                        })
+                        .executes(ctx -> openImport(ctx.getSource())))
                 .then(literal("sets").executes(ctx -> listSets(ctx.getSource())))
                 .then(literal("card")
                         .then(argument("name", StringArgumentType.greedyString())
@@ -56,7 +61,10 @@ public final class Custom_Command {
             src.sendSuccess(() -> Component.literal("§cNo player context."), false);
             return 0;
         }
-        ServerPlayNetworking.send(p, new CustomImportPackets.OpenImportGui());
+        if (!ImportPerms.canImport(p) || !CustomImportPackets.openImportGui(p)) {
+            src.sendFailure(Component.literal("You do not have permission to import custom cards."));
+            return 0;
+        }
         src.sendSuccess(() -> Component.literal("§aOpening Custom Import…"), false);
         return 1;
     }

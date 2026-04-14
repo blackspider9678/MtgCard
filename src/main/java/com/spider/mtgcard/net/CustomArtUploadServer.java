@@ -1,6 +1,8 @@
 package com.spider.mtgcard.net;
 
+import com.spider.mtgcard.config.ImportPerms;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.storage.LevelResource;
@@ -39,6 +41,11 @@ public final class CustomArtUploadServer {
     private static final Map<String, Upload> ACTIVE = new ConcurrentHashMap<>();
 
     public static void handleBegin(CustomCardPackets.CustomArtBegin p, ServerPlayer player) {
+        if (!ImportPerms.canImport(player)) {
+            player.sendSystemMessage(Component.literal("You do not have permission to import custom cards."));
+            return;
+        }
+
         cleanupOld();
 
         UUID pid = player.getUUID();
@@ -69,6 +76,10 @@ public final class CustomArtUploadServer {
     }
 
     public static void handleChunk(CustomCardPackets.CustomArtChunk p, ServerPlayer player) {
+        if (!ImportPerms.canImport(player)) {
+            return;
+        }
+
         Upload u = ACTIVE.get(p.uploadId());
         if (u == null) {
             return;
@@ -97,6 +108,10 @@ public final class CustomArtUploadServer {
     }
 
     public static void handleFinish(CustomCardPackets.CustomArtFinish p, ServerPlayer player, MinecraftServer server) {
+        if (!ImportPerms.canImport(player)) {
+            return;
+        }
+
         Upload u = ACTIVE.get(p.uploadId());
         if (u == null) {
             return;

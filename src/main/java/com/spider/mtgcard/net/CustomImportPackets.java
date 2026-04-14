@@ -1,5 +1,6 @@
 package com.spider.mtgcard.net;
 
+import com.spider.mtgcard.config.ImportPerms;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.FriendlyByteBuf;
@@ -38,8 +39,12 @@ public final class CustomImportPackets {
     }
 
     /** Server-side helper to open the GUI on a client. */
-    public static void openImportGui(ServerPlayer to) {
+    public static boolean openImportGui(ServerPlayer to) {
+        if (to == null || !ImportPerms.canImport(to)) {
+            return false;
+        }
         ServerPlayNetworking.send(to, new OpenImportGui());
+        return true;
     }
 
     private CustomImportPackets() {}
