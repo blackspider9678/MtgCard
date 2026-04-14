@@ -26,6 +26,8 @@ public final class CardCounterHoverHud {
 
     private static CardDisplayEntity hovered = null;
     private static int hoverHoldTicks = 0; // small hysteresis
+    private static ItemStack lastHoverStack = ItemStack.EMPTY;
+    private static List<Row> cachedRows = List.of();
 
     public static void init() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> tick(client));
@@ -45,7 +47,11 @@ public final class CardCounterHoverHud {
             hoverHoldTicks = 6; // keep showing briefly to avoid flicker
         } else {
             if (hoverHoldTicks > 0) hoverHoldTicks--;
-            else hovered = null;
+            else {
+                hovered = null;
+                lastHoverStack = ItemStack.EMPTY;
+                cachedRows = List.of();
+            }
         }
     }
 
@@ -56,7 +62,7 @@ public final class CardCounterHoverHud {
         if (st == null || st.isEmpty()) return;
 
         // build rows: icon + value + name (optional)
-        List<Row> rows = buildCounterRows(st);
+        List<Row> rows = getCachedRows(st);
         if (rows.isEmpty()) return;
 
         Minecraft client = Minecraft.getInstance();
@@ -96,6 +102,14 @@ public final class CardCounterHoverHud {
     }
 
     private record Row(String key, String label, Identifier iconTex, String valueText) {}
+
+    private static List<Row> getCachedRows(ItemStack st) {
+        if (!ItemStack.matches(st, lastHoverStack)) {
+            lastHoverStack = st.copy();
+            cachedRows = buildCounterRows(st);
+        }
+        return cachedRows;
+    }
 
     private static List<Row> buildCounterRows(ItemStack st) {
         CompoundTag meta = getMeta(st);

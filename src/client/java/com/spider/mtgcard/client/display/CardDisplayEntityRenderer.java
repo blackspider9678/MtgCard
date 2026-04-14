@@ -6,7 +6,7 @@ import com.mojang.math.Axis;
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.display.CardDisplayEntity;
-import net.minecraft.client.gui.Font;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.EntityRenderer;
@@ -22,6 +22,12 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 import org.joml.Matrix4f;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
 public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity, CardDisplayEntityRenderer.State> {
 
     // Use constants instead of resource probing / image decode (avoids early RenderSystem/device issues)
@@ -31,8 +37,26 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
     // Pick a stable aspect ratio for card back. (These are the values you already used as defaults.)
     private static final int BACK_W = 488;
     private static final int BACK_H = 680;
+    private static final int TEXTURE_REFRESH_TICKS = 10;
+    private static final long CACHE_EXPIRE_TICKS = 200L;
+    private static final double COUNTER_RENDER_DISTANCE_SQR = 12.0D * 12.0D;
 
-    private final Font textRenderer;
+    private record CounterIcon(Identifier texture) {}
+
+    private static final class CachedRenderData {
+        ItemStack stack = ItemStack.EMPTY;
+        Identifier texId = TEX_WHITE;
+        int texW = 16;
+        int texH = 16;
+        int faceIndex = 0;
+        boolean hidden = false;
+        List<CounterIcon> counters = List.of();
+        long nextTextureRefreshTick = Long.MIN_VALUE;
+        long lastSeenTick = 0L;
+    }
+
+    private final Map<Integer, CachedRenderData> renderCache = new HashMap<>();
+    private long nextCachePruneTick = 0L;
 
     public static class State extends EntityRenderState {
         public ItemStack stack = ItemStack.EMPTY;
@@ -43,11 +67,12 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         public int rotStep = 0;
         public int faceIndex = 0;
         public int flatYawStep = 0;
+        public List<CounterIcon> counters = List.of();
+        public double cameraDistanceSq = Double.MAX_VALUE;
     }
 
     public CardDisplayEntityRenderer(EntityRendererProvider.Context ctx) {
         super(ctx);
-        this.textRenderer = ctx.getFont();
         Mtgcard.LOGGER.info("[CardDisplay] CardDisplayEntityRenderer constructed");
     }
 
@@ -60,64 +85,48 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
     public void extractRenderState(CardDisplayEntity entity, State s, float tickDelta) {
         super.extractRenderState(entity, s, tickDelta); // REQUIRED in 1.21.11+
 
+        long gameTime = entity.level().getGameTime();
+        pruneRenderCache(gameTime);
+
         s.stack = entity.getStack();
         s.facing = entity.getDirection();
         s.rotStep = entity.getRotStep();
         s.flatYawStep = entity.getFlatYawStep();
+        s.cameraDistanceSq = getCameraDistanceSq(entity);
 
         if (s.stack == null || s.stack.isEmpty()) {
+            renderCache.remove(entity.getId());
             s.texId = TEX_WHITE;
             s.texW = 16;
             s.texH = 16;
             s.faceIndex = 0;
+            s.counters = List.of();
             return;
         }
 
-        s.faceIndex = readFaceIndex(s.stack);
+        CachedRenderData cached = renderCache.computeIfAbsent(entity.getId(), id -> new CachedRenderData());
+        cached.lastSeenTick = gameTime;
 
-        boolean hidden = readHiddenFlagFromStack(s.stack);
-        if (hidden) {
-            // IMPORTANT: do NOT decode the texture here (can run during early init on some systems)
-            s.texId = TEX_BACK;
-            s.texW = BACK_W;
-            s.texH = BACK_H;
-            s.faceIndex = 0;
-            return;
+        if (!ItemStack.matches(s.stack, cached.stack)) {
+            refreshStaticData(cached, s.stack);
+            cached.nextTextureRefreshTick = Long.MIN_VALUE;
         }
 
-        CardArtManager.TextureRef ref = CardArtManager.getOrRequestFace(s.stack, s.faceIndex);
-        if (ref != null && ref.id() != null) {
-            s.texId = ref.id();
-            s.texW = (ref.texW() > 0) ? ref.texW() : 256;
-            s.texH = (ref.texH() > 0) ? ref.texH() : 256;
-        } else {
-            s.texId = fallbackItemTexture(s.stack);
-            s.texW = 256;
-            s.texH = 256;
-        }
+        refreshTextureData(cached, s.stack, gameTime);
+
+        s.faceIndex = cached.faceIndex;
+        s.texId = cached.texId;
+        s.texW = cached.texW;
+        s.texH = cached.texH;
+        s.counters = cached.counters;
     }
 
     private void renderCounterStripOnCard(
             State s,
             PoseStack matrices,
-            Font tr,
             SubmitNodeCollector queue
     ) {
-        if (s.stack == null || s.stack.isEmpty()) return;
-
-        CompoundTag counters = readCounters(s.stack);
-        if (counters.keySet().isEmpty()) return;
-
-        // Collect nonzero keys
-        java.util.List<String> keys = new java.util.ArrayList<>();
-        for (String k : counters.keySet()) {
-            int v = counters.getInt(k).orElse(0);
-            if (v > 0) keys.add(k);
-        }
-        if (keys.isEmpty()) return;
-
-        keys.sort(String::compareToIgnoreCase);
-        if (keys.size() > 6) keys = keys.subList(0, 6);
+        if (s.counters == null || s.counters.isEmpty()) return;
 
         // Layout in local quad space
         final float padX = 0.04f;
@@ -131,40 +140,29 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         matrices.pushPose();
         matrices.translate(0f, 0f, 0.012f);
 
-        for (int i = 0; i < keys.size(); i++) {
-            String key = keys.get(i);
-            int v = counters.getInt(key).orElse(0);
-            String txt = formatCounterValue(v);
-            if (txt.isEmpty()) continue;
-
+        for (int i = 0; i < s.counters.size(); i++) {
             float x = startX;
             float y = startY - i * (icon + gapY);
 
-            String iconKey = readCounterIcon(s.stack, key);
-            if (iconKey != null && !iconKey.equals("none")) {
-                Identifier iconTex = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/" + iconKey + ".png");
-                var layer = RenderTypes.entityCutoutNoCull(iconTex);
+            Identifier iconTex = s.counters.get(i).texture();
+            var layer = RenderTypes.entityCutoutNoCull(iconTex);
 
-                queue.submitCustomGeometry(matrices, layer, (entry, vc) -> {
-                    Matrix4f mat = entry.pose();
-                    int fullLight = LightTexture.FULL_BRIGHT;
+            queue.submitCustomGeometry(matrices, layer, (entry, vc) -> {
+                Matrix4f mat = entry.pose();
+                int fullLight = LightTexture.FULL_BRIGHT;
 
-                    float x0 = x;
-                    float y0 = y - icon; // bottom
-                    float x1 = x + icon;
-                    float y1 = y;        // top
+                float x0 = x;
+                float y0 = y - icon; // bottom
+                float x1 = x + icon;
+                float y1 = y;        // top
 
-                    // Vertex order: bottom-left, top-left, top-right, bottom-right
-                    // UVs:          (0,1)      (0,0)     (1,0)     (1,1)
-                    put(vc, mat, x0, y0, 0f, 0f, 1f, fullLight, OverlayTexture.NO_OVERLAY);
-                    put(vc, mat, x0, y1, 0f, 0f, 0f, fullLight, OverlayTexture.NO_OVERLAY);
-                    put(vc, mat, x1, y1, 0f, 1f, 0f, fullLight, OverlayTexture.NO_OVERLAY);
-                    put(vc, mat, x1, y0, 0f, 1f, 1f, fullLight, OverlayTexture.NO_OVERLAY);
-
-                });
-            }
-
-            // (Optional later) number rendering can go here, but avoid MinecraftClient.getInstance() calls.
+                // Vertex order: bottom-left, top-left, top-right, bottom-right
+                // UVs:          (0,1)      (0,0)     (1,0)     (1,1)
+                put(vc, mat, x0, y0, 0f, 0f, 1f, fullLight, OverlayTexture.NO_OVERLAY);
+                put(vc, mat, x0, y1, 0f, 0f, 0f, fullLight, OverlayTexture.NO_OVERLAY);
+                put(vc, mat, x1, y1, 0f, 1f, 0f, fullLight, OverlayTexture.NO_OVERLAY);
+                put(vc, mat, x1, y0, 0f, 1f, 1f, fullLight, OverlayTexture.NO_OVERLAY);
+            });
         }
 
         matrices.popPose();
@@ -217,9 +215,70 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         });
 
         // After drawing the big card quad
-        renderCounterStripOnCard(s, matrices, this.textRenderer, queue);
+        if (s.cameraDistanceSq <= COUNTER_RENDER_DISTANCE_SQR) {
+            renderCounterStripOnCard(s, matrices, queue);
+        }
 
         matrices.popPose();
+    }
+
+    private void pruneRenderCache(long gameTime) {
+        if (gameTime < nextCachePruneTick) {
+            return;
+        }
+
+        nextCachePruneTick = gameTime + CACHE_EXPIRE_TICKS;
+
+        Iterator<Map.Entry<Integer, CachedRenderData>> it = renderCache.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<Integer, CachedRenderData> entry = it.next();
+            if (gameTime - entry.getValue().lastSeenTick > CACHE_EXPIRE_TICKS) {
+                it.remove();
+            }
+        }
+    }
+
+    private static double getCameraDistanceSq(CardDisplayEntity entity) {
+        var cameraEntity = Minecraft.getInstance().getCameraEntity();
+        if (cameraEntity == null) {
+            return Double.MAX_VALUE;
+        }
+        return cameraEntity.distanceToSqr(entity);
+    }
+
+    private static void refreshStaticData(CachedRenderData cached, ItemStack stack) {
+        cached.stack = stack.copy();
+
+        CompoundTag meta = readMeta(stack);
+        cached.faceIndex = meta.getInt("mtg_face").orElse(0);
+        cached.hidden = meta.getBoolean("mtg_hidden").orElse(false);
+        cached.counters = buildCounterIcons(meta);
+    }
+
+    private static void refreshTextureData(CachedRenderData cached, ItemStack stack, long gameTime) {
+        if (cached.hidden) {
+            cached.texId = TEX_BACK;
+            cached.texW = BACK_W;
+            cached.texH = BACK_H;
+            return;
+        }
+
+        if (gameTime < cached.nextTextureRefreshTick) {
+            return;
+        }
+
+        cached.nextTextureRefreshTick = gameTime + TEXTURE_REFRESH_TICKS;
+
+        CardArtManager.TextureRef ref = CardArtManager.getOrRequestFace(stack, cached.faceIndex);
+        if (ref != null && ref.id() != null) {
+            cached.texId = ref.id();
+            cached.texW = (ref.texW() > 0) ? ref.texW() : 256;
+            cached.texH = (ref.texH() > 0) ? ref.texH() : 256;
+        } else {
+            cached.texId = fallbackItemTexture(stack);
+            cached.texW = 256;
+            cached.texH = 256;
+        }
     }
 
     private static void put(VertexConsumer vc, Matrix4f mat,
@@ -257,33 +316,44 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         return root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
     }
 
-    private static CompoundTag readCounters(ItemStack st) {
-        return readMeta(st).getCompound("counters").orElseGet(CompoundTag::new);
+    private static List<CounterIcon> buildCounterIcons(CompoundTag meta) {
+        CompoundTag counters = meta.getCompound("counters").orElse(null);
+        if (counters == null || counters.keySet().isEmpty()) {
+            return List.of();
+        }
+
+        ArrayList<String> keys = new ArrayList<>();
+        for (String key : counters.keySet()) {
+            if (counters.getInt(key).orElse(0) > 0) {
+                keys.add(key);
+            }
+        }
+        if (keys.isEmpty()) {
+            return List.of();
+        }
+
+        keys.sort(String::compareToIgnoreCase);
+        if (keys.size() > 6) {
+            keys.subList(6, keys.size()).clear();
+        }
+
+        ArrayList<CounterIcon> icons = new ArrayList<>(keys.size());
+        for (String key : keys) {
+            String iconKey = readCounterIcon(meta, key);
+            if (iconKey == null || iconKey.equals("none")) {
+                continue;
+            }
+            icons.add(new CounterIcon(
+                    Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/" + iconKey + ".png")
+            ));
+        }
+
+        return icons.isEmpty() ? List.of() : List.copyOf(icons);
     }
 
-    private static String readCounterIcon(ItemStack st, String key) {
-        CompoundTag icons = readMeta(st).getCompound("counter_icons").orElse(null);
+    private static String readCounterIcon(CompoundTag meta, String key) {
+        CompoundTag icons = meta.getCompound("counter_icons").orElse(null);
         if (icons == null) return "none";
         return icons.getString(key).orElse("none");
-    }
-
-    private static String formatCounterValue(int v) {
-        if (v <= 0) return "";
-        if (v > 99) return "99+";
-        return String.valueOf(v);
-    }
-
-    private static boolean readHiddenFlagFromStack(ItemStack st) {
-        var comp = st.get(DataComponents.CUSTOM_DATA);
-        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
-        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
-        return meta.getBoolean("mtg_hidden").orElse(false);
-    }
-
-    private static int readFaceIndex(ItemStack stack) {
-        var comp = stack.get(DataComponents.CUSTOM_DATA);
-        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
-        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
-        return meta.getInt("mtg_face").orElse(0);
     }
 }

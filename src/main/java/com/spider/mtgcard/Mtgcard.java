@@ -13,6 +13,7 @@ import com.spider.mtgcard.net.*;
 import com.spider.mtgcard.registry.ModBlockEntities;
 import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.screen.ModScreenHandlers;
+import com.spider.mtgcard.trade.ModTrades;
 
 import com.spider.mtgcard.util.ModDispenserBehaviors;
 import net.fabricmc.api.ModInitializer;
@@ -61,6 +62,7 @@ public final class Mtgcard implements ModInitializer {
         // Entities/items/registry
         ModEntities.init();
         ModItems.initialize();
+        ModTrades.init();
         ModItemGroup.register();
 
         // Commands

@@ -51,6 +51,7 @@ public final class MtgcardClient implements ClientModInitializer {
 
         CustomImportClientPackets.registerClientReceivers();
         ArtClientPackets.registerClientReceivers();
+        CustomCardClientPackets.registerClientReceivers();
         DBClientPackets.registerClientReceivers();
         ModNetworkingClient.initClient();
         LifePointClientPackets.register();

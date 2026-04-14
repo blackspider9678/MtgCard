@@ -60,6 +60,7 @@ public final class CardArtManager {
 
     private static final ConcurrentLinkedQueue<PendingReq> PENDING = new ConcurrentLinkedQueue<>();
     private static final Set<String> QUEUED = ConcurrentHashMap.newKeySet();
+    private static final Set<String> LOADING = ConcurrentHashMap.newKeySet();
 
     // rate limits (tune these)
     private static final int MAX_SENDS_PER_TICK = 8;
@@ -133,6 +134,7 @@ public final class CardArtManager {
         PENDING.clear();
         QUEUED.clear();
         IN_FLIGHT.clear();
+        LOADING.clear();
     }
 
     // ---- lifecycle ----
@@ -295,7 +297,8 @@ public final class CardArtManager {
         Path file = resolveCachedFile(artKey);
 
         if (Files.exists(file)) {
-            if (loadFromDiskThenBind(artKey, file)) return TEX.get(artKey);
+            queueDiskLoad(artKey, file);
+            return null;
         }
 
         // IMPORTANT: queue instead of sending immediately
@@ -311,8 +314,8 @@ public final class CardArtManager {
         if (Files.exists(file)) {
             DISK_INDEX.put(artKey, file.getFileName().toString());
             saveIndexAsync();
-
-            if (loadFromDiskThenBind(artKey, file)) return TEX.get(artKey);
+            queueDiskLoad(artKey, file);
+            return null;
         }
 
         DISK_INDEX.putIfAbsent(artKey, artKey + ".png");
@@ -399,7 +402,7 @@ public final class CardArtManager {
             DISK_INDEX.put(artKey, fileName);
             saveIndexAsync();
 
-            loadFromDiskThenBind(artKey, file);
+            queueDiskLoad(artKey, file);
         } catch (Exception ignored) {}
     }
 
@@ -480,32 +483,55 @@ public final class CardArtManager {
         }
     }
 
-    private static boolean loadFromDiskThenBind(String artKey, Path file) {
-        try (var in = Files.newInputStream(file)) {
-            BufferedImage bi = readAnyImage(in);
-            NativeImage img = bufferedToNative(bi);
+    private static void queueDiskLoad(String artKey, Path file) {
+        if (artKey == null || artKey.isBlank() || file == null || !Files.exists(file)) {
+            return;
+        }
 
-            Minecraft.getInstance().execute(() -> {
-                try {
-                    Identifier texId = Identifier.fromNamespaceAndPath("mtgcard", "card/" + artKey);
+        if (!LOADING.add(artKey)) {
+            return;
+        }
 
-                    TextureRef old = TEX.remove(artKey);
-                    if (old != null) {
-                        try { old.tex().close(); } catch (Throwable ignored) {}
+        IO.submit(() -> {
+            NativeImage img = null;
+            try (var in = Files.newInputStream(file)) {
+                BufferedImage bi = readAnyImage(in);
+                img = bufferedToNative(bi);
+                NativeImage finalImg = img;
+                img = null;
+
+                Minecraft client = Minecraft.getInstance();
+                client.execute(() -> {
+                    try {
+                        bindTexture(artKey, finalImg);
+                    } finally {
+                        LOADING.remove(artKey);
                     }
-
-                    DynamicTexture tex = new DynamicTexture(() -> "mtgcard/" + artKey, img);
-                    Minecraft.getInstance().getTextureManager().register(texId, tex);
-
-                    TEX.put(artKey, new TextureRef(texId, img.getWidth(), img.getHeight(), tex));
-                } catch (Throwable t) {
+                });
+            } catch (Throwable t) {
+                if (img != null) {
                     try { img.close(); } catch (Throwable ignored) {}
                 }
-            });
+                LOADING.remove(artKey);
+            }
+        });
+    }
 
-            return true;
+    private static void bindTexture(String artKey, NativeImage img) {
+        try {
+            Identifier texId = Identifier.fromNamespaceAndPath("mtgcard", "card/" + artKey);
+
+            TextureRef old = TEX.remove(artKey);
+            if (old != null) {
+                try { old.tex().close(); } catch (Throwable ignored) {}
+            }
+
+            DynamicTexture tex = new DynamicTexture(() -> "mtgcard/" + artKey, img);
+            Minecraft.getInstance().getTextureManager().register(texId, tex);
+
+            TEX.put(artKey, new TextureRef(texId, img.getWidth(), img.getHeight(), tex));
         } catch (Throwable t) {
-            return false;
+            try { img.close(); } catch (Throwable ignored) {}
         }
     }
 
@@ -548,7 +574,7 @@ public final class CardArtManager {
         if (Files.exists(file)) {
             DISK_INDEX.put(artKey, file.getFileName().toString());
             saveIndexAsync();
-            loadFromDiskThenBind(artKey, file);
+            queueDiskLoad(artKey, file);
         }
     }
 

@@ -1,6 +1,7 @@
 {
   "parent": "mtgcard:block/deck_control_base_window",
   "textures": {
-    "window": "mtgcard:block/deck_control_window_soulfire"
+    "window": "mtgcard:block/deck_control_window_soulfire",
+    "particle": "minecraft:block/warped_planks"
   }
 }

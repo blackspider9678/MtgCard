@@ -1,6 +1,7 @@
 {
   "parent": "mtgcard:block/deck_control_base_window",
   "textures": {
-    "window": "mtgcard:block/deck_control_window_lit"
+    "window": "mtgcard:block/deck_control_window_lit",
+    "particle": "minecraft:block/glowstone"
   }
 }
