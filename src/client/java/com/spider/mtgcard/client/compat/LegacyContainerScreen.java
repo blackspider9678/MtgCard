@@ -15,4 +15,18 @@ public abstract class LegacyContainerScreen<T extends AbstractContainerMenu> ext
         this.imageWidth = width;
         this.imageHeight = height;
     }
+
+    protected final boolean applyDefaultGuiScale() {
+        return MtgGuiScaleHelper.applyPreferredGuiScale(this, MtgGuiScaleHelper.BLOCK_GUI_SCALE);
+    }
+
+    protected final boolean applyPreferredGuiScale(int preferredScale) {
+        return MtgGuiScaleHelper.applyPreferredGuiScale(this, preferredScale);
+    }
+
+    @Override
+    public void removed() {
+        MtgGuiScaleHelper.restoreGuiScale(this);
+        super.removed();
+    }
 }

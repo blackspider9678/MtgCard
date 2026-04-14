@@ -1,13 +1,13 @@
 package com.spider.mtgcard.db;
 
 import com.mojang.serialization.MapCodec;
+import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.MenuProvider;
-import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -69,15 +69,28 @@ public class CardDatabaseBlock extends BaseEntityBlock {
 
     @Override
     public MenuProvider getMenuProvider(BlockState state, Level world, BlockPos pos) {
-        return new SimpleMenuProvider(
-                (int syncId, Inventory playerInv, Player player) -> {
-                    ServerPlayer sp = (ServerPlayer) player;
-                    CardDBSession session = CardDBSession.forPlayer(sp);
-                    session.ensureLoaded(sp);
-                    session.setWindowOffset(0);
-                    return new CardDatabaseScreenHandler(syncId, playerInv, session, pos);
-                },
-                Component.translatable("screen.mtgcard.card_database")
-        );
+        return new ExtendedScreenHandlerFactory<>() {
+            @Override
+            public BlockPos getScreenOpeningData(ServerPlayer player) {
+                return pos;
+            }
+
+            @Override
+            public Component getDisplayName() {
+                return Component.translatable("screen.mtgcard.card_database");
+            }
+
+            @Override
+            public AbstractContainerMenu createMenu(int syncId, Inventory playerInv, Player player) {
+                if (!(player instanceof ServerPlayer sp)) {
+                    return new CardDatabaseScreenHandler(syncId, playerInv, pos);
+                }
+
+                CardDBSession session = CardDBSession.forPlayer(sp);
+                session.ensureLoaded(sp);
+                session.setWindowOffset(0);
+                return new CardDatabaseScreenHandler(syncId, playerInv, session, pos);
+            }
+        };
     }
 }

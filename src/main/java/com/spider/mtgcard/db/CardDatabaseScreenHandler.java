@@ -5,6 +5,7 @@ import com.spider.mtgcard.screen.ModScreenHandlers;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
@@ -196,51 +197,111 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
     @Override
     public void clicked(int slotIndex, int button, ClickType action, Player player) {
-        {
-            boolean isShiftClick = button == 1;
-
-            if (isShiftClick && slotIndex >= 0 && slotIndex < WINDOW_SLOTS) {
-                if (!player.level().isClientSide() && this.view instanceof CardDBSession sess) {
-                    Slot slot = (slotIndex < this.slots.size()) ? this.slots.get(slotIndex) : null;
-                    if (slot != null && slot.hasItem()) {
-                        ItemStack clicked = slot.getItem().copy();
-                        String uid = readUid(clicked);
-
-                        this.suppressWindowOnTake = true;
-                        sess.setUiFrozen(true);
-                        try {
-                            slot.set(ItemStack.EMPTY);
-                            slot.setChanged();
-
-                            giveDbCardToDestination(player, clicked);
-
-                            if (uid != null && !uid.isBlank()) {
-                                sess.removeFromIntakeByUid(uid);
-                            }
-
-                            sess.compactIntakeAndReprojectSamePage();
-                            if (sess.isProjectingSearch()) {
-                                this.reprojectingNow = true;
-                                try {
-                                    reprojectCurrentPage();
-                                } finally {
-                                    this.reprojectingNow = false;
-                                }
-                            }
-
-                            broadcastChanges();
-                            syncPropsFromView();
-                        } finally {
-                            sess.setUiFrozen(false);
-                            this.suppressWindowOnTake = false;
-                        }
-                    }
-                }
+        if (isWindowSlot(slotIndex)) {
+            if (player.level().isClientSide()) {
                 return;
             }
 
-            super.clicked(slotIndex, button, action, player);
+            if (!(this.view instanceof CardDBSession sess)) {
+                return;
+            }
+
+            if (action == ClickType.QUICK_MOVE) {
+                handleWindowQuickMove(slotIndex, player, sess);
+                return;
+            }
+
+            if (action == ClickType.PICKUP) {
+                handleWindowPickup(slotIndex, button, player, sess);
+                return;
+            }
+
+            // Treat the visible DB window as a specialized view-only area:
+            // only normal pickup and shift-move are supported.
+            return;
         }
+
+        super.clicked(slotIndex, button, action, player);
+    }
+
+    private boolean isWindowSlot(int slotIndex) {
+        return slotIndex >= 0 && slotIndex < WINDOW_SLOTS;
+    }
+
+    private void handleWindowQuickMove(int slotIndex, Player player, CardDBSession sess) {
+        Slot slot = (slotIndex < this.slots.size()) ? this.slots.get(slotIndex) : null;
+        if (slot == null || !slot.hasItem()) {
+            return;
+        }
+
+        ItemStack clicked = slot.getItem().copy();
+        String uid = readUid(clicked);
+
+        this.suppressWindowOnTake = true;
+        sess.setUiFrozen(true);
+        try {
+            slot.set(ItemStack.EMPTY);
+            slot.setChanged();
+
+            giveDbCardToDestination(player, clicked);
+
+            if (uid != null && !uid.isBlank()) {
+                sess.removeFromIntakeByUid(uid);
+            }
+
+            sess.compactIntakeAndReprojectSamePage();
+            syncAfterWindowMutation(sess);
+        } finally {
+            sess.setUiFrozen(false);
+            this.suppressWindowOnTake = false;
+        }
+    }
+
+    private void handleWindowPickup(int slotIndex, int button, Player player, CardDBSession sess) {
+        ItemStack carried = this.getCarried();
+        if (!carried.isEmpty()) {
+            if (!carried.is(ModItems.CARD)) {
+                return;
+            }
+
+            int moveCount = (button == 1) ? 1 : carried.getCount();
+            if (moveCount <= 0) {
+                return;
+            }
+
+            ItemStack toStore = carried.copy();
+            toStore.setCount(Math.min(moveCount, carried.getCount()));
+            clearUid(toStore);
+            sess.appendToIntake(toStore);
+
+            carried.shrink(toStore.getCount());
+            this.setCarried(carried.isEmpty() ? ItemStack.EMPTY : carried);
+            syncAfterWindowMutation(sess);
+            return;
+        }
+
+        Slot slot = (slotIndex < this.slots.size()) ? this.slots.get(slotIndex) : null;
+        if (slot == null || !slot.hasItem()) {
+            return;
+        }
+
+        ItemStack clicked = slot.getItem().copy();
+        String uid = readUid(clicked);
+        if (uid == null || uid.isBlank()) {
+            return;
+        }
+
+        int moveCount = (button == 1)
+                ? Math.max(1, (clicked.getCount() + 1) / 2)
+                : clicked.getCount();
+
+        ItemStack extracted = takeFromDatabase(sess, uid, moveCount);
+        if (extracted.isEmpty()) {
+            return;
+        }
+
+        this.setCarried(extracted);
+        syncAfterWindowMutation(sess);
     }
 
     private static String readUid(ItemStack st) {
@@ -248,6 +309,68 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         if (comp == null) return "";
         var nbt = comp.copyTag();
         return nbt.getString("mtg_uid").orElse("");
+    }
+
+    private static void clearUid(ItemStack stack) {
+        var comp = stack.getOrDefault(DataComponents.CUSTOM_DATA, null);
+        if (comp == null) return;
+
+        var nbt = comp.copyTag();
+        nbt.remove("mtg_uid");
+
+        if (nbt.isEmpty()) {
+            stack.remove(DataComponents.CUSTOM_DATA);
+            return;
+        }
+
+        stack.set(DataComponents.CUSTOM_DATA, CustomData.of(nbt));
+    }
+
+    private ItemStack takeFromDatabase(CardDBSession sess, String uid, int amount) {
+        if (uid == null || uid.isBlank() || amount <= 0) {
+            return ItemStack.EMPTY;
+        }
+
+        var intake = sess.getIntakeAll();
+        for (int i = 0; i < intake.size(); i++) {
+            ItemStack backing = intake.get(i);
+            if (backing == null || backing.isEmpty()) continue;
+            if (!uid.equals(readUid(backing))) continue;
+
+            int moveCount = Math.min(amount, backing.getCount());
+            if (moveCount <= 0) {
+                return ItemStack.EMPTY;
+            }
+
+            ItemStack extracted = backing.copy();
+            extracted.setCount(moveCount);
+
+            if (moveCount >= backing.getCount()) {
+                intake.remove(i);
+            } else {
+                backing.shrink(moveCount);
+                intake.set(i, backing);
+            }
+
+            sess.compactIntakeAndReprojectSamePage();
+            return extracted;
+        }
+
+        return ItemStack.EMPTY;
+    }
+
+    private void syncAfterWindowMutation(CardDBSession sess) {
+        if (sess.isProjectingSearch()) {
+            this.reprojectingNow = true;
+            try {
+                reprojectCurrentPage();
+            } finally {
+                this.reprojectingNow = false;
+            }
+        }
+
+        broadcastChanges();
+        syncPropsFromView();
     }
 
     private void syncPropsFromView() {

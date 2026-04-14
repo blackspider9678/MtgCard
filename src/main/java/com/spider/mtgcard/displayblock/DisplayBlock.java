@@ -220,8 +220,7 @@ public class DisplayBlock extends BaseEntityBlock {
 
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level world, BlockPos pos, Player player, BlockHitResult hit) {
-        // No GUI. Scroll interaction will be handled client-side later.
-        return InteractionResult.SUCCESS;
+        return InteractionResult.PASS;
     }
 
     @Override

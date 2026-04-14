@@ -211,6 +211,8 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
 
     @Override
     protected void init() {
+        if (applyDefaultGuiScale()) return;
+
         super.init();
 
         // Re-center + clamp so the header never renders off-screen on shorter windows

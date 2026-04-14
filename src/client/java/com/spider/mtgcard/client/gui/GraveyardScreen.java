@@ -57,6 +57,8 @@ public class GraveyardScreen extends LegacyContainerScreen<GraveyardScreenHandle
 
     @Override
     protected void init() {
+        if (applyDefaultGuiScale()) return;
+
         super.init();
 
         // ✅ Force center (HandledScreen usually does this, but we want it locked)

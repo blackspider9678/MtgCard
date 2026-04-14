@@ -156,6 +156,8 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
 
     @Override
     protected void init() {
+        if (applyDefaultGuiScale()) return;
+
         boolean hasDeckbox = (this.menu.getClientDeckboxCount() > 0);
 
         // Size depends on whether the right deckbox panel is visible
@@ -266,7 +268,14 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
             }
         }
 
-        this.inventoryLabelY = (this.imageHeight - 94) + 12;
+        if (this.menu.slots.size() > 54) {
+            Slot firstPlayerSlot = this.menu.slots.get(54);
+            this.inventoryLabelX = firstPlayerSlot.x;
+            this.inventoryLabelY = firstPlayerSlot.y - 12;
+        } else {
+            this.inventoryLabelX = CardDatabaseScreenHandler.DB_GRID_X;
+            this.inventoryLabelY = this.imageHeight - 94;
+        }
     }
 
 
@@ -284,15 +293,33 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
     @Override
     public boolean mouseScrolled(double mx, double my, double hx, double vy) {
         if (vy == 0) return false;
+        if (!this.menu.getCarried().isEmpty()) return false;
 
-        boolean insideGui =
-                mx >= this.leftPos &&
-                        mx < this.leftPos + this.imageWidth &&
-                        my >= this.topPos &&
-                        my < this.topPos + this.imageHeight;
-        boolean overSlot = this.hoveredSlot != null && isMouseOverSlotArea(this.hoveredSlot, (int) mx, (int) my);
+        int gridX = this.leftPos + CardDatabaseScreenHandler.DB_GRID_X;
+        int gridY = this.topPos + CardDatabaseScreenHandler.DB_GRID_Y;
+        int gridW = 9 * 18;
+        int gridH = 6 * 18;
 
-        if (!insideGui && !overSlot) return false;
+        boolean overDbGrid =
+                mx >= gridX &&
+                mx < gridX + gridW &&
+                my >= gridY &&
+                my < gridY + gridH;
+
+        boolean overDbSlot =
+                this.hoveredSlot != null &&
+                this.hoveredSlot.index >= 0 &&
+                this.hoveredSlot.index < 54 &&
+                isMouseOverSlotArea(this.hoveredSlot, (int) mx, (int) my);
+
+        var scrollbar = intakeScrollbar();
+        boolean overScrollbar =
+                scrollbar != null &&
+                (MtgGuiChrome.ptInExpanded(scrollbar.thumb(), mx, my, 1, 0)
+                        || MtgGuiChrome.ptInExpanded(scrollbar.track(), mx, my, 1, 0));
+
+        if (!overDbGrid && !overScrollbar) return false;
+        if (overDbSlot && !overScrollbar) return false;
 
         int id = (vy < 0) ? CardDatabaseScreenHandler.SCROLL_ROW_DOWN
                 : CardDatabaseScreenHandler.SCROLL_ROW_UP;

@@ -6,6 +6,8 @@ import com.spider.mtgcard.db.CardDatabaseScreenHandler;
 import com.spider.mtgcard.deckbox.DeckboxScreenHandler;
 import com.spider.mtgcard.deckcontrol.DeckControlScreenHandler;
 import com.spider.mtgcard.graveyard.GraveyardScreenHandler;
+import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerType;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
@@ -17,10 +19,10 @@ public final class ModScreenHandlers {
     private static boolean registered = false;
 
     public static MenuType<DeckboxScreenHandler> DECKBOX;
-    public static MenuType<DeckControlScreenHandler> DECKCONTROL;
+    public static ExtendedScreenHandlerType<DeckControlScreenHandler, BlockPos> DECKCONTROL;
     public static MenuType<GraveyardScreenHandler> GRAVEYARD;
     public static MenuType<CardStoreScreenHandler> CARD_STORE;
-    public static MenuType<CardDatabaseScreenHandler> CARD_DB;
+    public static ExtendedScreenHandlerType<CardDatabaseScreenHandler, BlockPos> CARD_DB;
 
     public static void register() {
         if (registered) return;
@@ -35,7 +37,7 @@ public final class ModScreenHandlers {
         DECKCONTROL = Registry.register(
                 BuiltInRegistries.MENU,
                 Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "deck_control"),
-                new MenuType<>(DeckControlScreenHandler::new, FeatureFlags.VANILLA_SET)
+                new ExtendedScreenHandlerType<>(DeckControlScreenHandler::new, BlockPos.STREAM_CODEC)
         );
 
         GRAVEYARD = Registry.register(
@@ -53,7 +55,7 @@ public final class ModScreenHandlers {
         CARD_DB = Registry.register(
                 BuiltInRegistries.MENU,
                 Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "card_database_sh"),
-                new MenuType<>(CardDatabaseScreenHandler::new, FeatureFlags.VANILLA_SET)
+                new ExtendedScreenHandlerType<>(CardDatabaseScreenHandler::new, BlockPos.STREAM_CODEC)
         );
     }
 

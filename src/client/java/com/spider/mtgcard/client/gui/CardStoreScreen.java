@@ -524,6 +524,8 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     @Override
     protected void init() {
+        if (applyDefaultGuiScale()) return;
+
         super.init();
 
         // keep virtual GUI size (slot coords are based on this)

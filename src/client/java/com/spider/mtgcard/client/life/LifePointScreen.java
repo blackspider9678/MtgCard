@@ -494,6 +494,8 @@ public final class LifePointScreen extends LegacyScreen {
 
     @Override
     protected void init() {
+        if (applyDefaultGuiScale()) return;
+
         clearWidgets();
 
         // NEW: compute design-space scaling and origin
@@ -3392,6 +3394,8 @@ public final class LifePointScreen extends LegacyScreen {
 
         @Override
         protected void init() {
+            if (applyDefaultGuiScale()) return;
+
             int cx = width / 2;
             int y = height / 2 - 10;
 
