@@ -9,7 +9,7 @@ import net.minecraft.resources.Identifier;
 
 public final class MtgLootInject {
 
-    private static final float PACK_CHANCE = 0.01f; // 1%
+    private static final float PACK_CHANCE = 0.05f; // 5%
 
     public static void init() {
         LootTableEvents.MODIFY.register((key, tableBuilder, source, registries) -> {
