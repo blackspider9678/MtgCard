@@ -309,6 +309,11 @@ public final class CardArtManager {
 
     /** Resolve world-art by key: bind from disk if present, else request from server. */
     private static TextureRef getOrRequestWorld(String artKey) {
+        TextureRef cached = getLiveCached(artKey);
+        if (cached != null) {
+            return cached;
+        }
+
         Path file = resolveCachedFile(artKey);
 
         if (Files.exists(file)) {
@@ -409,12 +414,26 @@ public final class CardArtManager {
     private static Path resolveCachedFile(String artKey) {
         Path dir = cacheDir();
 
-        String mapped = DISK_INDEX.get(artKey);
-        if (mapped != null && !mapped.isBlank()) {
-            Path p = dir.resolve(mapped);
-            if (Files.exists(p)) return p;
+        for (String candidate : artKeyCandidates(artKey)) {
+            Path indexed = resolveIndexedFile(dir, candidate);
+            if (indexed != null) return indexed;
+
+            Path exact = resolveExactFile(dir, candidate);
+            if (exact != null) return exact;
         }
 
+        return dir.resolve(artKey + ".webp");
+    }
+
+    private static Path resolveIndexedFile(Path dir, String artKey) {
+        String mapped = DISK_INDEX.get(artKey);
+        if (mapped == null || mapped.isBlank()) return null;
+
+        Path path = dir.resolve(mapped);
+        return Files.exists(path) ? path : null;
+    }
+
+    private static Path resolveExactFile(Path dir, String artKey) {
         Path webp = dir.resolve(artKey + ".webp");
         if (Files.exists(webp)) return webp;
 
@@ -427,7 +446,33 @@ public final class CardArtManager {
         Path jpeg = dir.resolve(artKey + ".jpeg");
         if (Files.exists(jpeg)) return jpeg;
 
-        return webp;
+        return null;
+    }
+
+    private static Iterable<String> artKeyCandidates(String artKey) {
+        java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>();
+        if (artKey == null || artKey.isBlank()) return keys;
+
+        addArtKeyCandidate(keys, artKey);
+
+        String trimmed = artKey.trim();
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+        addArtKeyCandidate(keys, lower);
+
+        if (lower.startsWith("custom_")) {
+            addArtKeyCandidate(keys, lower.substring("custom_".length()));
+        } else {
+            addArtKeyCandidate(keys, "custom_" + lower);
+        }
+
+        return keys;
+    }
+
+    private static void addArtKeyCandidate(Set<String> keys, String artKey) {
+        if (artKey == null) return;
+
+        String trimmed = artKey.trim();
+        if (!trimmed.isBlank()) keys.add(trimmed);
     }
 
     private static String stripQuery(String url) {
@@ -513,6 +558,7 @@ public final class CardArtManager {
                 if (img != null) {
                     try { img.close(); } catch (Throwable ignored) {}
                 }
+                System.out.println("[MTGCard] Failed to load art key=" + artKey + " from " + file + ": " + t);
                 LOADING.remove(artKey);
             }
         });
@@ -520,7 +566,7 @@ public final class CardArtManager {
 
     private static void bindTexture(String artKey, NativeImage img) {
         try {
-            Identifier texId = Identifier.fromNamespaceAndPath("mtgcard", "card/" + artKey);
+            Identifier texId = Identifier.fromNamespaceAndPath("mtgcard", "card/" + sha1(artKey));
 
             TextureRef old = TEX.remove(artKey);
             if (old != null) {

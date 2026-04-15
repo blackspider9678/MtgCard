@@ -260,7 +260,10 @@ public final class CardStorePurchaseService {
 
                 // ✅ Print custom NON-STACKING
                 for (var l : customLines) {
-                    ItemStack template = CardStackBuilders.buildCustomStackFromId(l.collectorNumber(), false);
+                    var meta = customById.get(l.collectorNumber());
+                    ItemStack template = (meta != null)
+                            ? CardStackBuilders.buildCustomStackFromMeta(meta, false)
+                            : CardStackBuilders.buildCustomStackFromId(l.collectorNumber(), false);
                     if (template == null || template.isEmpty()) continue;
                     queueNoStack(store, player.getUUID(), template, l.qty());
                 }

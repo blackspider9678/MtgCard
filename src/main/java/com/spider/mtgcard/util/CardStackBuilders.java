@@ -267,9 +267,6 @@ public final class CardStackBuilders {
     private static String normalizeCustomKey(String key, String customId, int face) {
         if (key == null || key.isBlank()) return customWorldKey(customId, face);
 
-        String k = key.trim();
-        if (k.startsWith("custom_")) return k;
-
-        return customWorldKey(customId, face);
+        return key.trim();
     }
 }

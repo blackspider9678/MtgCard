@@ -117,6 +117,15 @@ public final class ArtServerPackets {
     private static Path resolveServerCachedFile(MinecraftServer server, String artKey) {
         Path dir = serverCacheDir(server);
 
+        for (String candidate : artKeyCandidates(artKey)) {
+            Path exact = resolveExactFile(dir, candidate);
+            if (exact != null) return exact;
+        }
+
+        return dir.resolve(artKey + ".png");
+    }
+
+    private static Path resolveExactFile(Path dir, String artKey) {
         Path webp = dir.resolve(artKey + ".webp");
         if (Files.exists(webp)) return webp;
 
@@ -129,7 +138,33 @@ public final class ArtServerPackets {
         Path jpeg = dir.resolve(artKey + ".jpeg");
         if (Files.exists(jpeg)) return jpeg;
 
-        return png;
+        return null;
+    }
+
+    private static Iterable<String> artKeyCandidates(String artKey) {
+        java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>();
+        if (artKey == null || artKey.isBlank()) return keys;
+
+        addArtKeyCandidate(keys, artKey);
+
+        String trimmed = artKey.trim();
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+        addArtKeyCandidate(keys, lower);
+
+        if (lower.startsWith("custom_")) {
+            addArtKeyCandidate(keys, lower.substring("custom_".length()));
+        } else {
+            addArtKeyCandidate(keys, "custom_" + lower);
+        }
+
+        return keys;
+    }
+
+    private static void addArtKeyCandidate(java.util.Set<String> keys, String artKey) {
+        if (artKey == null) return;
+
+        String trimmed = artKey.trim();
+        if (!trimmed.isBlank()) keys.add(trimmed);
     }
 
     private static byte[] download(String url) throws Exception {

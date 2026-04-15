@@ -21,6 +21,15 @@ loom {
     }
 }
 
+sourceSets {
+    main {
+        output.resourcesDir = file("$buildDir/classes/java/main")
+    }
+    client {
+        output.resourcesDir = file("$buildDir/classes/java/client")
+    }
+}
+
 
 repositories {
     // Add repositories to retrieve artifacts from in here.
