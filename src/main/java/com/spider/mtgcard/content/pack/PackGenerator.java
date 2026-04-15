@@ -154,7 +154,7 @@ public final class PackGenerator {
 
                                                 out.add(st);
 
-                                                int percent = Math.min(100, (int) Math.round((out.size() * 100.0) / TOTAL));
+                                                int percent = Math.min(99, (int) Math.round((out.size() * 100.0) / TOTAL));
                                                 ModPayloads.sendUnpackProgress(player, percent);
                                         });
                         });
@@ -162,56 +162,74 @@ public final class PackGenerator {
 
                 // Attach completion handling ONCE
                 chain.whenComplete((ok, ex) -> server.execute(() -> {
-                        if (active != null && active.cancelled) {
+                        boolean delivered = false;
+                        try {
+                                if (active != null && active.cancelled) {
+                                        PackOpenManager.finish(player);
+                                        ModPayloads.sendUnpackProgress(player, 0);
+                                        return;
+                                }
+
+                                if (ex != null) {
+                                        // refund exactly once
+                                        refundPackIfNeeded(player, active);
+
+                                        PackOpenManager.finish(player);
+                                        ModPayloads.sendUnpackProgress(player, 0);
+
+                                        // Log it so we can see the real cause
+                                        com.spider.mtgcard.Mtgcard.LOGGER.error("[MTGCard] Pack opening failed", ex);
+                                        player.sendSystemMessage(Component.literal("[MTGCard] Pack refunded because a card could not be generated."), true);
+                                        return;
+                                }
+
+                                if (out.size() != TOTAL || out.stream().anyMatch(st -> !isResolvedPackCard(st))) {
+                                        refundPackIfNeeded(player, active);
+
+                                        PackOpenManager.finish(player);
+                                        ModPayloads.sendUnpackProgress(player, 0);
+                                        player.sendSystemMessage(Component.literal("[MTGCard] Pack refunded because a card could not be generated."), true);
+                                        com.spider.mtgcard.Mtgcard.LOGGER.error("[MTGCard] Pack opening produced unresolved cards: {}", out.size());
+                                        return;
+                                }
+
+                                // Success path
+                                int foilIndex = slots.indexOf(RaritySlot.FOIL_RANDOM);
+                                if (foilIndex >= 0 && foilIndex < out.size() && !out.get(foilIndex).isEmpty()) {
+                                        out.get(foilIndex).set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+                                }
+
+                                ItemStack bundle = new ItemStack(Items.BUNDLE);
+
+                                List<ItemStack> templates = out.stream()
+                                        .map(ItemStack::copy)
+                                        .toList();
+
+                                bundle.set(DataComponents.BUNDLE_CONTENTS, new BundleContents(templates));
+
+                                PackInventoryUtil.giveOrDrop(player, bundle);
+                                delivered = true;
+
+                                try {
+                                        ModAdvancements.onBoosterPackOpened(player);
+                                } catch (Throwable t) {
+                                        com.spider.mtgcard.Mtgcard.LOGGER.error("[MTGCard] Pack advancement update failed", t);
+                                }
+
+                                ModPayloads.sendUnpackProgress(player, 100);
                                 PackOpenManager.finish(player);
-                                ModPayloads.sendUnpackProgress(player, 0);
-                                return;
-                        }
-
-                        if (ex != null) {
-                                // refund exactly once
-                                refundPackIfNeeded(player, active);
-
-                                PackOpenManager.finish(player);
-                                ModPayloads.sendUnpackProgress(player, 0);
-
-                                // Log it so we can see the real cause
-                                com.spider.mtgcard.Mtgcard.LOGGER.error("[MTGCard] Pack opening failed", ex);
-                                player.sendSystemMessage(Component.literal("[MTGCard] Pack refunded because a card could not be generated."), true);
-                                return;
-                        }
-
-                        if (out.size() != TOTAL || out.stream().anyMatch(st -> !isResolvedPackCard(st))) {
-                                refundPackIfNeeded(player, active);
+                        } catch (Throwable t) {
+                                if (!delivered) {
+                                        refundPackIfNeeded(player, active);
+                                        player.sendSystemMessage(Component.literal("[MTGCard] Pack refunded because the bundle could not be delivered."), true);
+                                        ModPayloads.sendUnpackProgress(player, 0);
+                                } else {
+                                        ModPayloads.sendUnpackProgress(player, 100);
+                                }
 
                                 PackOpenManager.finish(player);
-                                ModPayloads.sendUnpackProgress(player, 0);
-                                player.sendSystemMessage(Component.literal("[MTGCard] Pack refunded because a card could not be generated."), true);
-                                com.spider.mtgcard.Mtgcard.LOGGER.error("[MTGCard] Pack opening produced unresolved cards: {}", out.size());
-                                return;
+                                com.spider.mtgcard.Mtgcard.LOGGER.error("[MTGCard] Pack finalization failed", t);
                         }
-
-                        // Success path
-                        int foilIndex = slots.indexOf(RaritySlot.FOIL_RANDOM);
-                        if (foilIndex >= 0 && foilIndex < out.size() && !out.get(foilIndex).isEmpty()) {
-                                out.get(foilIndex).set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
-                        }
-
-                        ItemStack bundle = new ItemStack(Items.BUNDLE);
-
-                        List<ItemStack> templates = out.stream()
-                                .map(ItemStack::copy)
-                                .toList();
-
-                        bundle.set(DataComponents.BUNDLE_CONTENTS, new BundleContents(templates));
-
-                        if (!player.getInventory().add(bundle)) {
-                                player.drop(bundle, false);
-                        }
-
-                        ModAdvancements.onBoosterPackOpened(player);
-                        ModPayloads.sendUnpackProgress(player, 100);
-                        PackOpenManager.finish(player);
                 }));
         }
 
@@ -230,9 +248,7 @@ public final class PackGenerator {
                 ItemStack refund = active.refundPackOne.copy();
                 if (refund.isEmpty()) return;
 
-                if (!player.getInventory().add(refund)) {
-                        player.drop(refund, false);
-                }
+                PackInventoryUtil.giveOrDrop(player, refund);
         }
 
         private static CompletableFuture<ItemStack> makeCardAsyncNoDupe(

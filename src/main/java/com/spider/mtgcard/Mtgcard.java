@@ -3,6 +3,7 @@ package com.spider.mtgcard;
 import com.spider.mtgcard.cardstore.CardStorePackets;
 import com.spider.mtgcard.command.MtgRootCommand;
 import com.spider.mtgcard.config.MtgcardConfig;
+import com.spider.mtgcard.content.pack.PackServerEvents;
 import com.spider.mtgcard.guidebook.GuideBook;
 import com.spider.mtgcard.item.ModItemGroup;
 import com.spider.mtgcard.item.ModItems;
@@ -75,6 +76,7 @@ public final class Mtgcard implements ModInitializer {
         ServerTickEvents.END_WORLD_TICK.register(LifePlayGroups::tickWorld);
         MtgLootInject.init();
         ModEvents.register();
+        PackServerEvents.init();
 
         //Guide Book
         GuideBookPackets.init();

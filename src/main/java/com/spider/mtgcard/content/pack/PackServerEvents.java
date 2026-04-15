@@ -16,9 +16,7 @@ public final class PackServerEvents {
             var refunds = PackRefundState.get(server).drain(player.getUUID());
             if (!refunds.isEmpty()) {
                 for (var st : refunds) {
-                    if (!player.getInventory().add(st)) {
-                        player.drop(st, false);
-                    }
+                    PackInventoryUtil.giveOrDrop(player, st);
                 }
                 player.sendSystemMessage(net.minecraft.network.chat.Component.literal("Your pack opening was cancelled and refunded."), true);
             }
