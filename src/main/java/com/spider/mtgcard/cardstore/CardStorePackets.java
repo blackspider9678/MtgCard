@@ -66,6 +66,33 @@ public final class CardStorePackets {
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
+    // ---------- C2S: Save cart snapshot ----------
+    public record SetCartC2S(BlockPos pos, int lineCount, List<CardStoreScreenHandler.CartEntryData> lines) implements CustomPacketPayload {
+        public static final Type<SetCartC2S> ID = new Type<>(ModRegistry.id("cardstore_set_cart"));
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, SetCartC2S> CODEC =
+                StreamCodec.of(
+                        (buf, payload) -> {
+                            buf.writeBlockPos(payload.pos());
+                            buf.writeVarInt(payload.lines().size());
+                            for (var line : payload.lines()) {
+                                CardStoreScreenHandler.CartEntryData.STREAM_CODEC.encode(buf, line);
+                            }
+                        },
+                        (buf) -> {
+                            BlockPos pos = buf.readBlockPos();
+                            int n = buf.readVarInt();
+                            var lines = new ArrayList<CardStoreScreenHandler.CartEntryData>(n);
+                            for (int i = 0; i < n; i++) {
+                                lines.add(CardStoreScreenHandler.CartEntryData.STREAM_CODEC.decode(buf));
+                            }
+                            return new SetCartC2S(pos, n, lines);
+                        }
+                );
+
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
+    }
+
     // ---------- C2S: Search (single resolve) ----------
     public record SearchC2S(BlockPos storePos, String query) implements CustomPacketPayload {
         public static final Type<SearchC2S> ID = new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "card_store_search"));
@@ -404,6 +431,7 @@ public final class CardStorePackets {
     // ---------- CODEC registration ----------
     public static void registerTypes() {
         PayloadTypeRegistry.playC2S().register(ConfirmPurchaseC2S.ID, ConfirmPurchaseC2S.CODEC);
+        PayloadTypeRegistry.playC2S().register(SetCartC2S.ID, SetCartC2S.CODEC);
         PayloadTypeRegistry.playC2S().register(SearchC2S.ID, SearchC2S.CODEC);
         PayloadTypeRegistry.playS2C().register(SearchS2C.ID, SearchS2C.CODEC);
 
@@ -435,7 +463,20 @@ public final class CardStorePackets {
                     var be = world.getBlockEntity(payload.pos());
                     if (!(be instanceof CardStoreBlockEntity store)) return;
 
+                    store.clearSavedCart(sp.getUUID());
                     CardStorePurchaseService.handleConfirm(ctx.server(), sp, store, payload.lines());
+                })
+        );
+
+        ServerPlayNetworking.registerGlobalReceiver(SetCartC2S.ID, (payload, ctx) ->
+                ctx.server().execute(() -> {
+                    ServerPlayer player = ctx.player();
+                    ServerLevel world = player.level();
+
+                    var be = world.getBlockEntity(payload.pos());
+                    if (!(be instanceof CardStoreBlockEntity store)) return;
+
+                    store.setSavedCart(player.getUUID(), payload.lines());
                 })
         );
 

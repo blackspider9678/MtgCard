@@ -96,6 +96,8 @@ public final class GuideBookScreen extends LegacyScreen {
 
     @Override
     protected void init() {
+        if (applyFixedGuiScale(2)) return;
+
         fullW = this.width;
         fullH = this.height;
         leftX = 0;

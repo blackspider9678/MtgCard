@@ -368,11 +368,33 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         this.imageWidth = 352;   // adjust later to match your art
         this.imageHeight = 256;  // includes player inventory area
         this.inventoryLabelY = this.imageHeight - 94;
+        loadSavedCart(handler.initialCart());
     }
 
     private void sendConfirm(List<CardStorePackets.ConfirmPurchaseC2S.Line> lines) {
         var payload = new CardStorePackets.ConfirmPurchaseC2S(menu.blockPos, lines.size(), lines);
         ClientPlayNetworking.send(payload);
+    }
+
+    private void syncCartToServer() {
+        if (this.minecraft == null || this.minecraft.getConnection() == null) return;
+
+        ArrayList<CardStoreScreenHandler.CartEntryData> lines = new ArrayList<>();
+        for (var line : cart) {
+            if (line == null) continue;
+            if (line.set == null || line.set.isBlank() || line.cn == null || line.cn.isBlank()) continue;
+            if (line.stack == null || line.stack.isEmpty()) continue;
+
+            int qty = Math.max(1, line.qty);
+            lines.add(new CardStoreScreenHandler.CartEntryData(
+                    line.set,
+                    line.cn,
+                    line.stack.copyWithCount(1),
+                    Math.max(0L, line.priceItems),
+                    qty
+            ));
+        }
+        ClientPlayNetworking.send(new CardStorePackets.SetCartC2S(menu.blockPos, lines.size(), lines));
     }
 
     private final java.util.ArrayList<PrintEntry> grid = new java.util.ArrayList<>();
@@ -524,7 +546,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     @Override
     protected void init() {
-        if (applyDefaultGuiScale()) return;
+        if (applyFixedGuiScale(2)) return;
 
         super.init();
 
@@ -661,6 +683,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             previewTex = null;
             selectedPriceItems = 0;
 
+            syncCartToServer();
             updateWidgetVisibility(); // disables Buy/Clear when empty
         }).bounds(btnX, buyY, btnW, btnH).build());
 
@@ -673,6 +696,8 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             previewTex = null;
             selectedPriceItems = 0;
             status = "Cart cleared.";
+            syncCartToServer();
+            updateWidgetVisibility();
         }).bounds(btnX, clearY, btnW, btnH).build());
 
 
@@ -847,10 +872,12 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             }
 
             clampCartScroll();
+            updateWidgetVisibility();
             return;
         }
 
         clampCartScroll();
+        updateWidgetVisibility();
     }
 
     private boolean handleCartRowButtonsClick(int mx, int my) {
@@ -1344,6 +1371,19 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
                     texW, texH
             );
 
+            if (com.spider.mtgcard.client.render.CardFoilUtil.isFoil(preview)) {
+                var sweep = com.spider.mtgcard.client.render.CardFoilUtil.computeSweep(System.currentTimeMillis(), texW);
+                if (sweep != null) {
+                    ctx.fill(
+                            sweep.drawU(),
+                            0,
+                            sweep.drawU() + sweep.clipW(),
+                            texH,
+                            com.spider.mtgcard.client.render.CardFoilUtil.guiShimmerColor(1f)
+                    );
+                }
+            }
+
             m.popMatrix();
 
             // price strip (same as before)
@@ -1474,6 +1514,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             String line = raw.trim();
             if (line.isEmpty()) continue;
             if (line.startsWith("#") || line.startsWith("//")) continue;
+            if (line.toLowerCase(Locale.ROOT).contains("{nodeck}")) continue;
 
             Matcher m = DECK_TXT.matcher(line);
             if (!m.matches()) continue;
@@ -1578,6 +1619,12 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
         clampCartScroll();
         updateWidgetVisibility();
+    }
+
+    @Override
+    public void removed() {
+        syncCartToServer();
+        super.removed();
     }
 
     private static int parseIntOrOne(String s) {
@@ -1732,6 +1779,37 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         long lineTotal() {
             return Math.max(0L, priceItems) * Math.max(1, qty);
         }
+    }
+
+    private void loadSavedCart(List<CardStoreScreenHandler.CartEntryData> entries) {
+        cart.clear();
+        selectedCartIndex = -1;
+        cartScrollPx = 0;
+
+        if (entries == null || entries.isEmpty()) return;
+
+        for (var entry : entries) {
+            if (entry == null || !entry.isValid()) continue;
+
+            boolean merged = false;
+            for (var line : cart) {
+                if (line.set.equals(entry.set()) && line.cn.equals(entry.cn())) {
+                    line.qty += Math.max(1, entry.qty());
+                    merged = true;
+                    break;
+                }
+            }
+            if (!merged) {
+                cart.add(new CartLine(
+                        entry.set(),
+                        entry.cn(),
+                        entry.stack().copyWithCount(1),
+                        entry.priceItems(),
+                        Math.max(1, entry.qty())
+                ));
+            }
+        }
+        clampCartScroll();
     }
 
     private boolean hasValidSelection() {

@@ -2,6 +2,7 @@
 package com.spider.mtgcard.client.gui;
 
 import com.spider.mtgcard.client.compat.LegacyContainerScreen;
+import com.spider.mtgcard.client.compat.MtgGuiScaleHelper;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.db.search.CardMeta;
 import com.spider.mtgcard.deckbox.DeckboxBlockEntity;
@@ -211,7 +212,7 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
 
     @Override
     protected void init() {
-        if (applyDefaultGuiScale()) return;
+        if (applyAutoFitGuiScaleWithSidePreview(this.imageWidth, this.imageHeight, 180, Math.min(this.imageHeight - 8, 220))) return;
 
         super.init();
 
@@ -1312,6 +1313,21 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
                 texW, texH,
                 texW, texH
         );
+
+        if (com.spider.mtgcard.client.render.CardFoilUtil.isFoil(st)) {
+            var sweep = com.spider.mtgcard.client.render.CardFoilUtil.computeSweep(System.currentTimeMillis(), texW);
+            if (sweep != null) {
+                int stripeX0 = dx + Math.round(drawW * sweep.u0());
+                int stripeX1 = dx + Math.round(drawW * sweep.u1());
+                ctx.fill(
+                        stripeX0,
+                        dy,
+                        stripeX1,
+                        dy + drawH,
+                        com.spider.mtgcard.client.render.CardFoilUtil.guiShimmerColor(1f)
+                );
+            }
+        }
     }
 
     private void drawCardBackFit(GuiGraphics ctx, int x, int y, int w, int h) {
@@ -1652,13 +1668,7 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
     }
 
     private boolean isFoil(ItemStack st) {
-        if (st == null || st.isEmpty()) return false;
-        Boolean glint = st.get(DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
-        boolean hasGlint = glint != null && glint;
-        var comp = st.get(DataComponents.CUSTOM_DATA);
-        var root = (comp == null) ? new CompoundTag() : comp.copyTag();
-        boolean foilNbt = root.getBoolean("mtg_foil").orElse(false);
-        return hasGlint || foilNbt;
+        return com.spider.mtgcard.client.render.CardFoilUtil.isFoil(st);
     }
 
     private void renderHoverPreview(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
@@ -1694,24 +1704,23 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
         if (ref == null || ref.id() == null) return;
         lastTexRef = ref;
 
-        // --- Layout (same idea as DeckboxScreen) ---
         final int panelMaxH = Math.min(this.imageHeight - 8, 220);
         final int panelMaxW = 180;
-
-        int panelW = panelMaxW;
-        int panelH = panelMaxH;
-
-        int panelX = this.leftPos - (panelW + 12);
-        int panelY = this.topPos + 4;
-
-        // if left side would go offscreen, put it to the right
-        if (panelX < 8) panelX = this.leftPos + this.imageWidth + 12;
 
         final int texW = ref.texW();
         final int texH = ref.texH();
         if (texW <= 0 || texH <= 0) return;
 
         float aspect = (float) texW / (float) texH;
+
+        int panelW = panelMaxW;
+        int panelH = panelMaxH;
+
+        int panelX = this.leftPos - (panelW + MtgGuiScaleHelper.SIDE_PREVIEW_GAP);
+        int panelY = this.topPos + 4;
+        if (panelX < MtgGuiScaleHelper.SIDE_PREVIEW_MARGIN) {
+            panelX = this.leftPos + this.imageWidth + MtgGuiScaleHelper.SIDE_PREVIEW_GAP;
+        }
 
         int drawW = panelW;
         int drawH = (int) (drawW / aspect);
@@ -1784,27 +1793,16 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
 
 // ---------- Foil shimmer ----------
         if (isFoil(st)) {
-            int stripePx = Math.max(6, (int) (texW * 0.22f));
-            float travel = texW + stripePx * 2f;
-            float speed = 0.22f;
-            float pos = ((now / 16f) * speed) % travel - stripePx;
-
-            int u = Math.round(pos);
-            if (u < texW && u + stripePx > 0) {
-                int drawU = Math.max(0, Math.min(texW - stripePx, u));
-                int clipW = Math.min(stripePx, texW - drawU);
-
-                int shimmerAlpha = (int) (0x88 + 0x2A * ease);
-                int colorShimmer = (shimmerAlpha << 24) | 0x00FFFFFF;
-
+            var sweep = com.spider.mtgcard.client.render.CardFoilUtil.computeSweep(now, texW);
+            if (sweep != null) {
                 ctx.blit(
                         RenderPipelines.GUI_TEXTURED,
                         ref.id(),
-                        drawU, 0,
-                        (float) drawU, 0f,
-                        clipW, texH,
+                        sweep.drawU(), 0,
+                        (float) sweep.drawU(), 0f,
+                        sweep.clipW(), texH,
                         texW, texH,
-                        colorShimmer
+                        com.spider.mtgcard.client.render.CardFoilUtil.guiShimmerColor(ease)
                 );
             }
         }

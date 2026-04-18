@@ -248,12 +248,20 @@ public final class LifePointScreen extends LegacyScreen {
         uiH = Math.round(DESIGN_H * uiScale);
 
         uiX = (this.width  - uiW) / 2;
-        uiY = (this.height - uiH) / 2;
+        uiY = 0;
     }
 
     private int px(int designX) { return uiX + Math.round(designX * uiScale); }
     private int py(int designY) { return uiY + Math.round(designY * uiScale); }
     private int ps(int designS) { return Math.round(designS * uiScale); }
+
+    private int topHudStripH() {
+        return Math.min(this.height, ps(TOP_HUD_STRIP_H));
+    }
+
+    private int bottomHudStripH() {
+        return Math.min(this.height, ps(BOTTOM_HUD_STRIP_H));
+    }
 
 
     // cache recolored textures per (sourceTex + rgb)
@@ -494,7 +502,7 @@ public final class LifePointScreen extends LegacyScreen {
 
     @Override
     protected void init() {
-        if (applyDefaultGuiScale()) return;
+        if (applyFixedGuiScale(2)) return;
 
         clearWidgets();
 
@@ -593,21 +601,11 @@ public final class LifePointScreen extends LegacyScreen {
         // Build top HUD in DESIGN coords, converted via px/py/ps
         buildTopHudScaled(st);
 
-        // Content region in DESIGN coords
-        int bottomH = 34; // your original bottom bar height in design units
-        int contentTop = 12 + 24 + 18 + 10; // same as your original, but design-space
-        int contentBottom = DESIGN_H - bottomH - 8;
-        int contentH = Math.max(120, contentBottom - contentTop);
-
-        int x0 = 12;
-        int w0 = DESIGN_W - 24;
-        int y0 = contentTop;
-
-        // Convert to actual pixels ONCE here
-        int ax0 = px(x0);
-        int ay0 = py(y0);
-        int aw0 = ps(w0);
-        int ah0 = ps(contentH);
+        int ax0 = uiX + ps(12);
+        int ay0 = topHudStripH() + ps(8);
+        int aw0 = Math.max(ps(320), uiW - ps(24));
+        int contentBottom = Math.max(ay0 + ps(120), this.height - bottomHudStripH() - ps(8));
+        int ah0 = Math.max(ps(120), contentBottom - ay0);
 
         switch (tab) {
             case LIFE -> buildLifeTabWireframe(st, ax0, ay0, aw0, ah0);
@@ -673,7 +671,7 @@ public final class LifePointScreen extends LegacyScreen {
     }
 
     private void buildBottomHudScaled(CompoundTag st) {
-        int btnY = py(DESIGN_H - 26);
+        int btnY = this.height - bottomHudStripH() + ps(8);
         int btnH = ps(20);
         int gap = ps(10);
 
@@ -1731,11 +1729,11 @@ public final class LifePointScreen extends LegacyScreen {
     }
 
     private void drawHudStrips(GuiGraphics ctx) {
-        int topY1 = Math.min(height, TOP_HUD_STRIP_H);
+        int topY1 = topHudStripH();
         ctx.fill(0, 0, width, topY1, HUD_STRIP_BG);
         ctx.fill(0, topY1 - 1, width, topY1, HUD_STRIP_LINE);
 
-        int botY0 = Math.max(0, height - BOTTOM_HUD_STRIP_H);
+        int botY0 = Math.max(0, height - bottomHudStripH());
         ctx.fill(0, botY0, width, height, HUD_STRIP_BG);
         ctx.fill(0, botY0, width, botY0 + 1, HUD_STRIP_LINE);
     }
@@ -3394,7 +3392,7 @@ public final class LifePointScreen extends LegacyScreen {
 
         @Override
         protected void init() {
-            if (applyDefaultGuiScale()) return;
+            if (applyFixedGuiScale(2)) return;
 
             int cx = width / 2;
             int y = height / 2 - 10;

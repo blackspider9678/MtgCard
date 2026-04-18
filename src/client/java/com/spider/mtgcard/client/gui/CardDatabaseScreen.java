@@ -1,6 +1,7 @@
 package com.spider.mtgcard.client.gui;
 
 import com.spider.mtgcard.client.compat.LegacyContainerScreen;
+import com.spider.mtgcard.client.compat.MtgGuiScaleHelper;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.client.net.DBClientPackets;
 import com.spider.mtgcard.db.CardDatabaseScreenHandler;
@@ -156,13 +157,13 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
 
     @Override
     protected void init() {
-        if (applyDefaultGuiScale()) return;
-
         boolean hasDeckbox = (this.menu.getClientDeckboxCount() > 0);
 
         // Size depends on whether the right deckbox panel is visible
         this.imageWidth = hasDeckbox ? (DB_W + GAP_W + DBX_W) : DB_W;
         this.imageHeight = DB_H;
+
+        if (applyAutoFitGuiScaleWithSidePreview(this.imageWidth, this.imageHeight, 180, Math.min(this.imageHeight - 8, 220))) return;
 
         super.init();
 
@@ -512,19 +513,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
 
     /** Matches Deckbox foil/glint check so previews shimmer the same way. */
     private boolean isFoil(ItemStack st) {
-        // Component-based glint (your foil slot uses this)
-        Boolean glint = st.get(DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
-        boolean hasGlint = glint != null && glint;
-
-        // Optional NBT flag support (if you decide to store mtg_foil)
-        var comp = st.get(DataComponents.CUSTOM_DATA);
-        net.minecraft.nbt.CompoundTag root = (comp == null)
-                ? new net.minecraft.nbt.CompoundTag()
-                : comp.copyTag();
-
-        boolean foilNbt = root.getBoolean("mtg_foil").orElse(false);
-
-        return hasGlint || foilNbt;
+        return com.spider.mtgcard.client.render.CardFoilUtil.isFoil(st);
     }
 
     private void renderHoverPreview(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
@@ -566,21 +555,21 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         if (ref == null || ref.id() == null) return; // not ready yet
         lastTexRef = ref;
 
-        // --- Layout: left of GUI, with capped size ---
-        final int PANEL_PAD = 4;
         final int panelMaxH = Math.min(this.imageHeight - 8, 220);
         final int panelMaxW = 180;
-
-        int panelW = panelMaxW;
-        int panelH = panelMaxH;
-        int panelX = this.leftPos - (panelW + 12);
-        int panelY = this.topPos + 4;
-        if (panelX < 8) panelX = this.leftPos + this.imageWidth + 12; // flip to right if off-screen
 
         // Fit card into panel while preserving aspect
         final int texW = ref.texW();
         final int texH = ref.texH();
         float aspect = (float) texW / (float) texH;
+
+        int panelW = panelMaxW;
+        int panelH = panelMaxH;
+        int panelX = this.leftPos - (panelW + MtgGuiScaleHelper.SIDE_PREVIEW_GAP);
+        int panelY = this.topPos + 4;
+        if (panelX < MtgGuiScaleHelper.SIDE_PREVIEW_MARGIN) {
+            panelX = this.leftPos + this.imageWidth + MtgGuiScaleHelper.SIDE_PREVIEW_GAP;
+        }
 
         int drawW = panelW;
         int drawH = (int) (drawW / aspect);
@@ -653,35 +642,24 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
 
         // -------- 3) FOIL SHIMMER pass (overlay) --------
         if (isFoil(st)) {
-            // Re-apply the main transform
-            m.set(m00, m01, m10, m11, m20, m21);
-            m.translate((float) x, (float) y);
-            m.scale(sx * scaleAnim, sy * scaleAnim);
-            m.translate(texW / 2f, texH / 2f);
-            m.rotate((float) Math.toRadians(angleDeg));
-            m.translate(-texW / 2f, -texH / 2f);
-
-            int stripePx = Math.max(6, (int) (texW * 0.22f));
-            float travel = texW + stripePx * 2f;
-            float speed = 0.22f;
-            float pos = ((nowMs / 16f) * speed) % travel - stripePx;
-
-            int u = Math.round(pos);
-            if (u < texW && u + stripePx > 0) {
-                int drawU = Math.max(0, Math.min(texW - stripePx, u));
-                int clipW = Math.min(stripePx, texW - drawU);
-
-                int shimmerAlpha = (int) (0x88 + 0x2A * ease); // a bit brighter
-                int colorShimmer = (shimmerAlpha << 24) | 0x00FFFFFF;
+            var sweep = com.spider.mtgcard.client.render.CardFoilUtil.computeSweep(nowMs, texW);
+            if (sweep != null) {
+                // Re-apply the main transform
+                m.set(m00, m01, m10, m11, m20, m21);
+                m.translate((float) x, (float) y);
+                m.scale(sx * scaleAnim, sy * scaleAnim);
+                m.translate(texW / 2f, texH / 2f);
+                m.rotate((float) Math.toRadians(angleDeg));
+                m.translate(-texW / 2f, -texH / 2f);
 
                 ctx.blit(
                         RenderPipelines.GUI_TEXTURED,
                         ref.id(),
-                        drawU, 0,
-                        (float) drawU, 0f,
-                        clipW, texH,
+                        sweep.drawU(), 0,
+                        (float) sweep.drawU(), 0f,
+                        sweep.clipW(), texH,
                         texW, texH,
-                        colorShimmer
+                        com.spider.mtgcard.client.render.CardFoilUtil.guiShimmerColor(ease)
                 );
             }
         }

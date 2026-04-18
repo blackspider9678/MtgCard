@@ -153,6 +153,21 @@ public final class CardPeekHud implements HudRenderCallback {
                 drawW, drawH
         );
 
+        if (com.spider.mtgcard.client.render.CardFoilUtil.isFoil(stack)) {
+            var sweep = com.spider.mtgcard.client.render.CardFoilUtil.computeSweep(System.currentTimeMillis(), drawW);
+            if (sweep != null) {
+                int shimmerColor = com.spider.mtgcard.client.render.CardFoilUtil.guiShimmerColor(1f);
+                int shimmerAlpha = Math.round(((shimmerColor >>> 24) & 0xFF) * alpha);
+                ctx.fill(
+                        dx + sweep.drawU(),
+                        dy,
+                        dx + sweep.drawU() + sweep.clipW(),
+                        dy + drawH,
+                        (shimmerAlpha << 24) | 0x00FFFFFF
+                );
+            }
+        }
+
         // Reset color back to default
         setCtxShaderColor(ctx, 1f, 1f, 1f, 1f);
     }

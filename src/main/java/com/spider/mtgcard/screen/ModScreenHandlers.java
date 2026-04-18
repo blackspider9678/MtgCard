@@ -21,7 +21,7 @@ public final class ModScreenHandlers {
     public static MenuType<DeckboxScreenHandler> DECKBOX;
     public static ExtendedScreenHandlerType<DeckControlScreenHandler, BlockPos> DECKCONTROL;
     public static MenuType<GraveyardScreenHandler> GRAVEYARD;
-    public static MenuType<CardStoreScreenHandler> CARD_STORE;
+    public static ExtendedScreenHandlerType<CardStoreScreenHandler, CardStoreScreenHandler.OpenData> CARD_STORE;
     public static ExtendedScreenHandlerType<CardDatabaseScreenHandler, BlockPos> CARD_DB;
 
     public static void register() {
@@ -49,7 +49,7 @@ public final class ModScreenHandlers {
         CARD_STORE = Registry.register(
                 BuiltInRegistries.MENU,
                 Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "card_store"),
-                new MenuType<>(CardStoreScreenHandler::new, FeatureFlags.VANILLA_SET)
+                new ExtendedScreenHandlerType<>(CardStoreScreenHandler::new, CardStoreScreenHandler.OpenData.STREAM_CODEC)
         );
 
         CARD_DB = Registry.register(

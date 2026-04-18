@@ -2,6 +2,7 @@
 package com.spider.mtgcard.client.gui;
 
 import com.mojang.blaze3d.platform.NativeImage;
+import com.spider.mtgcard.client.compat.MtgGuiScaleHelper;
 import com.spider.mtgcard.net.CustomCardPackets;
 import com.spider.mtgcard.util.Cockatrice;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -754,6 +755,8 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     // ---- Lifecycle ----
     @Override
     protected void init() {
+        if (MtgGuiScaleHelper.applyFixedGuiScale(this, 2)) return;
+
         panelW = Math.max(220, Math.min(260, (int)(this.width * 0.22)));
         panelX = this.width - panelW - 10;
 
@@ -864,6 +867,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     @Override
     public void removed() {
         cancelAllAsyncWork(); // <-- important: stops future scheduling + stops queued sends
+        MtgGuiScaleHelper.restoreGuiScale(this);
 
         if (minecraft == null) return;
         var tm = minecraft.getTextureManager();

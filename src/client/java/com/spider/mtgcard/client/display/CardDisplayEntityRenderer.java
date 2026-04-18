@@ -49,6 +49,7 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         int texW = 16;
         int texH = 16;
         int faceIndex = 0;
+        boolean foil = false;
         boolean hidden = false;
         List<CounterIcon> counters = List.of();
         long nextTextureRefreshTick = Long.MIN_VALUE;
@@ -67,6 +68,7 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         public int rotStep = 0;
         public int faceIndex = 0;
         public int flatYawStep = 0;
+        public boolean foil = false;
         public List<CounterIcon> counters = List.of();
         public double cameraDistanceSq = Double.MAX_VALUE;
     }
@@ -118,6 +120,7 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         s.texId = cached.texId;
         s.texW = cached.texW;
         s.texH = cached.texH;
+        s.foil = cached.foil;
         s.counters = cached.counters;
     }
 
@@ -214,6 +217,30 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
             put(vc, mat,  halfW, -halfH, 0f, u1, v0, fullLight, OverlayTexture.NO_OVERLAY);
         });
 
+        if (s.foil) {
+            var sweep = com.spider.mtgcard.client.render.CardFoilUtil.computeSweep(System.currentTimeMillis(), s.texW);
+            if (sweep != null) {
+                float overlayX0 = -halfW + (halfW * 2f * sweep.u0());
+                float overlayX1 = -halfW + (halfW * 2f * sweep.u1());
+
+                matrices.pushPose();
+                matrices.translate(0f, 0f, 0.001f);
+
+                var foilLayer = RenderTypes.entityTranslucent(s.texId);
+                queue.submitCustomGeometry(matrices, foilLayer, (entry, vc) -> {
+                    Matrix4f mat = entry.pose();
+                    int fullLight = LightTexture.FULL_BRIGHT;
+
+                    put(vc, mat, overlayX0, -halfH, 0f, sweep.u0(), v0, fullLight, OverlayTexture.NO_OVERLAY, com.spider.mtgcard.client.render.CardFoilUtil.WORLD_SWEEP_ALPHA);
+                    put(vc, mat, overlayX0,  halfH, 0f, sweep.u0(), v1, fullLight, OverlayTexture.NO_OVERLAY, com.spider.mtgcard.client.render.CardFoilUtil.WORLD_SWEEP_ALPHA);
+                    put(vc, mat, overlayX1,  halfH, 0f, sweep.u1(), v1, fullLight, OverlayTexture.NO_OVERLAY, com.spider.mtgcard.client.render.CardFoilUtil.WORLD_SWEEP_ALPHA);
+                    put(vc, mat, overlayX1, -halfH, 0f, sweep.u1(), v0, fullLight, OverlayTexture.NO_OVERLAY, com.spider.mtgcard.client.render.CardFoilUtil.WORLD_SWEEP_ALPHA);
+                });
+
+                matrices.popPose();
+            }
+        }
+
         // After drawing the big card quad
         if (s.cameraDistanceSq <= COUNTER_RENDER_DISTANCE_SQR) {
             renderCounterStripOnCard(s, matrices, queue);
@@ -251,6 +278,7 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
 
         CompoundTag meta = readMeta(stack);
         cached.faceIndex = meta.getInt("mtg_face").orElse(0);
+        cached.foil = com.spider.mtgcard.client.render.CardFoilUtil.isFoil(stack);
         cached.hidden = meta.getBoolean("mtg_hidden").orElse(false);
         cached.counters = buildCounterIcons(meta);
     }
@@ -285,8 +313,16 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
                             float x, float y, float z,
                             float u, float v,
                             int light, int overlay) {
+        put(vc, mat, x, y, z, u, v, light, overlay, 255);
+    }
+
+    private static void put(VertexConsumer vc, Matrix4f mat,
+                            float x, float y, float z,
+                            float u, float v,
+                            int light, int overlay,
+                            int alpha) {
         vc.addVertex(mat, x, y, z)
-                .setColor(255, 255, 255, 255)
+                .setColor(255, 255, 255, alpha)
                 .setUv(u, v)
                 .setOverlay(overlay)
                 .setLight(light)

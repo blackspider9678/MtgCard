@@ -1407,6 +1407,19 @@ public class CardLargeViewScreen extends LegacyScreen {
                 drawW, drawH
         );
 
+        if (com.spider.mtgcard.client.render.CardFoilUtil.isFoil(stack)) {
+            var sweep = com.spider.mtgcard.client.render.CardFoilUtil.computeSweep(System.currentTimeMillis(), drawW);
+            if (sweep != null) {
+                ctx.fill(
+                        x + sweep.drawU(),
+                        y,
+                        x + sweep.drawU() + sweep.clipW(),
+                        y + drawH,
+                        com.spider.mtgcard.client.render.CardFoilUtil.guiShimmerColor(1f)
+                );
+            }
+        }
+
         m.popMatrix();
 
         // screen-space UI

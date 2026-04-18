@@ -24,6 +24,25 @@ public abstract class LegacyContainerScreen<T extends AbstractContainerMenu> ext
         return MtgGuiScaleHelper.applyPreferredGuiScale(this, preferredScale);
     }
 
+    protected final boolean applyFixedGuiScale(int fixedScale) {
+        return MtgGuiScaleHelper.applyFixedGuiScale(this, fixedScale);
+    }
+
+    protected final boolean applyAutoFitGuiScale(int guiWidth, int guiHeight) {
+        return MtgGuiScaleHelper.applyAutoFitGuiScale(this, MtgGuiScaleHelper.BLOCK_GUI_SCALE, guiWidth, guiHeight);
+    }
+
+    protected final boolean applyAutoFitGuiScaleWithSidePreview(int guiWidth, int guiHeight, int previewWidth, int previewHeight) {
+        return MtgGuiScaleHelper.applyAutoFitGuiScaleWithSidePreview(
+                this,
+                MtgGuiScaleHelper.BLOCK_GUI_SCALE,
+                guiWidth,
+                guiHeight,
+                previewWidth,
+                previewHeight
+        );
+    }
+
     @Override
     public void removed() {
         MtgGuiScaleHelper.restoreGuiScale(this);
