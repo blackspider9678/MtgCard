@@ -41,6 +41,7 @@ public final class MtgcardConfig {
     public double chance_custom_random_foil = 0.08;
     public double chance_custom_basic_land = 0.15;
     public double chance_custom_token_or_art = 0.02;
+    public boolean Pack_Debug = false;
 
     // Price display
     public String Price_Item = "minecraft:diamond";
@@ -120,6 +121,7 @@ public final class MtgcardConfig {
             cfg.chance_custom_random_foil = file.getOrElse("pack.custom_chances.random_foil", cfg.chance_custom_random_foil);
             cfg.chance_custom_basic_land = file.getOrElse("pack.custom_chances.basic_land", cfg.chance_custom_basic_land);
             cfg.chance_custom_token_or_art = file.getOrElse("pack.custom_chances.token_or_art", cfg.chance_custom_token_or_art);
+            cfg.Pack_Debug = file.getOrElse("pack.debug", cfg.Pack_Debug);
 
             // --- price ---
             cfg.Price_Item = file.getOrElse("price.item", cfg.Price_Item);
@@ -156,6 +158,7 @@ public final class MtgcardConfig {
                 file.set("pack.custom_chances.random_foil", cfg.chance_custom_random_foil);
                 file.set("pack.custom_chances.basic_land", cfg.chance_custom_basic_land);
                 file.set("pack.custom_chances.token_or_art", cfg.chance_custom_token_or_art);
+                file.set("pack.debug", cfg.Pack_Debug);
 
                 file.set("price.item", cfg.Price_Item);
                 file.set("price.basis", cfg.Price_Basis);
@@ -188,7 +191,8 @@ public final class MtgcardConfig {
 
         file.setComment("pack",
                 "Pack settings.\n" +
-                        "custom_chances are 0.0 to 1.0 (e.g. 0.10 = 10%).");
+                        "custom_chances are 0.0 to 1.0 (e.g. 0.10 = 10%).\n" +
+                        "debug: enables verbose server-side booster pack logs.");
 
         file.setComment("pack.custom_chances.common", "Chance for a custom COMMON.");
         file.setComment("pack.custom_chances.uncommon", "Chance for a custom UNCOMMON.");
@@ -198,6 +202,7 @@ public final class MtgcardConfig {
         file.setComment("pack.custom_chances.random_foil", "Chance for a custom random FOIL card.");
         file.setComment("pack.custom_chances.basic_land", "Chance for a custom basic land.");
         file.setComment("pack.custom_chances.token_or_art", "Chance for a custom token/art slot.");
+        file.setComment("pack.debug", "Enable verbose booster pack debug logging on the server.");
 
         file.setComment("price",
                 "Price display settings (Large View panel).\n" +
@@ -263,6 +268,11 @@ public final class MtgcardConfig {
             case BASIC_LAND -> clamp01(chance_custom_basic_land);
             case TOKEN_OR_ART -> clamp01(chance_custom_token_or_art);
         };
+    }
+
+    public static boolean packDebugEnabled() {
+        MtgcardConfig cfg = get();
+        return cfg != null && cfg.Pack_Debug;
     }
 
     private MtgcardConfig() {}

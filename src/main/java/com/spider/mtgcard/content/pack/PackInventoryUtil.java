@@ -1,6 +1,7 @@
 package com.spider.mtgcard.content.pack;
 
 import com.spider.mtgcard.Mtgcard;
+import com.spider.mtgcard.config.MtgcardConfig;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.component.BundleContents;
@@ -29,27 +30,32 @@ final class PackInventoryUtil {
 
         ItemStack reward = stack.copy();
         String playerName = player.getName().getString();
+        boolean packDebug = MtgcardConfig.packDebugEnabled();
 
-        Mtgcard.LOGGER.info(
-                "[MTGCard][PackDebug] Delivery attempt context={} player={} preferredSlot={} reward={} inventoryBefore={}",
-                context,
-                playerName,
-                preferredSlot,
-                describeStack(reward),
-                describeInventoryState(player, preferredSlot)
-        );
+        if (packDebug) {
+            Mtgcard.LOGGER.info(
+                    "[MTGCard][PackDebug] Delivery attempt context={} player={} preferredSlot={} reward={} inventoryBefore={}",
+                    context,
+                    playerName,
+                    preferredSlot,
+                    describeStack(reward),
+                    describeInventoryState(player, preferredSlot)
+            );
+        }
 
         if (isValidPreferredSlot(player, preferredSlot) && player.getInventory().getItem(preferredSlot).isEmpty()) {
             player.getInventory().setItem(preferredSlot, reward);
             player.getInventory().setChanged();
             sync(player);
-            Mtgcard.LOGGER.info(
-                    "[MTGCard][PackDebug] Delivery used preferred slot context={} player={} preferredAfter={} inventoryAfter={}",
-                    context,
-                    playerName,
-                    describeSlot(player, preferredSlot),
-                    describeInventoryState(player, preferredSlot)
-            );
+            if (packDebug) {
+                Mtgcard.LOGGER.info(
+                        "[MTGCard][PackDebug] Delivery used preferred slot context={} player={} preferredAfter={} inventoryAfter={}",
+                        context,
+                        playerName,
+                        describeSlot(player, preferredSlot),
+                        describeInventoryState(player, preferredSlot)
+                );
+            }
             return new DeliveryResult(true, "preferred_slot");
         }
 
@@ -57,40 +63,46 @@ final class PackInventoryUtil {
         player.getInventory().setChanged();
         sync(player);
         if (reward.isEmpty()) {
-            Mtgcard.LOGGER.info(
-                    "[MTGCard][PackDebug] Delivery added to inventory context={} player={} added={} inventoryAfter={}",
-                    context,
-                    playerName,
-                    added,
-                    describeInventoryState(player, preferredSlot)
-            );
+            if (packDebug) {
+                Mtgcard.LOGGER.info(
+                        "[MTGCard][PackDebug] Delivery added to inventory context={} player={} added={} inventoryAfter={}",
+                        context,
+                        playerName,
+                        added,
+                        describeInventoryState(player, preferredSlot)
+                );
+            }
             return new DeliveryResult(true, added ? "inventory" : "inventory_unknown");
         }
 
         ItemEntity dropped = player.drop(reward, false);
         sync(player);
         if (dropped != null) {
-            Mtgcard.LOGGER.info(
-                    "[MTGCard][PackDebug] Delivery dropped near player context={} player={} addedBeforeDrop={} droppedStack={} dropPos=({}, {}, {}) inventoryAfter={}",
-                    context,
-                    playerName,
-                    added,
-                    describeStack(reward),
-                    String.format("%.2f", dropped.getX()),
-                    String.format("%.2f", dropped.getY()),
-                    String.format("%.2f", dropped.getZ()),
-                    describeInventoryState(player, preferredSlot)
-            );
+            if (packDebug) {
+                Mtgcard.LOGGER.info(
+                        "[MTGCard][PackDebug] Delivery dropped near player context={} player={} addedBeforeDrop={} droppedStack={} dropPos=({}, {}, {}) inventoryAfter={}",
+                        context,
+                        playerName,
+                        added,
+                        describeStack(reward),
+                        String.format("%.2f", dropped.getX()),
+                        String.format("%.2f", dropped.getY()),
+                        String.format("%.2f", dropped.getZ()),
+                        describeInventoryState(player, preferredSlot)
+                );
+            }
             return new DeliveryResult(true, added ? "inventory_and_drop" : "drop");
         }
 
-        Mtgcard.LOGGER.error(
-                "[MTGCard][PackDebug] Delivery failed context={} player={} rewardRemaining={} inventoryAfter={}",
-                context,
-                playerName,
-                describeStack(reward),
-                describeInventoryState(player, preferredSlot)
-        );
+        if (packDebug) {
+            Mtgcard.LOGGER.error(
+                    "[MTGCard][PackDebug] Delivery failed context={} player={} rewardRemaining={} inventoryAfter={}",
+                    context,
+                    playerName,
+                    describeStack(reward),
+                    describeInventoryState(player, preferredSlot)
+            );
+        }
         return DeliveryResult.failed("delivery_failed");
     }
 

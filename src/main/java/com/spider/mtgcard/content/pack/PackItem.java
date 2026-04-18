@@ -1,6 +1,7 @@
 package com.spider.mtgcard.content.pack;
 
 import com.spider.mtgcard.Mtgcard;
+import com.spider.mtgcard.config.MtgcardConfig;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.Item.Properties;
 import net.minecraft.world.item.component.CustomData;
@@ -28,16 +29,19 @@ public class PackItem extends Item {
 
         ItemStack stack = user.getItemInHand(hand);
         final String desiredSet = PackGenerator.detectPackSetPublic(stack);
+        final boolean packDebug = MtgcardConfig.packDebugEnabled();
 
         // ---- NEW: lock out if already opening ----
         if (PackOpenManager.isActive(player)) {
-            Mtgcard.LOGGER.info(
-                    "[MTGCard][PackDebug] Pack use blocked because player already has an active opening player={} hand={} desiredSet={} held={}",
-                    player.getName().getString(),
-                    hand,
-                    desiredSet == null ? "random" : desiredSet,
-                    PackInventoryUtil.describeStack(stack)
-            );
+            if (packDebug) {
+                Mtgcard.LOGGER.info(
+                        "[MTGCard][PackDebug] Pack use blocked because player already has an active opening player={} hand={} desiredSet={} held={}",
+                        player.getName().getString(),
+                        hand,
+                        desiredSet == null ? "random" : desiredSet,
+                        PackInventoryUtil.describeStack(stack)
+                );
+            }
             player.sendSystemMessage(net.minecraft.network.chat.Component.literal("You're already opening a pack."), true);
             return InteractionResult.FAIL;
         }
@@ -67,52 +71,60 @@ public class PackItem extends Item {
 
         // ---- NEW: acquire the active lock BEFORE decrement/async ----
         if (!PackOpenManager.tryStart(player, uid, refundOne, preferredReturnSlot)) {
+            if (packDebug) {
+                Mtgcard.LOGGER.info(
+                        "[MTGCard][PackDebug] Pack use lost active-lock race player={} uid={} desiredSet={} hand={} preferredSlot={} held={}",
+                        player.getName().getString(),
+                        uid,
+                        desiredSet == null ? "random" : desiredSet,
+                        hand,
+                        preferredReturnSlot,
+                        PackInventoryUtil.describeStack(stack)
+                );
+            }
+            player.sendSystemMessage(net.minecraft.network.chat.Component.literal("You're already opening a pack."), true);
+            return InteractionResult.FAIL;
+        }
+
+        if (packDebug) {
             Mtgcard.LOGGER.info(
-                    "[MTGCard][PackDebug] Pack use lost active-lock race player={} uid={} desiredSet={} hand={} preferredSlot={} held={}",
+                    "[MTGCard][PackDebug] Pack use accepted player={} uid={} desiredSet={} hand={} preferredSlot={} creative={} heldBefore={} refund={} inventory={}",
                     player.getName().getString(),
                     uid,
                     desiredSet == null ? "random" : desiredSet,
                     hand,
                     preferredReturnSlot,
-                    PackInventoryUtil.describeStack(stack)
+                    player.isCreative(),
+                    PackInventoryUtil.describeStack(stack),
+                    PackInventoryUtil.describeStack(refundOne),
+                    PackInventoryUtil.describeInventoryState(player, preferredReturnSlot)
             );
-            player.sendSystemMessage(net.minecraft.network.chat.Component.literal("You're already opening a pack."), true);
-            return InteractionResult.FAIL;
         }
-
-        Mtgcard.LOGGER.info(
-                "[MTGCard][PackDebug] Pack use accepted player={} uid={} desiredSet={} hand={} preferredSlot={} creative={} heldBefore={} refund={} inventory={}",
-                player.getName().getString(),
-                uid,
-                desiredSet == null ? "random" : desiredSet,
-                hand,
-                preferredReturnSlot,
-                player.isCreative(),
-                PackInventoryUtil.describeStack(stack),
-                PackInventoryUtil.describeStack(refundOne),
-                PackInventoryUtil.describeInventoryState(player, preferredReturnSlot)
-        );
 
         // Consume immediately (unless Creative)
         if (!player.isCreative()) {
             stack.shrink(1);
-            Mtgcard.LOGGER.info(
-                    "[MTGCard][PackDebug] Consumed pack item player={} uid={} remainingInHand={} heldAfter={}",
-                    player.getName().getString(),
-                    uid,
-                    stack.getCount(),
-                    PackInventoryUtil.describeStack(stack)
-            );
+            if (packDebug) {
+                Mtgcard.LOGGER.info(
+                        "[MTGCard][PackDebug] Consumed pack item player={} uid={} remainingInHand={} heldAfter={}",
+                        player.getName().getString(),
+                        uid,
+                        stack.getCount(),
+                        PackInventoryUtil.describeStack(stack)
+                );
+            }
         }
 
         ServerLevel sw = (ServerLevel) player.level();
-        Mtgcard.LOGGER.info(
-                "[MTGCard][PackDebug] Dispatching async pack open player={} uid={} set={} world={}",
-                player.getName().getString(),
-                uid,
-                desiredSet == null ? "random" : desiredSet,
-                sw.dimension()
-        );
+        if (packDebug) {
+            Mtgcard.LOGGER.info(
+                    "[MTGCard][PackDebug] Dispatching async pack open player={} uid={} set={} world={}",
+                    player.getName().getString(),
+                    uid,
+                    desiredSet == null ? "random" : desiredSet,
+                    sw.dimension()
+            );
+        }
         PackGenerator.openPackAsync(sw.getServer(), player, desiredSet);
 
         player.playSound(SoundEvents.UI_TOAST_IN, 1f, 1f);

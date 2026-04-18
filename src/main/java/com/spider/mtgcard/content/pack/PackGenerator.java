@@ -2,6 +2,7 @@ package com.spider.mtgcard.content.pack;
 
 import com.spider.mtgcard.advancement.ModAdvancements;
 import com.spider.mtgcard.Mtgcard;
+import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.content.pack.cache.ScryfallCache;
 import com.spider.mtgcard.content.pack.cache.ScryfallModels;
 import com.spider.mtgcard.item.ModItems;
@@ -131,26 +132,29 @@ public final class PackGenerator {
 
                 final PackOpenManager.Active active = PackOpenManager.get(player);
                 final String packUid = active == null ? "missing" : active.packUid;
+                final boolean packDebug = MtgcardConfig.packDebugEnabled();
 
                 final Set<String> seenIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
                 final CustomMode customMode = customModeForPack(server, desiredSet);
 
-                Mtgcard.LOGGER.info(
-                        "[MTGCard][PackDebug] Pack async open started player={} uid={} set={} customMode={} preferredSlot={} inventory={}",
-                        playerName,
-                        packUid,
-                        setLabel,
-                        customMode,
-                        preferredReturnSlot(active),
-                        PackInventoryUtil.describeInventoryState(player, preferredReturnSlot(active))
-                );
-                if (active == null) {
-                        Mtgcard.LOGGER.warn(
-                                "[MTGCard][PackDebug] Pack async open missing active state for player={} uid={} set={}",
+                if (packDebug) {
+                        Mtgcard.LOGGER.info(
+                                "[MTGCard][PackDebug] Pack async open started player={} uid={} set={} customMode={} preferredSlot={} inventory={}",
                                 playerName,
                                 packUid,
-                                setLabel
+                                setLabel,
+                                customMode,
+                                preferredReturnSlot(active),
+                                PackInventoryUtil.describeInventoryState(player, preferredReturnSlot(active))
                         );
+                        if (active == null) {
+                                Mtgcard.LOGGER.warn(
+                                        "[MTGCard][PackDebug] Pack async open missing active state for player={} uid={} set={}",
+                                        playerName,
+                                        packUid,
+                                        setLabel
+                                );
+                        }
                 }
 
                 ModPayloads.sendUnpackProgress(player, 0);
@@ -183,17 +187,19 @@ public final class PackGenerator {
 
                                                 int percent = Math.min(99, (int) Math.round((out.size() * 100.0) / TOTAL));
                                                 ModPayloads.sendUnpackProgress(player, percent);
-                                                Mtgcard.LOGGER.info(
-                                                        "[MTGCard][PackDebug] Pack slot resolved player={} uid={} slot={} index={}/{} card={} urls={} progress={}%",
-                                                        playerName,
-                                                        packUid,
-                                                        slot,
-                                                        out.size(),
-                                                        TOTAL,
-                                                        describeCard(st),
-                                                        describeCardUrls(st),
-                                                        percent
-                                                );
+                                                if (packDebug) {
+                                                        Mtgcard.LOGGER.info(
+                                                                "[MTGCard][PackDebug] Pack slot resolved player={} uid={} slot={} index={}/{} card={} urls={} progress={}%",
+                                                                playerName,
+                                                                packUid,
+                                                                slot,
+                                                                out.size(),
+                                                                TOTAL,
+                                                                describeCard(st),
+                                                                describeCardUrls(st),
+                                                                percent
+                                                        );
+                                                }
                                 });
                         });
                 }
@@ -206,13 +212,15 @@ public final class PackGenerator {
                         long elapsedMs = System.currentTimeMillis() - startedAtMs;
                         try {
                                 if (active != null && active.cancelled) {
-                                        Mtgcard.LOGGER.info(
-                                                "[MTGCard][PackDebug] Pack completion aborted because active state was cancelled player={} uid={} set={} elapsedMs={}",
-                                                playerName,
-                                                packUid,
-                                                setLabel,
-                                                elapsedMs
-                                        );
+                                        if (packDebug) {
+                                                Mtgcard.LOGGER.info(
+                                                        "[MTGCard][PackDebug] Pack completion aborted because active state was cancelled player={} uid={} set={} elapsedMs={}",
+                                                        playerName,
+                                                        packUid,
+                                                        setLabel,
+                                                        elapsedMs
+                                                );
+                                        }
                                         PackOpenManager.finish(player);
                                         ModPayloads.sendUnpackProgress(player, 0);
                                         return;
@@ -268,17 +276,19 @@ public final class PackGenerator {
                                         .toList();
 
                                 bundle.set(DataComponents.BUNDLE_CONTENTS, new BundleContents(templates));
-                                Mtgcard.LOGGER.info(
-                                        "[MTGCard][PackDebug] Built reward bundle player={} uid={} set={} templateCount={} bundle={} rare={} foil={} inventoryBeforeDelivery={}",
-                                        playerName,
-                                        packUid,
-                                        setLabel,
-                                        templates.size(),
-                                        PackInventoryUtil.describeStack(bundle),
-                                        describeCardAtSlot(out, slots, RaritySlot.RARE_OR_MYTHIC),
-                                        describeCardAtSlot(out, slots, RaritySlot.FOIL_RANDOM),
-                                        PackInventoryUtil.describeInventoryState(player, preferredReturnSlot(active))
-                                );
+                                if (packDebug) {
+                                        Mtgcard.LOGGER.info(
+                                                "[MTGCard][PackDebug] Built reward bundle player={} uid={} set={} templateCount={} bundle={} rare={} foil={} inventoryBeforeDelivery={}",
+                                                playerName,
+                                                packUid,
+                                                setLabel,
+                                                templates.size(),
+                                                PackInventoryUtil.describeStack(bundle),
+                                                describeCardAtSlot(out, slots, RaritySlot.RARE_OR_MYTHIC),
+                                                describeCardAtSlot(out, slots, RaritySlot.FOIL_RANDOM),
+                                                PackInventoryUtil.describeInventoryState(player, preferredReturnSlot(active))
+                                        );
+                                }
 
                                 PackInventoryUtil.DeliveryResult delivery =
                                         PackInventoryUtil.giveOrDrop(
@@ -349,14 +359,17 @@ public final class PackGenerator {
                 ItemStack refund = active.refundPackOne.copy();
                 if (refund.isEmpty()) return PackInventoryUtil.DeliveryResult.failed("empty_refund");
 
-                Mtgcard.LOGGER.info(
-                        "[MTGCard][PackDebug] Attempting immediate refund player={} uid={} preferredSlot={} refund={} inventoryBefore={}",
-                        player.getName().getString(),
-                        active.packUid,
-                        preferredReturnSlot(active),
-                        PackInventoryUtil.describeStack(refund),
-                        PackInventoryUtil.describeInventoryState(player, preferredReturnSlot(active))
-                );
+                boolean packDebug = MtgcardConfig.packDebugEnabled();
+                if (packDebug) {
+                        Mtgcard.LOGGER.info(
+                                "[MTGCard][PackDebug] Attempting immediate refund player={} uid={} preferredSlot={} refund={} inventoryBefore={}",
+                                player.getName().getString(),
+                                active.packUid,
+                                preferredReturnSlot(active),
+                                PackInventoryUtil.describeStack(refund),
+                                PackInventoryUtil.describeInventoryState(player, preferredReturnSlot(active))
+                        );
+                }
                 PackInventoryUtil.DeliveryResult result =
                         PackInventoryUtil.giveOrDrop(
                                 player,
@@ -365,13 +378,15 @@ public final class PackGenerator {
                                 "pack_refund uid=" + active.packUid
                         );
                 if (result.success()) {
-                        Mtgcard.LOGGER.info(
-                                "[MTGCard][PackDebug] Immediate refund delivered player={} uid={} mode={} inventoryAfter={}",
-                                player.getName().getString(),
-                                active.packUid,
-                                result.mode(),
-                                PackInventoryUtil.describeInventoryState(player, preferredReturnSlot(active))
-                        );
+                        if (packDebug) {
+                                Mtgcard.LOGGER.info(
+                                        "[MTGCard][PackDebug] Immediate refund delivered player={} uid={} mode={} inventoryAfter={}",
+                                        player.getName().getString(),
+                                        active.packUid,
+                                        result.mode(),
+                                        PackInventoryUtil.describeInventoryState(player, preferredReturnSlot(active))
+                                );
+                        }
                         return result;
                 }
 

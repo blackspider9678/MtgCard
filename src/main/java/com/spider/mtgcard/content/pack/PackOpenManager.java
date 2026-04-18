@@ -1,6 +1,7 @@
 package com.spider.mtgcard.content.pack;
 
 import com.spider.mtgcard.Mtgcard;
+import com.spider.mtgcard.config.MtgcardConfig;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -33,25 +34,29 @@ public final class PackOpenManager {
         Active a = new Active(id, packUid, refundPackOne, preferredReturnSlot);
         Active existing = ACTIVE.putIfAbsent(id, a);
         if (existing != null) {
-            Mtgcard.LOGGER.info(
-                    "[MTGCard][PackDebug] Active open already exists for player={} existingUid={} requestedUid={} preferredSlot={} activeCount={}",
-                    player.getName().getString(),
-                    existing.packUid,
-                    a.packUid,
-                    preferredReturnSlot,
-                    ACTIVE.size()
-            );
+            if (MtgcardConfig.packDebugEnabled()) {
+                Mtgcard.LOGGER.info(
+                        "[MTGCard][PackDebug] Active open already exists for player={} existingUid={} requestedUid={} preferredSlot={} activeCount={}",
+                        player.getName().getString(),
+                        existing.packUid,
+                        a.packUid,
+                        preferredReturnSlot,
+                        ACTIVE.size()
+                );
+            }
             return false;
         }
 
-        Mtgcard.LOGGER.info(
-                "[MTGCard][PackDebug] Registered active pack open player={} uid={} preferredSlot={} refund={} activeCount={}",
-                player.getName().getString(),
-                a.packUid,
-                preferredReturnSlot,
-                PackInventoryUtil.describeStack(refundPackOne),
-                ACTIVE.size()
-        );
+        if (MtgcardConfig.packDebugEnabled()) {
+            Mtgcard.LOGGER.info(
+                    "[MTGCard][PackDebug] Registered active pack open player={} uid={} preferredSlot={} refund={} activeCount={}",
+                    player.getName().getString(),
+                    a.packUid,
+                    preferredReturnSlot,
+                    PackInventoryUtil.describeStack(refundPackOne),
+                    ACTIVE.size()
+            );
+        }
         return true;
     }
 
@@ -66,13 +71,15 @@ public final class PackOpenManager {
     /** Mark finished successfully. */
     public static void finish(ServerPlayer player) {
         Active removed = ACTIVE.remove(player.getUUID());
-        Mtgcard.LOGGER.info(
-                "[MTGCard][PackDebug] Finished active pack open player={} uid={} cancelled={} activeCount={}",
-                player.getName().getString(),
-                removed == null ? "missing" : removed.packUid,
-                removed != null && removed.cancelled,
-                ACTIVE.size()
-        );
+        if (MtgcardConfig.packDebugEnabled()) {
+            Mtgcard.LOGGER.info(
+                    "[MTGCard][PackDebug] Finished active pack open player={} uid={} cancelled={} activeCount={}",
+                    player.getName().getString(),
+                    removed == null ? "missing" : removed.packUid,
+                    removed != null && removed.cancelled,
+                    ACTIVE.size()
+            );
+        }
     }
 
     /**
@@ -82,10 +89,12 @@ public final class PackOpenManager {
     public static void cancelAndRefund(MinecraftServer server, UUID playerId) {
         Active a = ACTIVE.remove(playerId);
         if (a == null) {
-            Mtgcard.LOGGER.info(
-                    "[MTGCard][PackDebug] Disconnect refund skipped for playerId={} because no active pack was registered",
-                    playerId
-            );
+            if (MtgcardConfig.packDebugEnabled()) {
+                Mtgcard.LOGGER.info(
+                        "[MTGCard][PackDebug] Disconnect refund skipped for playerId={} because no active pack was registered",
+                        playerId
+                );
+            }
             return;
         }
 
@@ -93,14 +102,16 @@ public final class PackOpenManager {
 
         // Save refund into persistent world state so it returns on rejoin of SAME world.
         PackRefundState.get(server).addRefund(playerId, a.refundPackOne);
-        Mtgcard.LOGGER.info(
-                "[MTGCard][PackDebug] Queued disconnect refund playerId={} uid={} preferredSlot={} refund={} activeCount={}",
-                playerId,
-                a.packUid,
-                a.preferredReturnSlot,
-                PackInventoryUtil.describeStack(a.refundPackOne),
-                ACTIVE.size()
-        );
+        if (MtgcardConfig.packDebugEnabled()) {
+            Mtgcard.LOGGER.info(
+                    "[MTGCard][PackDebug] Queued disconnect refund playerId={} uid={} preferredSlot={} refund={} activeCount={}",
+                    playerId,
+                    a.packUid,
+                    a.preferredReturnSlot,
+                    PackInventoryUtil.describeStack(a.refundPackOne),
+                    ACTIVE.size()
+            );
+        }
     }
 
     private PackOpenManager() {}
