@@ -291,10 +291,9 @@ public final class PackGenerator {
                                 }
 
                                 PackInventoryUtil.DeliveryResult delivery =
-                                        PackInventoryUtil.giveOrDrop(
+                                        PackInventoryUtil.ejectLikeBundle(
                                                 player,
                                                 bundle,
-                                                preferredReturnSlot(active),
                                                 "pack_reward uid=" + packUid + " set=" + setLabel
                                         );
                                 if (!delivery.success()) {
@@ -456,6 +455,7 @@ public final class PackGenerator {
                 if (delivery == null) return "was delivered";
 
                 return switch (delivery.mode()) {
+                        case "bundle_eject" -> "was ejected in front of you";
                         case "preferred_slot" -> "was returned to the slot you opened it from";
                         case "inventory", "inventory_unknown" -> "was added to your inventory";
                         case "drop", "inventory_and_drop" -> "was dropped near you";

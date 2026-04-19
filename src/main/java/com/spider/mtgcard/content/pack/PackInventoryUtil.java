@@ -24,6 +24,58 @@ final class PackInventoryUtil {
         return giveOrDrop(player, stack, preferredSlot, "generic");
     }
 
+    static DeliveryResult ejectLikeBundle(ServerPlayer player, ItemStack stack, String context) {
+        if (player == null) return DeliveryResult.failed("no_player");
+        if (stack == null || stack.isEmpty()) return DeliveryResult.failed("empty_stack");
+
+        ItemStack reward = stack.copy();
+        String playerName = player.getName().getString();
+        boolean packDebug = MtgcardConfig.packDebugEnabled();
+        int selectedSlot = player.getInventory().getSelectedSlot();
+
+        if (packDebug) {
+            Mtgcard.LOGGER.info(
+                    "[MTGCard][PackDebug] Bundle-like ejection attempt context={} player={} reward={} inventoryBefore={}",
+                    context,
+                    playerName,
+                    describeStack(reward),
+                    describeInventoryState(player, selectedSlot)
+            );
+        }
+
+        ItemEntity dropped = player.drop(reward, true);
+        sync(player);
+        if (dropped != null) {
+            if (packDebug) {
+                Mtgcard.LOGGER.info(
+                        "[MTGCard][PackDebug] Bundle-like ejection succeeded context={} player={} droppedStack={} dropPos=({}, {}, {}) velocity=({}, {}, {}) inventoryAfter={}",
+                        context,
+                        playerName,
+                        describeStack(reward),
+                        String.format("%.2f", dropped.getX()),
+                        String.format("%.2f", dropped.getY()),
+                        String.format("%.2f", dropped.getZ()),
+                        String.format("%.2f", dropped.getDeltaMovement().x),
+                        String.format("%.2f", dropped.getDeltaMovement().y),
+                        String.format("%.2f", dropped.getDeltaMovement().z),
+                        describeInventoryState(player, selectedSlot)
+                );
+            }
+            return new DeliveryResult(true, "bundle_eject");
+        }
+
+        if (packDebug) {
+            Mtgcard.LOGGER.error(
+                    "[MTGCard][PackDebug] Bundle-like ejection failed context={} player={} rewardRemaining={} inventoryAfter={}",
+                    context,
+                    playerName,
+                    describeStack(reward),
+                    describeInventoryState(player, selectedSlot)
+            );
+        }
+        return DeliveryResult.failed("bundle_eject_failed");
+    }
+
     static DeliveryResult giveOrDrop(ServerPlayer player, ItemStack stack, int preferredSlot, String context) {
         if (player == null) return DeliveryResult.failed("no_player");
         if (stack == null || stack.isEmpty()) return DeliveryResult.failed("empty_stack");
@@ -46,6 +98,7 @@ final class PackInventoryUtil {
         if (isValidPreferredSlot(player, preferredSlot) && player.getInventory().getItem(preferredSlot).isEmpty()) {
             player.getInventory().setItem(preferredSlot, reward);
             player.getInventory().setChanged();
+            syncPlayerInventorySlot(player, preferredSlot);
             sync(player);
             if (packDebug) {
                 Mtgcard.LOGGER.info(
@@ -190,6 +243,24 @@ final class PackInventoryUtil {
     private static void sync(ServerPlayer player) {
         player.inventoryMenu.broadcastChanges();
         player.containerMenu.broadcastChanges();
+    }
+
+    private static void syncPlayerInventorySlot(ServerPlayer player, int slot) {
+        ItemStack synced = player.getInventory().getItem(slot).copy();
+
+        try {
+            player.connection.send(player.getInventory().createInventoryUpdatePacket(slot));
+        } catch (Throwable ignored) {}
+
+        try {
+            player.inventoryMenu.findSlot(player.getInventory(), slot)
+                    .ifPresent(menuSlot -> player.inventoryMenu.setRemoteSlot(menuSlot, synced.copy()));
+        } catch (Throwable ignored) {}
+
+        try {
+            player.containerMenu.findSlot(player.getInventory(), slot)
+                    .ifPresent(menuSlot -> player.containerMenu.setRemoteSlot(menuSlot, synced.copy()));
+        } catch (Throwable ignored) {}
     }
 
     private PackInventoryUtil() {}
