@@ -119,11 +119,11 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         // With your +12 shift, we will set this precisely in init()
     }
 
-    private void sendSearchToServer() {
+    private void sendSearchToServer(boolean rememberSort) {
         if (this.minecraft == null) return;
         String q   = (this.search == null) ? "" : this.search.getValue();
         String dir = (dirAsc ? "asc" : "desc");
-        DBClientPackets.sendSearch(q, orderKey, dir);
+        DBClientPackets.sendSearch(q, orderKey, dir, rememberSort);
     }
 
     private void scheduleAutoSearch() {
@@ -138,7 +138,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
             String q = (this.search == null) ? "" : this.search.getValue();
             if (!q.equals(lastSentQuery)) {
                 lastSentQuery = q;
-                triggerSearchFromUI(); // sends packet to server
+                triggerSearchFromUI(false);
             }
         }
     }
@@ -147,6 +147,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
     protected void containerTick() {
         super.containerTick();
         maybeFireAutoSearch();
+        syncClientSortState();
 
         if (btnRoute != null) {
             boolean hasDeckbox = H().getClientDeckboxCount() > 0;
@@ -211,7 +212,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
             this.search.setValue("");
             this.search.setFocused(true);
             lastSentQuery = "";
-            triggerSearchFromUI();
+            triggerSearchFromUI(false);
         }).bounds(clearX, headerY, clearW, fieldH).build();
         this.addRenderableWidget(this.btnClear);
         this.btnClear.setMessage(Component.literal(CLEAR_GLYPH));
@@ -277,6 +278,8 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
             this.inventoryLabelX = CardDatabaseScreenHandler.DB_GRID_X;
             this.inventoryLabelY = this.imageHeight - 94;
         }
+
+        syncClientSortState();
     }
 
 
@@ -284,43 +287,54 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         return (H().getClientRouteMode() == 1) ? "D" : "P";
     }
 
-    private void triggerSearchFromUI() {
-        String q   = (this.search == null) ? "" : this.search.getValue();
-        String dir = (dirAsc ? "asc" : "desc");
-        DBClientPackets.sendSearch(q, orderKey, dir);
+    private void syncClientSortState() {
+        this.orderKey = H().getClientSortOrder();
+        this.dirAsc = H().isClientSortAscending();
+    }
+
+    private int getScrollContentCount() {
+        int searchTotal = H().getLastSearchTotal();
+        return (searchTotal >= 0) ? searchTotal : H().getClientIntakeCount();
+    }
+
+    private int getScrollRowCount() {
+        return (int) Math.ceil(Math.max(0, getScrollContentCount()) / 9.0);
+    }
+
+    private int getScrollMaxRows() {
+        return Math.max(0, getScrollRowCount() - 6);
+    }
+
+    private int getCurrentScrollRow() {
+        return Math.max(0, H().getClientWindowOffset() / 9);
+    }
+
+    private void sendAbsoluteRowOffset(int rowIndex) {
+        sendAbsoluteOffset(Math.max(0, rowIndex) * 9);
+    }
+
+    private boolean isOverLeftDbPanel(double mx, double my) {
+        return mx >= this.leftPos
+                && mx < this.leftPos + DB_W
+                && my >= this.topPos
+                && my < this.topPos + DB_H;
+    }
+
+    private void triggerSearchFromUI(boolean rememberSort) {
+        sendSearchToServer(rememberSort);
     }
 
     // ---------- Input ----------
     @Override
     public boolean mouseScrolled(double mx, double my, double hx, double vy) {
         if (vy == 0) return false;
-        if (!this.menu.getCarried().isEmpty()) return false;
-
-        int gridX = this.leftPos + CardDatabaseScreenHandler.DB_GRID_X;
-        int gridY = this.topPos + CardDatabaseScreenHandler.DB_GRID_Y;
-        int gridW = 9 * 18;
-        int gridH = 6 * 18;
-
-        boolean overDbGrid =
-                mx >= gridX &&
-                mx < gridX + gridW &&
-                my >= gridY &&
-                my < gridY + gridH;
-
-        boolean overDbSlot =
-                this.hoveredSlot != null &&
-                this.hoveredSlot.index >= 0 &&
-                this.hoveredSlot.index < 54 &&
-                isMouseOverSlotArea(this.hoveredSlot, (int) mx, (int) my);
-
         var scrollbar = intakeScrollbar();
         boolean overScrollbar =
                 scrollbar != null &&
                 (MtgGuiChrome.ptInExpanded(scrollbar.thumb(), mx, my, 1, 0)
                         || MtgGuiChrome.ptInExpanded(scrollbar.track(), mx, my, 1, 0));
 
-        if (!overDbGrid && !overScrollbar) return false;
-        if (overDbSlot && !overScrollbar) return false;
+        if (!isOverLeftDbPanel(mx, my) && !overScrollbar) return false;
 
         int id = (vy < 0) ? CardDatabaseScreenHandler.SCROLL_ROW_DOWN
                 : CardDatabaseScreenHandler.SCROLL_ROW_UP;
@@ -357,12 +371,12 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
                 return true;
             }
             if (scrollbar != null && MtgGuiChrome.ptInExpanded(scrollbar.track(), mouseX, mouseY, 1, 0)) {
-                int cur = H().getClientWindowOffset();
+                int cur = getCurrentScrollRow();
                 int max = scrollbar.maxScroll();
                 if (max > 0) {
-                    int page = 54;
+                    int page = 6;
                     int next = (mouseY < scrollbar.thumb().y()) ? cur - page : cur + page;
-                    sendAbsoluteOffset(Math.max(0, Math.min(max, next)));
+                    sendAbsoluteRowOffset(Math.max(0, Math.min(max, next)));
                 }
                 return true;
             }
@@ -373,13 +387,13 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
             if (max > 0) {
                 int bottom = scrollbar.track().y() + scrollbar.track().h() - scrollbar.thumb().h();
                 if (mouseY >= bottom - 1) {
-                    sendAbsoluteOffset(max);  // jump straight to bottom if you click at the end
+                    sendAbsoluteRowOffset(max);
                 } else {
-                    int cur = H().getClientWindowOffset();
-                    int page = 54;
+                    int cur = getCurrentScrollRow();
+                    int page = 6;
                     int next = (mouseY < scrollbar.thumb().y()) ? cur - page : cur + page;
                     next = Math.max(0, Math.min(max, next));
-                    sendAbsoluteOffset(next);
+                    sendAbsoluteRowOffset(next);
                 }
             }
             return true;
@@ -388,13 +402,13 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
     }
 
     private void drawBottomPadding(GuiGraphics ctx) {
-        final int total = H().getClientIntakeCount();
+        final int total = getScrollContentCount();
         final int offset = H().getClientWindowOffset();
         final int pageSize = 54;   // 6x9 window
         final int cols = 9;
         final int rows = 6;
 
-        final int maxOffset = Math.max(0, total - pageSize);
+        final int maxOffset = getScrollMaxRows() * 9;
         if (offset != maxOffset) return;
 
         final int remaining = Math.max(0, total - offset);
@@ -437,24 +451,11 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
             var scrollbar = intakeScrollbar();
             if (scrollbar == null) return true;
 
-            int max = scrollbar.maxScroll();
-            if (max > 0) {
-                int rawTarget = MtgGuiChrome.scrollFromThumb(scrollbar, (int) click.y(), dragGrabDy);
-                int target;
-                boolean atBottom = rawTarget >= max;
-
-                if (atBottom) {
-                    target = max;
-                } else {
-                    int rowsMax = (int) Math.ceil(max / 9.0);
-                    double t = rawTarget / (double) max;
-                    int rowIndex = (int) Math.round(t * rowsMax);
-                    rowIndex = Math.max(0, Math.min(rowsMax, rowIndex));
-                    target = Math.min(max, rowIndex * 9);
-                }
-
-                if (target != lastSentOffset) {
-                    sendAbsoluteOffset(target);
+            if (scrollbar.maxScroll() > 0) {
+                int targetRow = MtgGuiChrome.scrollFromThumb(scrollbar, (int) click.y(), dragGrabDy);
+                int targetOffset = targetRow * 9;
+                if (targetOffset != lastSentOffset) {
+                    sendAbsoluteOffset(targetOffset);
                 }
             }
             return true;
@@ -487,7 +488,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         int code = key.input();
         if ((code == GLFW.GLFW_KEY_ENTER || code == GLFW.GLFW_KEY_KP_ENTER)
                 && this.search != null && this.search.isFocused()) {
-            triggerSearchFromUI();
+            triggerSearchFromUI(false);
             return true;
         }
 
@@ -759,11 +760,12 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
 
     // ---------- Helpers ----------
     private MtgGuiChrome.Scrollbar intakeScrollbar() {
+        int totalRows = Math.max(1, getScrollRowCount());
         return MtgGuiChrome.layoutScrollbar(
                 new MtgGuiChrome.Rect(trackX - 1, trackY, 4, trackH),
-                Math.max(1, H().getClientIntakeCount()),
-                54,
-                H().getClientWindowOffset(),
+                totalRows,
+                6,
+                getCurrentScrollRow(),
                 12
         );
     }
@@ -866,7 +868,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
 
                 // Fire exactly one search now
                 lastSentQuery = this.search.getValue();
-                triggerSearchFromUI();
+                triggerSearchFromUI(true);
 
                 closeSortMenu();
             }).bounds(x0, y0 + i * rowH, w, rowH).build();

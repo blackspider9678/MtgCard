@@ -6,11 +6,14 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -50,6 +53,20 @@ public class CardDatabaseBlock extends BaseEntityBlock {
     @Override
     public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
         return new CardDatabaseBlockEntity(pos, state);
+    }
+
+    @Override
+    protected InteractionResult useItemOn(ItemStack stack, BlockState state, Level world, BlockPos pos,
+                                          Player player, InteractionHand hand, BlockHitResult hit) {
+        if (stack.isEmpty()) {
+            return useWithoutItem(state, world, pos, player, hit);
+        }
+
+        if (player.isShiftKeyDown() && stack.getItem() instanceof BlockItem) {
+            return InteractionResult.PASS;
+        }
+
+        return useWithoutItem(state, world, pos, player, hit);
     }
 
     @Override

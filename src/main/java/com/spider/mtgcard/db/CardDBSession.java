@@ -302,11 +302,12 @@ public final class CardDBSession implements CardDBView {
 
     @Override
     public void setWindowOffset(int off) {
-        if (projectingSearch) return;
         int newOff = clampOffset(off);
         if (newOff == this.windowOffset) return;
         this.windowOffset = newOff;
-        applyBackingToWindow();
+        if (!projectingSearch) {
+            applyBackingToWindow();
+        }
     }
 
     @Override public void shiftWindow(int delta) { setWindowOffset(windowOffset + delta); }

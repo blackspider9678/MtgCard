@@ -8,13 +8,14 @@ import net.fabricmc.api.EnvType;
 public final class DBClientPackets {
     private DBClientPackets() {}
 
-    public static void sendSearch(String q, String order, String dir) {
+    public static void sendSearch(String q, String order, String dir, boolean rememberSort) {
         if (FabricLoader.getInstance().getEnvironmentType() != EnvType.CLIENT) return;
 
         ClientPlayNetworking.send(new SearchPayload(
                 q == null ? "" : q,
                 order == null ? "name" : order,
-                dir == null ? "asc" : dir
+                dir == null ? "asc" : dir,
+                rememberSort
         ));
     }
     public static void registerClientReceivers() {

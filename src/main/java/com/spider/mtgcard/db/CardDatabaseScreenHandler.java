@@ -63,7 +63,17 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     private java.util.List<com.spider.mtgcard.db.search.SearchEngine.Row> currentView = java.util.List.of();
     private int windowOffset = 0;
 
-    private final SimpleContainerData props = new SimpleContainerData(6);
+    private static final int PROP_INTAKE_COUNT = 0;
+    private static final int PROP_WINDOW_OFFSET = 1;
+    private static final int PROP_SEARCH_TOTAL = 2;
+    private static final int PROP_DECKBOX_COUNT = 3;
+    private static final int PROP_ACTIVE_DECKBOX_TAB = 4;
+    private static final int PROP_ROUTE_MODE = 5;
+    private static final int PROP_SORT_KEY = 6;
+    private static final int PROP_SORT_DIR = 7;
+    private static final int PROP_SORT_ENABLED = 8;
+
+    private final SimpleContainerData props = new SimpleContainerData(9);
     public static final int BTN_STORE_ALL = 10;
     public static final int BTN_TOGGLE_ROUTE = 11;
 
@@ -80,16 +90,96 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     private java.util.List<String> tabCommander = java.util.List.of();
     private java.util.List<String> tabPartner = java.util.List.of();
 
-    public int getClientRouteMode() { return props.get(5); }
-    public int getLastSearchTotal() { return props.get(2); }
-    public int getClientIntakeCount() { return props.get(0); }
-    public int getClientWindowOffset() { return props.get(1); }
-    public int getClientDeckboxCount() { return props.get(3); }
-    public int getClientActiveDeckboxTab() { return props.get(4); }
+    private String activeOrder = "name";
+    private String activeDir = "asc";
+    private boolean sortPinned = false;
+
+    public int getClientRouteMode() { return props.get(PROP_ROUTE_MODE); }
+    public int getLastSearchTotal() { return props.get(PROP_SEARCH_TOTAL); }
+    public int getClientIntakeCount() { return props.get(PROP_INTAKE_COUNT); }
+    public int getClientWindowOffset() { return props.get(PROP_WINDOW_OFFSET); }
+    public int getClientDeckboxCount() { return props.get(PROP_DECKBOX_COUNT); }
+    public int getClientActiveDeckboxTab() { return props.get(PROP_ACTIVE_DECKBOX_TAB); }
+    public String getClientSortOrder() { return sortKeyFromId(props.get(PROP_SORT_KEY)); }
+    public boolean isClientSortAscending() { return props.get(PROP_SORT_DIR) == 0; }
+    public boolean isClientSortPinned() { return props.get(PROP_SORT_ENABLED) != 0; }
 
     public int getClientMaxWindowOffset() {
-        int count = getClientIntakeCount();
-        return Math.max(0, count - 54);
+        return pageAlignedMaxOffset(getClientIntakeCount());
+    }
+
+    private static String normalizeSortKey(String order) {
+        if (order == null || order.isBlank()) return "name";
+        return switch (order.toLowerCase(java.util.Locale.ROOT)) {
+            case "mv", "cmc" -> "mv";
+            case "price", "usd" -> "price";
+            case "type" -> "type";
+            case "power" -> "power";
+            case "toughness" -> "toughness";
+            case "rarity" -> "rarity";
+            default -> "name";
+        };
+    }
+
+    private static String normalizeSortDir(String dir) {
+        return (dir != null && dir.equalsIgnoreCase("desc")) ? "desc" : "asc";
+    }
+
+    private static int sortKeyToId(String order) {
+        return switch (normalizeSortKey(order)) {
+            case "mv" -> 1;
+            case "price" -> 2;
+            case "type" -> 3;
+            case "power" -> 4;
+            case "toughness" -> 5;
+            case "rarity" -> 6;
+            default -> 0;
+        };
+    }
+
+    private static String sortKeyFromId(int id) {
+        return switch (id) {
+            case 1 -> "mv";
+            case 2 -> "price";
+            case 3 -> "type";
+            case 4 -> "power";
+            case 5 -> "toughness";
+            case 6 -> "rarity";
+            default -> "name";
+        };
+    }
+
+    private static int pageAlignedMaxOffset(int totalEntries) {
+        int rowsTotal = (int) Math.ceil(Math.max(0, totalEntries) / (double) DB_COLS);
+        int startRow = Math.max(0, rowsTotal - DB_ROWS);
+        return startRow * DB_COLS;
+    }
+
+    private static int clampPageOffset(int requestedOffset, int totalEntries) {
+        int maxOffset = pageAlignedMaxOffset(totalEntries);
+        int clamped = Math.max(0, Math.min(requestedOffset, maxOffset));
+        return (clamped / DB_COLS) * DB_COLS;
+    }
+
+    private boolean isProjectionActive() {
+        return sortPinned || (activeQuery != null && !activeQuery.isBlank());
+    }
+
+    private int getProjectionTotalCount() {
+        int total = props.get(PROP_SEARCH_TOTAL);
+        return Math.max(0, total);
+    }
+
+    private int nextOffsetForButton(int currentOffset, int totalEntries, int id) {
+        return switch (id) {
+            case SCROLL_ROW_UP -> clampPageOffset(currentOffset - DB_COLS, totalEntries);
+            case SCROLL_ROW_DOWN -> clampPageOffset(currentOffset + DB_COLS, totalEntries);
+            case SCROLL_PAGE_UP -> clampPageOffset(currentOffset - WINDOW_SLOTS, totalEntries);
+            case SCROLL_PAGE_DOWN -> clampPageOffset(currentOffset + WINDOW_SLOTS, totalEntries);
+            case SCROLL_TOP -> 0;
+            case SCROLL_BOTTOM -> pageAlignedMaxOffset(totalEntries);
+            default -> clampPageOffset(currentOffset, totalEntries);
+        };
     }
 
     public void sendDeckboxTabNamesTo(ServerPlayer sp) {
@@ -375,9 +465,46 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
     private void syncPropsFromView() {
         if (view == null) return;
-        props.set(0, view.getIntakeCount());
-        props.set(1, view.getWindowOffset());
+        props.set(PROP_INTAKE_COUNT, view.getIntakeCount());
+        props.set(PROP_WINDOW_OFFSET, view.getWindowOffset());
         this.broadcastChanges();
+    }
+
+    private void syncSortProps() {
+        props.set(PROP_SORT_KEY, sortKeyToId(activeOrder));
+        props.set(PROP_SORT_DIR, "desc".equals(activeDir) ? 1 : 0);
+        props.set(PROP_SORT_ENABLED, sortPinned ? 1 : 0);
+        broadcastChanges();
+    }
+
+    private void loadSortPreference(Player player) {
+        if (!(player instanceof ServerPlayer sp)) {
+            syncSortProps();
+            return;
+        }
+
+        var pref = PlayerCardDBState.get(sp.level()).getSortPreference(sp.getUUID());
+        this.activeOrder = normalizeSortKey(pref.order());
+        this.activeDir = pref.ascending() ? "asc" : "desc";
+        this.sortPinned = pref.enabled();
+        syncSortProps();
+    }
+
+    public void rememberSortPreference(String order, String dir, boolean enabled) {
+        this.activeOrder = normalizeSortKey(order);
+        this.activeDir = normalizeSortDir(dir);
+        this.sortPinned = enabled;
+
+        if (this.playerInvRef != null && this.playerInvRef.player instanceof ServerPlayer sp) {
+            PlayerCardDBState.get(sp.level()).putSortPreference(
+                    sp.getUUID(),
+                    this.activeOrder,
+                    "asc".equals(this.activeDir),
+                    this.sortPinned
+            );
+        }
+
+        syncSortProps();
     }
 
     private void syncDeckboxPropsAndTarget() {
@@ -426,19 +553,20 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         this.playerInvRef = playerInv;
 
         this.addDataSlots(props);
+        loadSortPreference(playerInv.player);
 
-        props.set(3, deckboxPositions.size());
-        props.set(5, 0);
+        props.set(PROP_DECKBOX_COUNT, deckboxPositions.size());
+        props.set(PROP_ROUTE_MODE, 0);
 
-        if (deckboxPositions.isEmpty()) props.set(5, 0);
+        if (deckboxPositions.isEmpty()) props.set(PROP_ROUTE_MODE, 0);
 
-        int tab = props.get(4);
+        int tab = props.get(PROP_ACTIVE_DECKBOX_TAB);
         if (deckboxPositions.isEmpty()) {
             tab = 0;
         } else {
             tab = Math.max(0, Math.min(deckboxPositions.size() - 1, tab));
         }
-        props.set(4, tab);
+        props.set(PROP_ACTIVE_DECKBOX_TAB, tab);
 
         final int x0 = DB_GRID_X;
         final int y0 = DB_GRID_Y;
@@ -515,7 +643,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
             if (deckboxView == null) deckboxView = new DeckboxInventoryView();
 
             if (!playerInv.player.level().isClientSide()) {
-                props.set(4, 0);
+                props.set(PROP_ACTIVE_DECKBOX_TAB, 0);
                 setDeckboxTarget(playerInv.player, 0);
 
                 if (playerInv.player instanceof ServerPlayer sp) {
@@ -593,8 +721,13 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         }
 
         if (view != null) {
-            props.set(0, view.getIntakeCount());
-            props.set(1, view.getWindowOffset());
+            props.set(PROP_INTAKE_COUNT, view.getIntakeCount());
+            props.set(PROP_WINDOW_OFFSET, view.getWindowOffset());
+        }
+
+        if (!playerInv.player.level().isClientSide() && view != null && sortPinned) {
+            view.setWindowOffset(0);
+            reprojectCurrentPage();
         }
 
         this.broadcastChanges();
@@ -608,31 +741,22 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         if (this.view == null) return;
 
         setActiveQuery(q);
-        boolean clear = (q == null) || q.isBlank();
-        if (clear) {
+        this.activeOrder = normalizeSortKey(order);
+        this.activeDir = normalizeSortDir(dir);
+        syncSortProps();
+
+        if (!isProjectionActive()) {
             view.clearSearchProjection();
-            props.set(2, -1);
+            props.set(PROP_SEARCH_TOTAL, -1);
             view.setWindowOffset(0);
-            props.set(1, 0);
+            props.set(PROP_WINDOW_OFFSET, 0);
             syncPropsFromView();
             return;
         }
 
-        final int limit = 54;
-        final int offset = 0;
-        var parsed = com.spider.mtgcard.db.search.ScryfallQuery.parse(q, limit, offset, order, dir);
-        var page = com.spider.mtgcard.db.search.SearchEngine.search(view.copyIntakeAll(), parsed);
-
-        var toShow = new java.util.ArrayList<ItemStack>(Math.min(54, page.items().size()));
-        for (var row : page.items()) {
-            toShow.add(row.stack == null ? ItemStack.EMPTY : row.stack.copy());
-        }
-
         view.setWindowOffset(0);
-        props.set(1, 0);
-        view.projectSearchResults(toShow);
-        props.set(2, page.total());
-        syncPropsFromView();
+        props.set(PROP_WINDOW_OFFSET, 0);
+        reprojectCurrentPage();
     }
 
     @Override
@@ -644,8 +768,8 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
             if (deckboxPositions.isEmpty()) return false;
 
             tab = Math.max(0, Math.min(deckboxPositions.size() - 1, tab));
-            props.set(4, tab);
-            if (deckboxPositions.isEmpty()) props.set(5, 0);
+            props.set(PROP_ACTIVE_DECKBOX_TAB, tab);
+            if (deckboxPositions.isEmpty()) props.set(PROP_ROUTE_MODE, 0);
 
             setDeckboxTarget(player, tab);
             if (player instanceof ServerPlayer sp) {
@@ -656,8 +780,14 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         }
 
         if (id >= SET_OFFSET_BASE) {
-            view.setWindowOffset(id - SET_OFFSET_BASE);
-            syncPropsFromView();
+            int requestedOffset = id - SET_OFFSET_BASE;
+            if (isProjectionActive()) {
+                view.setWindowOffset(clampPageOffset(requestedOffset, getProjectionTotalCount()));
+                reprojectCurrentPage();
+            } else {
+                view.setWindowOffset(requestedOffset);
+                syncPropsFromView();
+            }
             return true;
         }
 
@@ -668,32 +798,41 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
         if (id == BTN_TOGGLE_ROUTE) {
             if (deckboxPositions.isEmpty()) {
-                props.set(5, 0);
+                props.set(PROP_ROUTE_MODE, 0);
                 broadcastChanges();
                 return true;
             }
-            props.set(5, (props.get(5) == 1) ? 0 : 1);
+            props.set(PROP_ROUTE_MODE, (props.get(PROP_ROUTE_MODE) == 1) ? 0 : 1);
             broadcastChanges();
             return true;
         }
 
-        switch (id) {
-            case SCROLL_ROW_UP -> view.shiftWindow(-9);
-            case SCROLL_ROW_DOWN -> view.shiftWindow(+9);
-            case SCROLL_PAGE_UP -> view.shiftWindow(-WINDOW_SLOTS);
-            case SCROLL_PAGE_DOWN -> view.shiftWindow(+WINDOW_SLOTS);
-            case SCROLL_TOP -> view.setWindowOffset(0);
-            case SCROLL_BOTTOM -> view.setWindowOffset(view.getMaxWindowOffset());
-            default -> {
-                return false;
+        if (id == SCROLL_ROW_UP || id == SCROLL_ROW_DOWN || id == SCROLL_PAGE_UP
+                || id == SCROLL_PAGE_DOWN || id == SCROLL_TOP || id == SCROLL_BOTTOM) {
+            if (isProjectionActive()) {
+                int nextOffset = nextOffsetForButton(view.getWindowOffset(), getProjectionTotalCount(), id);
+                view.setWindowOffset(nextOffset);
+                reprojectCurrentPage();
+            } else {
+                switch (id) {
+                    case SCROLL_ROW_UP -> view.shiftWindow(-DB_COLS);
+                    case SCROLL_ROW_DOWN -> view.shiftWindow(+DB_COLS);
+                    case SCROLL_PAGE_UP -> view.shiftWindow(-WINDOW_SLOTS);
+                    case SCROLL_PAGE_DOWN -> view.shiftWindow(+WINDOW_SLOTS);
+                    case SCROLL_TOP -> view.setWindowOffset(0);
+                    case SCROLL_BOTTOM -> view.setWindowOffset(view.getMaxWindowOffset());
+                    default -> {
+                    }
+                }
+
+                props.set(PROP_SEARCH_TOTAL, -1);
+                broadcastChanges();
+                syncPropsFromView();
             }
+            return true;
         }
 
-        var results = runSearch(null, activeQuery, new com.spider.mtgcard.db.search.PageCursor(0, 54));
-        props.set(2, results.total);
-        broadcastChanges();
-        syncPropsFromView();
-        return true;
+        return false;
     }
 
     public com.spider.mtgcard.db.search.SearchResults runSearch(
@@ -711,8 +850,8 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
         final int offset = (cursor != null) ? cursor.offset() : 0;
         final int limit = 54;
-        final String order = "name";
-        final String dir = "asc";
+        final String order = activeOrder;
+        final String dir = activeDir;
 
         var parsed = com.spider.mtgcard.db.search.ScryfallQuery.parse((q == null ? "" : q), limit, offset, order, dir);
         var page = com.spider.mtgcard.db.search.SearchEngine.search(view.copyIntakeAll(), parsed);
@@ -755,9 +894,19 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         final int limit = 54;
 
         var parsed = com.spider.mtgcard.db.search.ScryfallQuery.parse(
-                (activeQuery == null ? "" : activeQuery), limit, offset, "name", "asc"
+                (activeQuery == null ? "" : activeQuery), limit, offset, activeOrder, activeDir
         );
         var page = com.spider.mtgcard.db.search.SearchEngine.search(view.copyIntakeAll(), parsed);
+
+        int clampedOffset = clampPageOffset(offset, page.total());
+        if (clampedOffset != offset) {
+            view.setWindowOffset(clampedOffset);
+            offset = clampedOffset;
+            parsed = com.spider.mtgcard.db.search.ScryfallQuery.parse(
+                    (activeQuery == null ? "" : activeQuery), limit, offset, activeOrder, activeDir
+            );
+            page = com.spider.mtgcard.db.search.SearchEngine.search(view.copyIntakeAll(), parsed);
+        }
 
         var toShow = new java.util.ArrayList<ItemStack>(Math.min(54, page.items().size()));
         for (var row : page.items()) {
@@ -765,7 +914,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         }
 
         view.projectSearchResults(toShow);
-        props.set(2, page.total());
+        props.set(PROP_SEARCH_TOTAL, page.total());
         broadcastChanges();
         syncPropsFromView();
     }
@@ -988,6 +1137,10 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         }
 
         playerInvRef.setChanged();
+        if (view.isProjectingSearch()) {
+            reprojectCurrentPage();
+            return;
+        }
         broadcastChanges();
         syncPropsFromView();
     }

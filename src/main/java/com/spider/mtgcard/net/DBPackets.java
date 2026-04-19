@@ -22,6 +22,9 @@ public final class DBPackets {
             server.execute(() -> {
                 if (player.containerMenu instanceof com.spider.mtgcard.db.CardDatabaseScreenHandler h) {
                     String q = payload.q() == null ? "" : payload.q();
+                    if (payload.rememberSort()) {
+                        h.rememberSortPreference(payload.order(), payload.dir(), true);
+                    }
                     h.setActiveQuery(q);
                     h.applySearch(q, payload.order(), payload.dir());
                 }

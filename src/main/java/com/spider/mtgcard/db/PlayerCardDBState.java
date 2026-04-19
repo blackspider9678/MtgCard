@@ -25,8 +25,13 @@ import java.util.UUID;
 public final class PlayerCardDBState extends SavedData {
     public static final String NAME = "mtgcard_player_card_db";
 
+    public record SortPreference(String order, boolean ascending, boolean enabled) {
+        public static final SortPreference DEFAULT = new SortPreference("name", true, false);
+    }
+
     /** player UUID -> serialized intake snapshot (compact list entry format) */
     private final Map<UUID, ListTag> intakeByPlayer = new HashMap<>();
+    private final Map<UUID, SortPreference> sortPreferenceByPlayer = new HashMap<>();
 
     /* --------------------- Public API --------------------- */
 
@@ -45,23 +50,41 @@ public final class PlayerCardDBState extends SavedData {
         setDirty();
     }
 
+    public SortPreference getSortPreference(UUID id) {
+        return sortPreferenceByPlayer.getOrDefault(id, SortPreference.DEFAULT);
+    }
+
+    public void putSortPreference(UUID id, String order, boolean ascending, boolean enabled) {
+        String normalizedOrder = (order == null || order.isBlank()) ? "name" : order;
+        sortPreferenceByPlayer.put(id, new SortPreference(normalizedOrder, ascending, enabled));
+        setDirty();
+    }
+
     /* --------------------- NBT write/read --------------------- */
     // NOTE: Don’t annotate with @Override in your mappings.
 
     /** Writes: players:[ {id:"<uuid>", intake:[...]} ] */
     public CompoundTag writeNbt(CompoundTag nbt) {
         var players = new ListTag();
-        for (var e : intakeByPlayer.entrySet()) {
+        java.util.LinkedHashSet<UUID> ids = new java.util.LinkedHashSet<>();
+        ids.addAll(intakeByPlayer.keySet());
+        ids.addAll(sortPreferenceByPlayer.keySet());
+
+        for (UUID id : ids) {
             var c = new CompoundTag();
-            c.putString("id", e.getKey().toString());  // store UUID as string
+            c.putString("id", id.toString());  // store UUID as string
             var listCopy = new ListTag();
-            var src = e.getValue();
+            var src = intakeByPlayer.get(id);
             if (src != null) {
                 for (int i = 0; i < src.size(); i++) {
                     listCopy.add(src.getCompound(i).orElse(new CompoundTag()).copy());
                 }
             }
             c.put("intake", listCopy);
+            var pref = sortPreferenceByPlayer.getOrDefault(id, SortPreference.DEFAULT);
+            c.putString("sort_order", pref.order());
+            c.putBoolean("sort_ascending", pref.ascending());
+            c.putBoolean("sort_enabled", pref.enabled());
             players.add(c);
         }
         nbt.put("players", players);
@@ -90,6 +113,10 @@ public final class PlayerCardDBState extends SavedData {
 
                 var intake = c.getList("intake").orElse(new ListTag());
                 s.intakeByPlayer.put(id, intake);
+                String order = c.getString("sort_order").orElse("name");
+                boolean ascending = c.getBoolean("sort_ascending").orElse(true);
+                boolean enabled = c.getBoolean("sort_enabled").orElse(false);
+                s.sortPreferenceByPlayer.put(id, new SortPreference(order, ascending, enabled));
             }
         }
         return s;
