@@ -1,0 +1,16 @@
+src/main/resources/data/minecraft/tags/block/mineable/axe.json
+src/main/resources/data/minecraft/tags/block/mineable/pickaxe.json
+src/main/resources/data/mtgcard/loot_table/blocks/card_database.json
+src/main/resources/data/mtgcard/loot_table/blocks/card_store.json
+src/main/resources/data/mtgcard/loot_table/blocks/deck_control_polished_andesite.json
+src/main/resources/data/mtgcard/loot_table/blocks/deck_control_polished_blackstone.json
+src/main/resources/data/mtgcard/loot_table/blocks/deck_control_polished_deepslate.json
+src/main/resources/data/mtgcard/loot_table/blocks/deck_control_polished_diorite.json
+src/main/resources/data/mtgcard/loot_table/blocks/deck_control_polished_granite.json
+src/main/resources/data/mtgcard/loot_table/blocks/deck_control_polished_tuff.json
+src/main/resources/data/mtgcard/loot_table/blocks/deck_control_prismarine.json
+src/main/resources/data/mtgcard/loot_table/blocks/deck_control_stone.json
+src/main/resources/data/mtgcard/loot_table/blocks/deckbox.json
+src/main/resources/data/mtgcard/loot_table/blocks/display_block.json
+src/main/resources/data/mtgcard/loot_table/blocks/graveyard.json
+src/main/resources/data/mtgcard/loot_table/blocks/life_point.json
