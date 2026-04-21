@@ -3,10 +3,12 @@ package com.spider.mtgcard.graveyard;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.MenuProvider;
+import net.minecraft.world.Containers;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
@@ -109,5 +111,18 @@ public class GraveyardBlock extends BaseEntityBlock {
         }
 
         return Math.min(15, (int) Math.floor((filled / 100.0) * 15.0));
+    }
+
+    @Override
+    protected void affectNeighborsAfterRemoval(BlockState state, ServerLevel world, BlockPos pos, boolean moved) {
+        if (world.getBlockState(pos).getBlock() != this) {
+            BlockEntity be = world.getBlockEntity(pos);
+            if (be instanceof GraveyardBlockEntity gy) {
+                Containers.dropContents(world, pos, gy);
+                world.updateNeighbourForOutputSignal(pos, this);
+            }
+        }
+
+        super.affectNeighborsAfterRemoval(state, world, pos, moved);
     }
 }

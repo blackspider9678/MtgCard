@@ -13,6 +13,7 @@ import net.minecraft.util.*;
 import net.minecraft.world.Containers;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.MenuProvider;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -40,6 +41,8 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import org.jetbrains.annotations.Nullable;
 
 public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBlock {
+    private static final String LEGACY_BLOCK_ENTITY_TAG = "BlockEntityTag";
+    private static final String ITEM_TINT_KEY = "mtgcard_deckbox_tint";
 
     public static final MapCodec<DeckboxBlock> CODEC = simpleCodec(DeckboxBlock::new);
     public static final BooleanProperty OPEN = BooleanProperty.create("open");
@@ -209,21 +212,15 @@ public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBl
     public BlockState playerWillDestroy(Level world, BlockPos pos, BlockState state, Player player) {
         BlockEntity be = world.getBlockEntity(pos);
 
-        if (!world.isClientSide() && be instanceof DeckboxBlockEntity deckbox && world instanceof ServerLevel sw) {
-            ItemStack drop = new ItemStack(ModBlocks.DECKBOX_ITEM);
-
-            CompoundTag beTag = buildBlockEntityTag(deckbox);
-            CompoundTag carrier = new CompoundTag();
-            carrier.put("BlockEntityTag", beTag);
-            drop.set(DataComponents.CUSTOM_DATA, CustomData.of(carrier));
-
-            Containers.dropItemStack(sw, pos.getX(), pos.getY(), pos.getZ(), drop);
-
-            deckbox.clearForDropNoSync();
-            sw.removeBlockEntity(pos);
-
-            // IMPORTANT: return state directly (do NOT call super) so vanilla doesn't also drop an empty item
-            return state;
+        if (be instanceof DeckboxBlockEntity deckbox) {
+            if (!world.isClientSide() && player.preventsBlockDrops() && !deckbox.isEmpty()) {
+                ItemStack drop = createDeckboxDrop(deckbox);
+                ItemEntity itemEntity = new ItemEntity(world, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, drop);
+                itemEntity.setDefaultPickUpDelay();
+                world.addFreshEntity(itemEntity);
+            } else {
+                deckbox.unpackLootTable(player);
+            }
         }
 
         return super.playerWillDestroy(world, pos, state, player);
@@ -232,22 +229,12 @@ public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBl
     @Override
     public void playerDestroy(Level world, Player player, BlockPos pos,
                            BlockState state, @Nullable BlockEntity blockEntity, ItemStack tool) {
-        // DO NOT remove PLAYER_BREAKING here.
-        // In this version/mappings, afterBreak can run before onStateReplaced.
         super.playerDestroy(world, player, pos, state, blockEntity, tool);
     }
 
-    /**
-     * Stop vanilla from spilling inventory.
-     * - Player break: do NOT call super() (that's where spill happens), keep BE for loot to read.
-     * - Other removals: clear inventory then call super() so there's nothing to spill.
-     */
     @Override
     protected void affectNeighborsAfterRemoval(BlockState state, ServerLevel world, BlockPos pos, boolean moved) {
-        // If we already cleared inventory in onBreak, this won't spill anything.
-        // And it will still handle comparator updates properly.
         Containers.updateNeighboursAfterDestroy(state, world, pos);
-        super.affectNeighborsAfterRemoval(state, world, pos, moved);
     }
 
 
@@ -260,8 +247,8 @@ public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBl
             var comp = stack.get(DataComponents.CUSTOM_DATA);
             if (comp != null) {
                 CompoundTag tag = comp.copyTag();
-                if (tag != null && tag.contains("BlockEntityTag")) {
-                    var beTagOpt = tag.getCompound("BlockEntityTag");
+                if (tag != null && tag.contains(LEGACY_BLOCK_ENTITY_TAG)) {
+                    var beTagOpt = tag.getCompound(LEGACY_BLOCK_ENTITY_TAG);
                     if (beTagOpt.isPresent()) {
                         CompoundTag beTag = beTagOpt.get();
 
@@ -298,6 +285,14 @@ public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBl
                             deckbox.sync();
                         }
                     }
+                } else if (tag != null) {
+                    int tint = tag.getIntOr(ITEM_TINT_KEY, Integer.MIN_VALUE);
+                    if (tint != Integer.MIN_VALUE) {
+                        BlockEntity be = world.getBlockEntity(pos);
+                        if (be instanceof DeckboxBlockEntity deckbox) {
+                            deckbox.setRgbTint(tint);
+                        }
+                    }
                 }
             }
         }
@@ -307,27 +302,14 @@ public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBl
 
     /* ---------------- helpers ---------------- */
 
-    private static CompoundTag buildBlockEntityTag(DeckboxBlockEntity deckbox) {
-        CompoundTag beTag = new CompoundTag();
-        ListTag list = new ListTag();
+    private static ItemStack createDeckboxDrop(DeckboxBlockEntity deckbox) {
+        ItemStack drop = new ItemStack(ModBlocks.DECKBOX_ITEM);
+        drop.applyComponents(deckbox.collectComponents());
 
-        for (int i = 0; i < DeckboxBlockEntity.INVENTORY_SIZE; i++) {
-            ItemStack s = deckbox.getStack(i);
-            if (!s.isEmpty()) {
-                CompoundTag st = new CompoundTag();
-                st.putInt("Slot", i);
-
-                var encoded = ItemStack.CODEC.encodeStart(NbtOps.INSTANCE, s).result();
-                if (encoded.isPresent() && encoded.get() instanceof CompoundTag stackTag) {
-                    st.put("Stack", stackTag);
-                }
-                list.add(st);
-            }
-        }
-
-        beTag.put("Items", list);
-        beTag.putInt("Tint", deckbox.getRgbTint());
-        return beTag;
+        CompoundTag itemData = drop.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
+        itemData.putInt(ITEM_TINT_KEY, deckbox.getRgbTint());
+        drop.set(DataComponents.CUSTOM_DATA, CustomData.of(itemData));
+        return drop;
     }
 
     // 1px inset cube (covers “bulk”, still looks like it fits the model)

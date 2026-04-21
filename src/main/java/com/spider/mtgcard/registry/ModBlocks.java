@@ -132,8 +132,7 @@ public final class ModBlocks {
         CARD_DB = registerBlockItem(
                 "card_database",
                 BlockBehaviour.Properties.of()
-                        .strength(3.5f)
-                        .requiresCorrectToolForDrops(),
+                        .strength(3.5f),
                 CardDatabaseBlock::new
         );
     }

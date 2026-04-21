@@ -1,6 +1,7 @@
 {
   "replace": false,
   "values": [
+    "mtgcard:card_database",
     "mtgcard:deckbox"
   ]
 }

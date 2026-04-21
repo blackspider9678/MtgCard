@@ -1,0 +1,17 @@
+{
+  "replace": false,
+  "values": [
+    "mtgcard:card_store",
+    "mtgcard:deck_control_stone",
+    "mtgcard:deck_control_polished_granite",
+    "mtgcard:deck_control_polished_diorite",
+    "mtgcard:deck_control_polished_andesite",
+    "mtgcard:deck_control_polished_tuff",
+    "mtgcard:deck_control_polished_deepslate",
+    "mtgcard:deck_control_polished_blackstone",
+    "mtgcard:deck_control_prismarine",
+    "mtgcard:display_block",
+    "mtgcard:graveyard",
+    "mtgcard:life_point"
+  ]
+}

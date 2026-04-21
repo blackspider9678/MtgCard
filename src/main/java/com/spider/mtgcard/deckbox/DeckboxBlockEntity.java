@@ -15,6 +15,8 @@ import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.component.DataComponentMap;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.level.storage.ValueInput;
@@ -182,6 +184,7 @@ public class DeckboxBlockEntity extends RandomizableContainerBlockEntity {
     @Override
     protected void saveAdditional(ValueOutput view) {
         super.saveAdditional(view);
+        view.discard("CustomName");
 
         view.putInt("RgbTint", rgbTint);
 
@@ -198,8 +201,30 @@ public class DeckboxBlockEntity extends RandomizableContainerBlockEntity {
     }
 
     @Override
+    public Component getName() {
+        Component commanderName = getCommanderName();
+        return commanderName != null ? commanderName : NAME;
+    }
+
+    @Override
     public Component getDisplayName() {
-        return NAME;
+        return getName();
+    }
+
+    @Override
+    public @Nullable Component getCustomName() {
+        return getCommanderName();
+    }
+
+    @Override
+    protected void collectImplicitComponents(DataComponentMap.Builder builder) {
+        super.collectImplicitComponents(builder);
+        builder.set(DataComponents.CUSTOM_NAME, getCommanderName());
+    }
+
+    @Nullable
+    public Component getCommanderName() {
+        return DeckboxNaming.getCommanderName(this);
     }
 
     /* ---------------- Networking / Sync ---------------- */
@@ -214,12 +239,9 @@ public class DeckboxBlockEntity extends RandomizableContainerBlockEntity {
         return ClientboundBlockEntityDataPacket.create(this);
     }
 
-    public void clearForDropNoSync() {
-        // Clear without triggering sync/comparator updates (we're being removed anyway)
-        for (int i = 0; i < inventory.size(); i++) {
-            inventory.set(i, ItemStack.EMPTY);
-        }
-        setChanged();
+    @Override
+    public void preRemoveSideEffects(BlockPos pos, BlockState state) {
+        // Shulker-like behavior: keep the inventory in the dropped block item.
     }
 
     public void sync() {
