@@ -9,6 +9,7 @@ import com.spider.mtgcard.displayblock.DisplayBlockEntity;
 import com.spider.mtgcard.graveyard.GraveyardBlockEntity;
 import com.spider.mtgcard.life.LifePointRegistry;
 import net.fabricmc.fabric.api.object.builder.v1.block.entity.FabricBlockEntityTypeBuilder;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.Registry;
@@ -44,7 +45,10 @@ public final class ModBlockEntities {
         DECKBOX = Registry.register(
                 BuiltInRegistries.BLOCK_ENTITY_TYPE,
                 id("deckbox"),
-                FabricBlockEntityTypeBuilder.create(DeckboxBlockEntity::new, ModBlocks.DECKBOX).build()
+                FabricBlockEntityTypeBuilder.create(
+                        DeckboxBlockEntity::new,
+                        ModBlocks.getDeckboxBlocks().toArray(Block[]::new)
+                ).build()
         );
 
         DECK_CONTROL = Registry.register(

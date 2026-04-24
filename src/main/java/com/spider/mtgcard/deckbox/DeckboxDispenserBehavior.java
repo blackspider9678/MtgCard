@@ -22,7 +22,7 @@ public class DeckboxDispenserBehavior extends ShulkerBoxDispenseBehavior {
         BlockPos placedPos = pointer.pos().relative(dispFacing);
 
         BlockState placed = pointer.level().getBlockState(placedPos);
-        if (placed.is(ModBlocks.DECKBOX) && placed.hasProperty(DeckboxBlock.FACING)) {
+        if (ModBlocks.isDeckbox(placed) && placed.hasProperty(DeckboxBlock.FACING)) {
             pointer.level().setBlock(
                     placedPos,
                     placed.setValue(DeckboxBlock.FACING, dispFacing).setValue(DeckboxBlock.OPEN, false),

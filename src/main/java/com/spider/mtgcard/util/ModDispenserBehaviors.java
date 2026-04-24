@@ -11,9 +11,8 @@ public final class ModDispenserBehaviors {
 
     public static void init() {
         // Places the deckbox block instead of dropping the item
-        DispenserBlock.registerBehavior(
-                ModBlocks.DECKBOX_ITEM,
-                new DeckboxDispenserBehavior()
-        );
+        for (var deckboxItem : ModBlocks.getDeckboxItems()) {
+            DispenserBlock.registerBehavior(deckboxItem, new DeckboxDispenserBehavior());
+        }
     }
 }

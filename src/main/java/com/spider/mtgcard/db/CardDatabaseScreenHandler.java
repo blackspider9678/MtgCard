@@ -225,7 +225,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         for (Direction d : Direction.values()) {
             BlockPos p = pos.relative(d);
             var st = world.getBlockState(p);
-            if (st != null && st.getBlock() == com.spider.mtgcard.registry.ModBlocks.DECKBOX) {
+            if (com.spider.mtgcard.registry.ModBlocks.isDeckbox(st)) {
                 out.add(p);
             }
         }

@@ -1,6 +1,7 @@
 package com.spider.mtgcard.item;
 
 import com.spider.mtgcard.Mtgcard;
+import com.spider.mtgcard.registry.ModBlocks;
 import net.fabricmc.fabric.api.creativetab.v1.FabricCreativeModeTab;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -27,7 +28,6 @@ public final class ModItemGroup {
                             var card                    = BuiltInRegistries.ITEM.getValue(Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "card"));
                             var card_database           = BuiltInRegistries.ITEM.getValue(Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "card_database"));
                             var life_point              = BuiltInRegistries.ITEM.getValue(Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "life_point"));
-                            var deckbox                 = BuiltInRegistries.ITEM.getValue(Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "deckbox"));
                             var graveyard               = BuiltInRegistries.ITEM.getValue(Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "graveyard"));
                             var card_store              = BuiltInRegistries.ITEM.getValue(Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "card_store"));
                             var display_block           = BuiltInRegistries.ITEM.getValue(Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "display_block"));
@@ -59,7 +59,9 @@ public final class ModItemGroup {
                             if (card                    != Items.AIR) entries.accept(new ItemStack(card));
                             if (card_database           != Items.AIR) entries.accept(new ItemStack(card_database));
                             if (life_point              != Items.AIR) entries.accept(new ItemStack(life_point));
-                            if (deckbox                 != Items.AIR) entries.accept(new ItemStack(deckbox));
+                            for (var deckbox : ModBlocks.getDeckboxItems()) {
+                                if (deckbox != Items.AIR) entries.accept(new ItemStack(deckbox));
+                            }
                             if (graveyard               != Items.AIR) entries.accept(new ItemStack(graveyard));
                             if (card_store              != Items.AIR) entries.accept(new ItemStack(card_store));
                             if (display_block           != Items.AIR) entries.accept(new ItemStack(display_block));
