@@ -1,14 +1,15 @@
 package com.spider.mtgcard.client.input;
 
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 import com.mojang.blaze3d.platform.InputConstants;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Arrays;
 
 public final class ModKeybinds {
     private ModKeybinds() {}
@@ -27,14 +28,14 @@ public final class ModKeybinds {
 
         // IMPORTANT: your constructor order is:
         // (translationKey, InputUtil.Type, keyCode, Category)
-        TOGGLE_CARD_PEEK = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+        TOGGLE_CARD_PEEK = registerKeyMapping(new KeyMapping(
                 "key.mtgcard.toggle_card_peek",
                 InputConstants.Type.KEYSYM,
                 GLFW.GLFW_KEY_F7,
                 cat
         ));
 
-        FLIP_CARD_FACE = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+        FLIP_CARD_FACE = registerKeyMapping(new KeyMapping(
                 "key.mtgcard.flip_card_face",
                 InputConstants.Type.KEYSYM,
                 GLFW.GLFW_KEY_F8,
@@ -42,6 +43,29 @@ public final class ModKeybinds {
         ));
 
         ClientTickEvents.END_CLIENT_TICK.register(ModKeybinds::tick);
+    }
+
+    private static KeyMapping registerKeyMapping(KeyMapping mapping) {
+        try {
+            Minecraft client = Minecraft.getInstance();
+            if (client == null || client.options == null) return mapping;
+
+            Field field = client.options.getClass().getDeclaredField("keyMappings");
+            field.setAccessible(true);
+            KeyMapping[] current = (KeyMapping[]) field.get(client.options);
+            for (KeyMapping existing : current) {
+                if (existing != null && existing.getName().equals(mapping.getName())) {
+                    return existing;
+                }
+            }
+
+            KeyMapping[] next = Arrays.copyOf(current, current.length + 1);
+            next[next.length - 1] = mapping;
+            field.set(client.options, next);
+            KeyMapping.resetMapping();
+        } catch (Throwable ignored) {
+        }
+        return mapping;
     }
 
     private static KeyMapping.Category getOrCreateCategory() {
@@ -70,10 +94,7 @@ public final class ModKeybinds {
             cardPeekEnabled = !cardPeekEnabled;
 
             if (client.player != null) {
-                client.player.displayClientMessage(
-                        Component.literal("Card Peek: " + (cardPeekEnabled ? "ON" : "OFF")),
-                        true
-                );
+                client.player.sendOverlayMessage(Component.literal("Card Peek: " + (cardPeekEnabled ? "ON" : "OFF")));
             }
         }
         while (FLIP_CARD_FACE.consumeClick()) {

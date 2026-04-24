@@ -1,7 +1,7 @@
 package com.spider.mtgcard.db;
 
 import com.mojang.serialization.MapCodec;
-import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
+import net.fabricmc.fabric.api.menu.v1.ExtendedMenuProvider;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
@@ -86,7 +86,7 @@ public class CardDatabaseBlock extends BaseEntityBlock {
 
     @Override
     public MenuProvider getMenuProvider(BlockState state, Level world, BlockPos pos) {
-        return new ExtendedScreenHandlerFactory<>() {
+        return new ExtendedMenuProvider<>() {
             @Override
             public BlockPos getScreenOpeningData(ServerPlayer player) {
                 return pos;

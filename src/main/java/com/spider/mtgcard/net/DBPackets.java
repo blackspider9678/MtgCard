@@ -10,7 +10,7 @@ public final class DBPackets {
 
     /** Call once during common init. */
     public static void registerTypes() {
-        PayloadTypeRegistry.playC2S().register(SearchPayload.ID, SearchPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SearchPayload.ID, SearchPayload.CODEC);
     }
 
     /** Call on server init. */

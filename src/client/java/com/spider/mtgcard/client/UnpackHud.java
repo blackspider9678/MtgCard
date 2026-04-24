@@ -1,15 +1,19 @@
 // src/main/java/com/spider/mtgcard/client/UnpackHud.java
 package com.spider.mtgcard.client;
 
+import com.spider.mtgcard.Mtgcard;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.DeltaTracker;
+import net.minecraft.resources.Identifier;
 
 @Environment(EnvType.CLIENT)
-public final class UnpackHud implements HudRenderCallback {
+public final class UnpackHud implements HudElement {
     private static volatile int progress = 0;
     private static volatile long lastUpdateNs = 0L;
     private static volatile boolean active = false;
@@ -17,7 +21,7 @@ public final class UnpackHud implements HudRenderCallback {
     private static final long KEEP_ALIVE_AFTER_DONE_NS = 2_000_000_000L;
 
     public static void init() {
-        HudRenderCallback.EVENT.register(new UnpackHud());
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "unpack_progress"), new UnpackHud());
     }
 
     public static void setProgressFromServer(int percent) {
@@ -47,6 +51,10 @@ public final class UnpackHud implements HudRenderCallback {
     }
 
     @Override
+    public void extractRenderState(GuiGraphicsExtractor graphics, DeltaTracker tickCounter) {
+        onHudRender(new GuiGraphics(graphics), tickCounter);
+    }
+
     public void onHudRender(GuiGraphics ctx, DeltaTracker tickCounter) {
         var mc = Minecraft.getInstance();
         if (mc == null || mc.player == null) return;

@@ -495,48 +495,48 @@ public final class LifePointPackets {
     // ---------- registration ----------
     public static void registerCommon() {
         // S2C
-        PayloadTypeRegistry.playS2C().register(OpenLifeScreenPayload.ID, OpenLifeScreenPayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(SyncLifePayload.ID, SyncLifePayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(YourPresetIdS2C.ID, YourPresetIdS2C.CODEC);
-        PayloadTypeRegistry.playS2C().register(NearbyResultS2C.ID, NearbyResultS2C.CODEC);
-        PayloadTypeRegistry.playS2C().register(GroupsListS2C.ID, GroupsListS2C.CODEC);
-        PayloadTypeRegistry.playS2C().register(GroupSnapshotS2C.ID, GroupSnapshotS2C.CODEC);
-        PayloadTypeRegistry.playS2C().register(GroupRemovedS2C.ID, GroupRemovedS2C.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(OpenLifeScreenPayload.ID, OpenLifeScreenPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(SyncLifePayload.ID, SyncLifePayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(YourPresetIdS2C.ID, YourPresetIdS2C.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(NearbyResultS2C.ID, NearbyResultS2C.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(GroupsListS2C.ID, GroupsListS2C.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(GroupSnapshotS2C.ID, GroupSnapshotS2C.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(GroupRemovedS2C.ID, GroupRemovedS2C.CODEC);
 
         // C2S
-        PayloadTypeRegistry.playC2S().register(SetNameC2S.ID, SetNameC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(SetLifeC2S.ID, SetLifeC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(AddLifeC2S.ID, AddLifeC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(SetColorC2S.ID, SetColorC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(SetCounterC2S.ID, SetCounterC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(AddCounterC2S.ID, AddCounterC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(ScanNearbyC2S.ID, ScanNearbyC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetNameC2S.ID, SetNameC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetLifeC2S.ID, SetLifeC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(AddLifeC2S.ID, AddLifeC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetColorC2S.ID, SetColorC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetCounterC2S.ID, SetCounterC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(AddCounterC2S.ID, AddCounterC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ScanNearbyC2S.ID, ScanNearbyC2S.CODEC);
 
-        PayloadTypeRegistry.playC2S().register(RequestGroupsC2S.ID, RequestGroupsC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(CreateEmptyGroupC2S.ID, CreateEmptyGroupC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(SaveGroupC2S.ID, SaveGroupC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(DeleteGroupC2S.ID, DeleteGroupC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(RequestGroupsC2S.ID, RequestGroupsC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CreateEmptyGroupC2S.ID, CreateEmptyGroupC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SaveGroupC2S.ID, SaveGroupC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(DeleteGroupC2S.ID, DeleteGroupC2S.CODEC);
 
-        PayloadTypeRegistry.playC2S().register(StartGameC2S.ID, StartGameC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(PassTurnC2S.ID, PassTurnC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(SetDeadC2S.ID, SetDeadC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(StartGameC2S.ID, StartGameC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(PassTurnC2S.ID, PassTurnC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetDeadC2S.ID, SetDeadC2S.CODEC);
 
-        PayloadTypeRegistry.playC2S().register(ResetGameC2S.ID, ResetGameC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(RemoveCounterKeyC2S.ID, RemoveCounterKeyC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(AddCommanderDamageC2S.ID, AddCommanderDamageC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ResetGameC2S.ID, ResetGameC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(RemoveCounterKeyC2S.ID, RemoveCounterKeyC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(AddCommanderDamageC2S.ID, AddCommanderDamageC2S.CODEC);
 
-        PayloadTypeRegistry.playC2S().register(LifePointPackets.SetIconSwapColorC2S.ID, LifePointPackets.SetIconSwapColorC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(LifePointPackets.SetIconSwapColorC2S.ID, LifePointPackets.SetIconSwapColorC2S.CODEC);
 
-        PayloadTypeRegistry.playC2S().register(SetPlayerColorC2S.ID, SetPlayerColorC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(SetIconKeyC2S.ID, SetIconKeyC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(SetFormatKeyC2S.ID, SetFormatKeyC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(SetCommanderLethalC2S.ID, SetCommanderLethalC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(ResetAppearanceC2S.ID, ResetAppearanceC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(SetCounterIconC2S.ID, SetCounterIconC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetPlayerColorC2S.ID, SetPlayerColorC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetIconKeyC2S.ID, SetIconKeyC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetFormatKeyC2S.ID, SetFormatKeyC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetCommanderLethalC2S.ID, SetCommanderLethalC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ResetAppearanceC2S.ID, ResetAppearanceC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetCounterIconC2S.ID, SetCounterIconC2S.CODEC);
 
-        PayloadTypeRegistry.playC2S().register(SavePresetToPlayerC2S.ID, SavePresetToPlayerC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(ApplyPlayerPresetToBlockC2S.ID, ApplyPlayerPresetToBlockC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(ApplyPresetIdToBlockC2S.ID, ApplyPresetIdToBlockC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SavePresetToPlayerC2S.ID, SavePresetToPlayerC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ApplyPlayerPresetToBlockC2S.ID, ApplyPlayerPresetToBlockC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ApplyPresetIdToBlockC2S.ID, ApplyPresetIdToBlockC2S.CODEC);
 
         // ---- receivers ----
         ServerPlayNetworking.registerGlobalReceiver(SetNameC2S.ID, (payload, ctx) ->

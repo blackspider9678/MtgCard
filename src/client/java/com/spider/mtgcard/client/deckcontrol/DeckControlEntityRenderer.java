@@ -4,7 +4,6 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.spider.mtgcard.deckcontrol.DeckControlBlockEntity;
 import com.spider.mtgcard.registry.ModBlocks;
-import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
@@ -12,7 +11,7 @@ import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
-import net.minecraft.client.renderer.state.CameraRenderState;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -91,7 +90,7 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
     public void submit(State state, PoseStack matrices, SubmitNodeCollector queue, CameraRenderState cameraState) {
         if (!state.hasDeckbox && !state.hasGraveyard) return;
 
-        int fullBright = LightTexture.FULL_BRIGHT;
+        int fullBright = 0x00F000F0;
 
         matrices.pushPose();
         try {
@@ -153,7 +152,7 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
             F3 p = rotatePointAroundCenter(lx, ly, lz, facing);
 
             Identifier glyphTex = SGA[i % 26];
-            RenderType layer = RenderTypes.entityCutoutNoCull(glyphTex);
+            RenderType layer = RenderTypes.entityCutout(glyphTex);
 
             matrices.pushPose();
             matrices.translate(p.x, p.y, p.z);

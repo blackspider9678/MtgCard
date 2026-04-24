@@ -110,13 +110,11 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
     private CardDatabaseScreenHandler H() { return (CardDatabaseScreenHandler) this.menu; }
 
     public CardDatabaseScreen(CardDatabaseScreenHandler handler, Inventory inv, Component title) {
-        super(handler, inv, title);
+        super(handler, inv, title, initialImageWidth(handler), DB_H);
+    }
 
-        // Will be finalized in init() based on deckboxes
-        this.imageWidth = DB_W;
-        this.imageHeight = DB_H;
-
-        // With your +12 shift, we will set this precisely in init()
+    private static int initialImageWidth(CardDatabaseScreenHandler handler) {
+        return handler.getClientDeckboxCount() > 0 ? (DB_W + GAP_W + DBX_W) : DB_W;
     }
 
     private void sendSearchToServer(boolean rememberSort) {
@@ -159,10 +157,6 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
     @Override
     protected void init() {
         boolean hasDeckbox = (this.menu.getClientDeckboxCount() > 0);
-
-        // Size depends on whether the right deckbox panel is visible
-        this.imageWidth = hasDeckbox ? (DB_W + GAP_W + DBX_W) : DB_W;
-        this.imageHeight = DB_H;
 
         if (applyAutoFitGuiScaleWithSidePreview(this.imageWidth, this.imageHeight, 180, Math.min(this.imageHeight - 8, 220))) return;
 

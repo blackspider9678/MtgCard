@@ -218,7 +218,7 @@ public final class CardDBState extends net.minecraft.world.level.saveddata.Saved
      */
     public static final SavedDataType<CardDBState> TYPE =
             new SavedDataType<>(
-                    NAME,
+                    Identifier.fromNamespaceAndPath(com.spider.mtgcard.Mtgcard.MOD_ID, NAME),
                     CardDBState::new,
                     CODEC,
                     DataFixTypes.SAVED_DATA_RANDOM_SEQUENCES

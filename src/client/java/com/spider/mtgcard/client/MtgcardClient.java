@@ -24,12 +24,10 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.BlockEntityRendererRegistry;
-import net.fabricmc.fabric.api.client.rendering.v1.BlockRenderLayerMap;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.MenuScreens;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderers;
-import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import net.minecraft.client.renderer.entity.EntityRenderers;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWDropCallback;
@@ -91,18 +89,6 @@ public final class MtgcardClient implements ClientModInitializer {
                 com.spider.mtgcard.client.displayblock.DisplayBlockEntityRenderer::new
         );
         BlockEntityRendererRegistry.register(ModBlockEntities.CARD_DB, CardDatabaseBlockEntityRenderer::new);
-
-        // Render layers (safe either place, but fine here too)
-        BlockRenderLayerMap.putBlock(LifePointRegistry.LIFE_POINT_BLOCK, ChunkSectionLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECKBOX, ChunkSectionLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_STONE, ChunkSectionLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_GRANITE, ChunkSectionLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_DIORITE, ChunkSectionLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_ANDESITE, ChunkSectionLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_TUFF, ChunkSectionLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_DEEPSLATE, ChunkSectionLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_BLACKSTONE, ChunkSectionLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_PRISMARINE, ChunkSectionLayer.CUTOUT);
 
         BlockEntityRenderers.register(
                 ModBlockEntities.DECK_CONTROL,

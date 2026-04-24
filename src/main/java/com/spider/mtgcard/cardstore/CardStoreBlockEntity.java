@@ -5,7 +5,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.spider.mtgcard.deckbox.DeckboxBlockEntity;
 import com.spider.mtgcard.deckbox.DeckboxInsertUtil;
 import com.spider.mtgcard.registry.ModBlockEntities;
-import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
+import net.fabricmc.fabric.api.menu.v1.ExtendedMenuProvider;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
@@ -33,7 +33,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
 
-public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenHandlerFactory<CardStoreScreenHandler.OpenData> {
+public class CardStoreBlockEntity extends BlockEntity implements ExtendedMenuProvider<CardStoreScreenHandler.OpenData> {
 
     private static final Component TITLE = Component.literal("Card Store");
     private static final Codec<UUID> UUID_CODEC = Codec.STRING.xmap(UUID::fromString, UUID::toString);

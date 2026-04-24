@@ -25,7 +25,7 @@ public final class GuideBookPackets {
     }
 
     public static void init() {
-        PayloadTypeRegistry.playS2C().register(OpenPayload.ID, OpenPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(OpenPayload.ID, OpenPayload.CODEC);
     }
 
     public static void sendOpen(ServerPlayer player) {

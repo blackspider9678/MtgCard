@@ -7,7 +7,7 @@ import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.db.search.CardMeta;
 import com.spider.mtgcard.deckbox.DeckboxBlockEntity;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
+import net.fabricmc.fabric.api.menu.v1.ExtendedMenuProvider;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
@@ -32,7 +32,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.*;
 
-public class DeckControlBlockEntity extends BlockEntity implements ExtendedScreenHandlerFactory<BlockPos> {
+public class DeckControlBlockEntity extends BlockEntity implements ExtendedMenuProvider<BlockPos> {
 
     public static final int LIBRARY_SLOTS = DeckboxBlockEntity.MAIN_SLOTS; // 99
 
@@ -837,7 +837,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         // Send UI overlay using COPIES (never empties)
         var copies = revealed.stream().filter(s -> s != null && !s.isEmpty()).map(ItemStack::copy).toList();
 
-        player.connection.send(ServerPlayNetworking.createS2CPacket(
+        player.connection.send(ServerPlayNetworking.createClientboundPacket(
                 new DeckControlPackets.CascadeS2C(this.worldPosition, mv, hitIndex, copies)
         ));
 
@@ -1178,8 +1178,8 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
             }
         }
 
-        double j1 = (world.random.nextDouble() - 0.5) * jitter;
-        double j2 = (world.random.nextDouble() - 0.5) * jitter;
+        double j1 = (world.getRandom().nextDouble() - 0.5) * jitter;
+        double j2 = (world.getRandom().nextDouble() - 0.5) * jitter;
 
         double vx = facing.getStepX() * popOut + a.getStepX() * j1 + b.getStepX() * j2;
         double vy = facing.getStepY() * popOut + a.getStepY() * j1 + b.getStepY() * j2;

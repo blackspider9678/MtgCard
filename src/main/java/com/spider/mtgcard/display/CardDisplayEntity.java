@@ -200,7 +200,6 @@ public class CardDisplayEntity extends HangingEntity {
         // You can play a sound or validate here later.
     }
 
-    @Override
     public void dropItem(ServerLevel world, @Nullable Entity breaker) {
         // Called when the hanging entity is broken “properly”.
         dropAsItem(world, null);
@@ -224,7 +223,7 @@ public class CardDisplayEntity extends HangingEntity {
     }
 
     @Override
-    public InteractionResult interact(net.minecraft.world.entity.player.Player player, InteractionHand hand) {
+    public InteractionResult interact(net.minecraft.world.entity.player.Player player, InteractionHand hand, Vec3 location) {
         if (this.level().isClientSide()) return InteractionResult.SUCCESS;
 
         if (player.isShiftKeyDown()) {

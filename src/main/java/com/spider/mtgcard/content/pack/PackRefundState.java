@@ -38,7 +38,7 @@ public final class PackRefundState extends SavedData {
 
     private static final SavedDataType<PackRefundState> TYPE =
             new SavedDataType<>(
-                    KEY,
+                    Identifier.fromNamespaceAndPath(com.spider.mtgcard.Mtgcard.MOD_ID, KEY),
                     PackRefundState::new,
                     CODEC,
                     null

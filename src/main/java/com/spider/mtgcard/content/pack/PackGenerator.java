@@ -12,6 +12,7 @@ import com.spider.mtgcard.util.CardStackBuilders;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.component.BundleContents;
 import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.ItemStackTemplate;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.nbt.CompoundTag;
@@ -271,8 +272,10 @@ public final class PackGenerator {
 
                                 ItemStack bundle = new ItemStack(Items.BUNDLE);
 
-                                List<ItemStack> templates = out.stream()
+                                List<ItemStackTemplate> templates = out.stream()
                                         .map(ItemStack::copy)
+                                        .filter(st -> !st.isEmpty())
+                                        .map(ItemStackTemplate::fromNonEmptyStack)
                                         .toList();
 
                                 bundle.set(DataComponents.BUNDLE_CONTENTS, new BundleContents(templates));

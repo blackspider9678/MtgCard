@@ -28,6 +28,8 @@ public class GraveyardScreen extends LegacyContainerScreen<GraveyardScreenHandle
     private static final int GRID_SIZE = 100;
     private static final int GRAVE_START = 0;
     private static final int EXILE_START = 100;
+    private static final int BASE_W = 8 + (10 * 18) + 18 + (10 * 18) + 8;
+    private static final int BASE_H = 24 + (10 * 18) + 22 + (4 * 18) + 12;
 
     // --- Preview state (same as Deckbox) ---
     private static final int PREVIEW_W = 260;
@@ -47,13 +49,7 @@ public class GraveyardScreen extends LegacyContainerScreen<GraveyardScreenHandle
 
 
     public GraveyardScreen(GraveyardScreenHandler handler, Inventory inv, Component title) {
-        super(handler, inv, title);
-
-        int baseW = 8 + (10 * 18) + 18 + (10 * 18) + 8;   // 394
-        int baseH = 24 + (10 * 18) + 22 + (4 * 18) + 12;
-
-        this.imageWidth = baseW;        // ✅ main UI only
-        this.imageHeight = baseH;
+        super(handler, inv, title, BASE_W, BASE_H);
     }
 
     @Override

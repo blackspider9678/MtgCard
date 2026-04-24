@@ -144,7 +144,7 @@ public final class GuideBookScreen extends LegacyScreen {
 
         // Search label + widget
         ctx.drawString(font, Component.translatable("guide.mtgcard.search"), sidebarX + padding, sidebarY + padding + 20, 0xFFB0B0B0);
-        search.render(ctx, mouseX, mouseY, delta);
+        search.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
 
         // Category tabs (simple text buttons)
         for (GuideCategory cat : TAB_ORDER) {

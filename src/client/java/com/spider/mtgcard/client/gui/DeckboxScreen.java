@@ -43,9 +43,7 @@ public class DeckboxScreen extends LegacyContainerScreen<DeckboxScreenHandler> {
     }
 
     public DeckboxScreen(DeckboxScreenHandler handler, Inventory inv, Component title) {
-        super(handler, inv, title);
-        this.imageWidth = 212;
-        this.imageHeight = 310;
+        super(handler, inv, title, 212, 310);
     }
 
     @Override

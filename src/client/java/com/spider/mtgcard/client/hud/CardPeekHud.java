@@ -1,20 +1,24 @@
 package com.spider.mtgcard.client.hud;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.client.input.ModKeybinds;
 import com.spider.mtgcard.item.CardItem;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
 
-public final class CardPeekHud implements HudRenderCallback {
+public final class CardPeekHud implements HudElement {
 
     // 0..1 animation progress
     private float t = 0f;
@@ -31,10 +35,14 @@ public final class CardPeekHud implements HudRenderCallback {
     private static final int HOTBAR_LIFT = 24; // keeps it off the hotbar area
 
     public static void init() {
-        HudRenderCallback.EVENT.register(new CardPeekHud());
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "card_peek"), new CardPeekHud());
     }
 
     @Override
+    public void extractRenderState(GuiGraphicsExtractor graphics, DeltaTracker tickCounter) {
+        onHudRender(new GuiGraphics(graphics), tickCounter);
+    }
+
     public void onHudRender(GuiGraphics ctx, DeltaTracker tickCounter) {
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.player == null) return;

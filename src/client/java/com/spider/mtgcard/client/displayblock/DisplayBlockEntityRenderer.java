@@ -3,7 +3,7 @@ package com.spider.mtgcard.client.displayblock;
 import com.spider.mtgcard.client.life.LifePointClientState;
 import com.spider.mtgcard.displayblock.DisplayBlock;
 import com.spider.mtgcard.displayblock.DisplayBlockEntity;
-import net.minecraft.client.renderer.state.CameraRenderState;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;

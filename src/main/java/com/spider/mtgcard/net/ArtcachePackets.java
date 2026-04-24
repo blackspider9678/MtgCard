@@ -37,7 +37,7 @@ public final class ArtcachePackets {
 
     /** Call from your ModInitializer (common). */
     public static void registerCommon() {
-        PayloadTypeRegistry.playS2C().register(ArtcacheRequest.ID, ArtcacheRequest.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(ArtcacheRequest.ID, ArtcacheRequest.CODEC);
     }
 
     private ArtcachePackets() {}

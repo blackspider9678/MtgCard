@@ -286,7 +286,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     }
 
     @Override
-    public void clicked(int slotIndex, int button, ClickType action, Player player) {
+    public void clicked(int slotIndex, int button, ContainerInput action, Player player) {
         if (isWindowSlot(slotIndex)) {
             if (player.level().isClientSide()) {
                 return;
@@ -296,12 +296,12 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
                 return;
             }
 
-            if (action == ClickType.QUICK_MOVE) {
+            if (action == ContainerInput.QUICK_MOVE) {
                 handleWindowQuickMove(slotIndex, player, sess);
                 return;
             }
 
-            if (action == ClickType.PICKUP) {
+            if (action == ContainerInput.PICKUP) {
                 handleWindowPickup(slotIndex, button, player, sess);
                 return;
             }

@@ -79,6 +79,9 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     // ---- virtual GUI size (MUST match ScreenHandler) ----
     private static final int GUI_W = 426;
     private static final int GUI_H = 240;
+    private static final int DESIGN_W = 1024;
+    private static final int DESIGN_H = 576;
+    private static final float MAX_LAYOUT_SCALE = 2.0f;
 
     // ---- layout constants ----
     private static final int M = 10;
@@ -89,6 +92,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     // Fullscreen layout (independent of handler virtual GUI)
     private int fsX, fsY, fsW, fsH;
+    private float layoutScale = 1f;
 
     // ---- computed layout ----
     private int topX, topY, topW;
@@ -126,15 +130,49 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     private static final int GRID_GAP = 12;
     private static final int PAGER_H = 22;
 
-    private int previewBoxX() { return leftX + LEFT_INNER_PAD; }
-    private int previewBoxY() { return leftY + LEFT_INNER_PAD; }
-    private int previewBoxW() { return PREVIEW_COL_W; }
-    private int previewBoxH() { return leftH - (LEFT_INNER_PAD * 2); }
+    private void recomputeLayoutScale() {
+        float sx = this.width / (float) DESIGN_W;
+        float sy = this.height / (float) DESIGN_H;
+        layoutScale = Math.min(MAX_LAYOUT_SCALE, Math.max(1f, Math.min(sx, sy)));
+    }
 
-    private int gridAreaX() { return previewBoxX() + previewBoxW() + GRID_GAP; }
-    private int gridAreaY() { return leftY + LEFT_INNER_PAD; }
-    private int gridAreaW() { return (leftX + leftW - LEFT_INNER_PAD) - gridAreaX(); }
-    private int gridAreaH() { return leftH - (LEFT_INNER_PAD * 2); }
+    private int ui(int value) {
+        return Math.max(1, Math.round(value * layoutScale));
+    }
+
+    private int margin() { return ui(M); }
+    private int topBarH() { return ui(TOP_H); }
+    private int infoBarH() { return ui(INFO_H); }
+    private int layoutGap() { return ui(GAP); }
+    private int rightPad() { return ui(RIGHT_PAD); }
+    private int rightPanelW() { return INV_W + (rightPad() * 2); }
+    private int previewColW() { return ui(PREVIEW_COL_W); }
+    private int leftInnerPad() { return ui(LEFT_INNER_PAD); }
+    private int gridGap() { return ui(GRID_GAP); }
+    private int pagerH() { return ui(PAGER_H); }
+    private int cartHeaderH() { return ui(CART_HEADER_H); }
+    private int cartRowH() { return ui(CART_ROW_H); }
+    private int quantityButtonSize() { return ui(QBTN); }
+    private int quantityButtonGap() { return ui(QBTN_GAP); }
+    private int sortButtonH() { return ui(SORT_BTN_H); }
+    private int sortMenuItemH() { return ui(SORT_MENU_ITEM_H); }
+    private int sortMenuPad() { return ui(SORT_MENU_PAD); }
+    private int cellSize() { return ui(CELL); }
+    private int cellPad() { return ui(CELL_PAD); }
+    private int thumbSize() { return ui(THUMB); }
+    private int cartThumbSize() { return ui(CART_THUMB); }
+    private int cartThumbPad() { return ui(CART_THUMB_PAD); }
+    private int cartTextPad() { return ui(CART_TEXT_PAD); }
+
+    private int previewBoxX() { return leftX + leftInnerPad(); }
+    private int previewBoxY() { return leftY + leftInnerPad(); }
+    private int previewBoxW() { return previewColW(); }
+    private int previewBoxH() { return leftH - (leftInnerPad() * 2); }
+
+    private int gridAreaX() { return previewBoxX() + previewBoxW() + gridGap(); }
+    private int gridAreaY() { return leftY + leftInnerPad(); }
+    private int gridAreaW() { return (leftX + leftW - leftInnerPad()) - gridAreaX(); }
+    private int gridAreaH() { return leftH - (leftInnerPad() * 2); }
 
     private UUID activePrintsRequest = new UUID(0L, 0L);
     private boolean gridLoading = false;
@@ -154,14 +192,14 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     private int lastKnownTotalForQuery = 0;
 
     // pager sits at bottom of grid column
-    private int gridContentH() { return Math.max(0, gridAreaH() - PAGER_H - 6); }
+    private int gridContentH() { return Math.max(0, gridAreaH() - pagerH() - ui(6)); }
 
     private int invPanelY() {
-        return (rightY + rightH) - RIGHT_PAD - INV_H - 14;
+        return (rightY + rightH) - rightPad() - INV_H - ui(14);
     }
 
     private int invPanelH() {
-        return INV_H + 14 + RIGHT_PAD;
+        return INV_H + ui(14) + rightPad();
     }
 
     private Button sortBtn;
@@ -191,12 +229,13 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     }
 
     private int computeGridCapacity() {
-        int gridW = gridAreaW() - 16;
-        int gridH = gridContentH() - 8;
+        int gridW = gridAreaW() - ui(16);
+        int gridH = gridContentH() - ui(8);
         if (gridW <= 0 || gridH <= 0) return 1;
 
-        int cols = Math.max(1, gridW / CELL);
-        int rows = Math.max(1, gridH / CELL);
+        int cell = cellSize();
+        int cols = Math.max(1, gridW / cell);
+        int rows = Math.max(1, gridH / cell);
 
         int cap = cols * rows;
         return Math.max(1, Math.min(MAX_PAGE_SIZE, cap));
@@ -307,20 +346,20 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     private int clearBtnY() {
         // same Y as addToCart location: directly above inventory block
-        int desiredInvTopY = (rightY + rightH) - RIGHT_PAD - INV_H;
-        return desiredInvTopY - 10 - 20; // 20 is button height
+        int desiredInvTopY = (rightY + rightH) - rightPad() - INV_H;
+        return desiredInvTopY - ui(10) - ui(20);
     }
 
     // CART list now lives in the LEFT panel's grid box area
-    private int cartListX() { return gridAreaX() + 8; }
-    private int cartListY() { return gridAreaY() + 8; }
-    private int cartListW() { return gridAreaW() - 16; }
-    private int cartListH() { return gridAreaH() - 16; } // full area (includes header)
-    private int cartRowsY() { return cartListY() + CART_HEADER_H; }
-    private int cartRowsH() { return Math.max(0, cartListH() - CART_HEADER_H); }// fill the whole grid box
+    private int cartListX() { return gridAreaX() + ui(8); }
+    private int cartListY() { return gridAreaY() + ui(8); }
+    private int cartListW() { return gridAreaW() - ui(16); }
+    private int cartListH() { return gridAreaH() - ui(16); } // full area (includes header)
+    private int cartRowsY() { return cartListY() + cartHeaderH(); }
+    private int cartRowsH() { return Math.max(0, cartListH() - cartHeaderH()); }// fill the whole grid box
 
     private int cartMaxScrollPx() {
-        int contentH = cart.size() * CART_ROW_H;
+        int contentH = cart.size() * cartRowH();
         int viewH = cartRowsH();
         return Math.max(0, contentH - viewH);
     }
@@ -340,7 +379,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         if (!isMouseOverCartList(mx, my)) return -1;
 
         int localY = (my - cartRowsY()) + cartScrollPx;
-        int idx = localY / CART_ROW_H;
+        int idx = localY / cartRowH();
 
         return (idx >= 0 && idx < cart.size()) ? idx : -1;
     }
@@ -363,10 +402,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
 
     public CardStoreScreen(CardStoreScreenHandler handler, Inventory inv, Component title) {
-        super(handler, inv, title);
-
-        this.imageWidth = 352;   // adjust later to match your art
-        this.imageHeight = 256;  // includes player inventory area
+        super(handler, inv, title, GUI_W, GUI_H);
         this.inventoryLabelY = this.imageHeight - 94;
         loadSavedCart(handler.initialCart());
     }
@@ -439,13 +475,16 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     private static final int THUMB = 32;     // thumb draw size
 
     private void drawGrid(GuiGraphics ctx, int mouseX, int mouseY) {
-        int gridX = gridAreaX() + 8;
-        int gridY = gridAreaY() + 8;
-        int gridW = gridAreaW() - 16;
-        int gridH = gridContentH() - 8;
+        int gridX = gridAreaX() + ui(8);
+        int gridY = gridAreaY() + ui(8);
+        int gridW = gridAreaW() - ui(16);
+        int gridH = gridContentH() - ui(8);
+        int cell = cellSize();
+        int cellPad = cellPad();
+        int thumb = thumbSize();
 
-        int cols = Math.max(1, gridW / CELL);
-        int rowsVisible = Math.max(1, gridH / CELL);
+        int cols = Math.max(1, gridW / cell);
+        int rowsVisible = Math.max(1, gridH / cell);
         int maxVisible = cols * rowsVisible;
 
         int count = Math.min(grid.size(), maxVisible);
@@ -454,11 +493,11 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             int col = i % cols;
             int row = i / cols;
 
-            int cx = gridX + col * CELL;
-            int cy = gridY + row * CELL;
+            int cx = gridX + col * cell;
+            int cy = gridY + row * cell;
 
             int bg = (i == selectedIndex) ? 0x66FFFFFF : 0x33000000;
-            ctx.fill(cx, cy, cx + CELL - CELL_PAD, cy + CELL - CELL_PAD, bg);
+            ctx.fill(cx, cy, cx + cell - cellPad, cy + cell - cellPad, bg);
 
             ItemStack s = grid.get(i).stack;
             var tex = CardArtManager.getOrRequestFace(s, 0);
@@ -468,15 +507,15 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
                 int texH = tex.texH();
 
                 float aspect = (float) texW / (float) texH;
-                int drawW = THUMB;
+                int drawW = thumb;
                 int drawH = (int) (drawW / aspect);
-                if (drawH > THUMB) {
-                    drawH = THUMB;
+                if (drawH > thumb) {
+                    drawH = thumb;
                     drawW = (int) (drawH * aspect);
                 }
 
-                int dx = cx + (CELL - drawW) / 2;
-                int dy = cy + (CELL - drawH) / 2;
+                int dx = cx + (cell - drawW) / 2;
+                int dy = cy + (cell - drawH) / 2;
 
                 float sx = (float) drawW / (float) texW;
                 float sy = (float) drawH / (float) texH;
@@ -496,7 +535,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
                 );
                 m.popMatrix();
             } else {
-                ctx.renderItem(s, cx + 4, cy + 4);
+                ctx.renderItem(s, cx + ui(4), cy + ui(4));
             }
         }
     }
@@ -549,10 +588,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         if (applyFixedGuiScale(2)) return;
 
         super.init();
-
-        // keep virtual GUI size (slot coords are based on this)
-        this.imageWidth = GUI_W;
-        this.imageHeight = GUI_H;
+        recomputeLayoutScale();
 
         // Fullscreen panel space
         fsX = 0;
@@ -561,33 +597,39 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         fsH = this.height;
 
         // ----- Panels (FULL HEIGHT) -----
-        topX = M;
-        topY = M;
-        topW = fsW - (M * 2);
+        int margin = margin();
+        int topBarH = topBarH();
+        int infoBarH = infoBarH();
+        int gap = layoutGap();
+        int rightPad = rightPad();
+
+        topX = margin;
+        topY = margin;
+        topW = fsW - (margin * 2);
 
         infoX = topX;
-        infoY = topY + TOP_H + 2;
+        infoY = topY + topBarH + ui(2);
         infoW = topW;
 
         contentX = topX;
-        contentY = infoY + INFO_H + 6;
+        contentY = infoY + infoBarH + ui(6);
         contentW = topW;
-        contentH = (fsH - M) - contentY; // ✅ no reserveBottom, use full height
+        contentH = (fsH - margin) - contentY;
 
         // Right panel fixed width, left panel takes remaining
-        rightW = RIGHT_W;
-        rightX = fsW - M - rightW;
+        rightW = rightPanelW();
+        rightX = fsW - margin - rightW;
         rightY = contentY;
         rightH = contentH;
 
         leftX = contentX;
         leftY = contentY;
-        leftW = (rightX - GAP) - leftX;
+        leftW = (rightX - gap) - leftX;
         leftH = contentH;
 
         // ----- Inventory placement INSIDE right panel (bottom) -----
-        int desiredInvTopY = (rightY + rightH) - RIGHT_PAD - INV_H; // bottom padding
-        int desiredInvLeftX = rightX + RIGHT_PAD;                    // left padding inside right panel
+        int desiredInvTopY = (rightY + rightH) - rightPad - INV_H;
+        int desiredInvLeftX = rightX + rightPad;
 
         // Move the entire GUI origin so slot grid lands there
         this.leftPos = desiredInvLeftX - HANDLER_INV_X;
@@ -595,47 +637,50 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
         // Inventory title (above slots)
         this.inventoryLabelX = desiredInvLeftX;
-        this.inventoryLabelY = desiredInvTopY - 12;
+        this.inventoryLabelY = desiredInvTopY - ui(12);
 
         // Screen title (top-left)
-        this.titleLabelX = topX + 4;
-        this.titleLabelY = topY + 6;
+        this.titleLabelX = topX + ui(4);
+        this.titleLabelY = topY + ui(6);
 
         // Clear & rebuild widgets
         this.clearWidgets();
 
         // Tabs
-        int tabX = topX + 2;
-        int tabY = topY + 2;
+        int tabX = topX + ui(2);
+        int tabY = topY + ui(2);
+        int tabW = ui(64);
+        int tabH = ui(18);
+        int tabGap = ui(4);
 
         this.addRenderableWidget(Button.builder(Component.literal("Store"), b -> {
             tab = Tab.STORE;
             closeSortMenu();
             updateWidgetVisibility();
-        }).bounds(tabX, tabY, 64, 18).build());
+        }).bounds(tabX, tabY, tabW, tabH).build());
 
         this.addRenderableWidget(Button.builder(Component.literal("Cart"), b -> {
             tab = Tab.CART;
             updateWidgetVisibility();
-        }).bounds(tabX + 68, tabY, 64, 18).build());
+        }).bounds(tabX + tabW + tabGap, tabY, tabW, tabH).build());
 
         // --- NOW that leftX/leftY exist, compute previewBox coords ---
-        int sortX = previewBoxX() + 6;
-        int sortY = previewBoxY() + 6;
-        int sortW = previewBoxW() - 12;
+        int sortX = previewBoxX() + ui(6);
+        int sortY = previewBoxY() + ui(6);
+        int sortW = previewBoxW() - ui(12);
 
         sortBtn = this.addRenderableWidget(Button.builder(
                 Component.literal("Sort: " + sortMode.label),
                 b -> toggleSortMenu()
-        ).bounds(sortX, sortY, sortW, SORT_BTN_H).build());
+        ).bounds(sortX, sortY, sortW, sortButtonH()).build());
 
         // Right panel fields (above inventory area)
-        int fieldX = rightX + RIGHT_PAD;
-        int fieldY = rightY + RIGHT_PAD;
+        int fieldX = rightX + rightPad;
+        int fieldY = rightY + rightPad;
 
-        int fieldW = rightW - (RIGHT_PAD * 2);
+        int fieldW = rightW - (rightPad * 2);
 
-        searchField = new EditBox(this.font, fieldX, fieldY, fieldW, 18, Component.literal(""));
+        searchField = new EditBox(this.font, fieldX, fieldY, fieldW, ui(18), Component.literal(""));
         searchField.setMaxLength(128);
         searchField.setHint(Component.literal("Search Name"));
         this.addWidget(searchField);
@@ -643,11 +688,11 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         // Add-to-cart sits ABOVE the inventory block, aligned to right panel
         // Add-to-cart / Clear Cart sit ABOVE the inventory block, aligned to right panel
         int btnW = fieldW;
-        int btnH = 20;
+        int btnH = ui(20);
         int btnX = fieldX;
 
         // base “action row” just above inventory
-        int btnY = desiredInvTopY - 10 - btnH;
+        int btnY = desiredInvTopY - ui(10) - btnH;
 
         // STORE button
         addToCartBtn = this.addRenderableWidget(Button.builder(Component.literal("Add to Cart"), btn -> {
@@ -656,7 +701,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
         // CART buttons (stacked)
         int clearY = btnY;
-        int buyY   = btnY - (btnH + 6);
+        int buyY   = btnY - (btnH + ui(6));
 
         buyCartBtn = this.addRenderableWidget(Button.builder(Component.literal("Buy"), btn -> {
             if (cart.isEmpty()) { status = "Cart is empty."; return; }
@@ -704,13 +749,13 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         int gx = gridAreaX();
         int gy = gridAreaY();
         int gw = gridAreaW();
-        int pagerY = gy + gridAreaH() - PAGER_H - 6;
+        int pagerY = gy + gridAreaH() - pagerH() - ui(6);
 
-        int pagerBtnW = 70;
-        int pagerBtnH = 18;
-        int pagerGap = 8;
+        int pagerBtnW = ui(70);
+        int pagerBtnH = ui(18);
+        int pagerGap = ui(8);
 
-        int pageLabelW = 110;
+        int pageLabelW = ui(110);
         int totalW = pagerBtnW + pagerGap + pageLabelW + pagerGap + pagerBtnW;
         int startX = gx + (gw - totalW) / 2;
 
@@ -773,7 +818,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     private int sortMenuW() { return sortBtn.getWidth(); }
 
     private int sortMenuH() {
-        return (SORT_MENU_PAD * 2) + (SortMode.values().length * SORT_MENU_ITEM_H);
+        return (sortMenuPad() * 2) + (SortMode.values().length * sortMenuItemH());
     }
 
     private int hitTestSortMenuIndex(int mx, int my) {
@@ -786,10 +831,10 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
         if (mx < x || my < y || mx >= x + w || my >= y + h) return -1;
 
-        int localY = my - y - SORT_MENU_PAD;
+        int localY = my - y - sortMenuPad();
         if (localY < 0) return -1;
 
-        int idx = localY / SORT_MENU_ITEM_H;
+        int idx = localY / sortMenuItemH();
         if (idx < 0 || idx >= SortMode.values().length) return -1;
 
         return idx;
@@ -812,8 +857,8 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
         SortMode[] vals = SortMode.values();
         for (int i = 0; i < vals.length; i++) {
-            int iy0 = y + SORT_MENU_PAD + i * SORT_MENU_ITEM_H;
-            int iy1 = iy0 + SORT_MENU_ITEM_H;
+            int iy0 = y + sortMenuPad() + i * sortMenuItemH();
+            int iy1 = iy0 + sortMenuItemH();
 
             boolean hovered = (i == sortMenuHover);
             boolean selected = (vals[i] == sortMode);
@@ -824,8 +869,8 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             ctx.drawString(
                     this.font,
                     Component.literal(vals[i].label),
-                    x + 6,
-                    iy0 + 5,
+                    x + ui(6),
+                    iy0 + ui(5),
                     0xFFFFFFFF,
                     false
             );
@@ -889,14 +934,14 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         int yRows = cartRowsY();
         int w = cartListW();
 
-        int rowY = yRows + (idx * CART_ROW_H) - cartScrollPx;
+        int rowY = yRows + (idx * cartRowH()) - cartScrollPx;
 
-        int rx0 = x + 6;
+        int rx0 = x + ui(6);
         int ry0 = rowY + 2;
-        int rx1 = x + w - 6;
+        int rx1 = x + w - ui(6);
         // int ry1 = rowY + CART_ROW_H - 2; // not needed for click math
 
-        int rightEdge = rx1 - 6;
+        int rightEdge = rx1 - ui(6);
 
         CartLine line = cart.get(idx);
 
@@ -908,34 +953,36 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
         // Walk right-to-left like rendering: [price][cn][set][ qty controls ]
         int right = rightEdge;
+        int qBtn = quantityButtonSize();
+        int qGap = quantityButtonGap();
 
         int pw = this.font.width(price);
-        right -= pw + 10;
+        right -= pw + ui(10);
 
         int cnw = this.font.width(cn);
-        right -= cnw + 10;
+        right -= cnw + ui(10);
 
         int sw = this.font.width(set);
-        right -= sw + 10;
+        right -= sw + ui(10);
 
         // Qty controls geometry (must match drawCartRows)
         int qw = this.font.width(qtyStr);
-        int pillW = qw + 8;
-        int pillY = (ry0 + 6) + 1;      // textY + 1
+        int pillW = qw + ui(8);
+        int pillY = (ry0 + ui(6)) + 1;
         int btnY  = pillY - 1;
 
-        int plusX  = right - QBTN;
-        int pillX  = plusX - QBTN_GAP - pillW;
-        int minusX = pillX - QBTN_GAP - QBTN;
+        int plusX  = right - qBtn;
+        int pillX  = plusX - qGap - pillW;
+        int minusX = pillX - qGap - qBtn;
 
         // minus
-        if (mx >= minusX && my >= btnY && mx < minusX + QBTN && my < btnY + QBTN) {
+        if (mx >= minusX && my >= btnY && mx < minusX + qBtn && my < btnY + qBtn) {
             adjustCartQty(idx, -1);
             return true;
         }
 
         // plus
-        if (mx >= plusX && my >= btnY && mx < plusX + QBTN && my < btnY + QBTN) {
+        if (mx >= plusX && my >= btnY && mx < plusX + qBtn && my < btnY + qBtn) {
             adjustCartQty(idx, +1);
             return true;
         }
@@ -1017,7 +1064,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
         if (tab == Tab.CART && isMouseOverCartList((int) mouseX, (int) mouseY)) {
-            cartScrollPx -= (int) Math.signum(verticalAmount) * (CART_ROW_H);
+            cartScrollPx -= (int) Math.signum(verticalAmount) * cartRowH();
             clampCartScroll(); // ✅ put this back
             return true;
         }
@@ -1085,19 +1132,20 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     }
 
     private int hitTestGridIndex(int mx, int my) {
-        int gridX = gridAreaX() + 8;
-        int gridY = gridAreaY() + 8;
-        int gridW = gridAreaW() - 16;
-        int gridH = gridContentH() - 8;
+        int gridX = gridAreaX() + ui(8);
+        int gridY = gridAreaY() + ui(8);
+        int gridW = gridAreaW() - ui(16);
+        int gridH = gridContentH() - ui(8);
+        int cell = cellSize();
 
         if (mx < gridX || my < gridY || mx >= gridX + gridW || my >= gridY + gridH) return -1;
 
-        int cols = Math.max(1, gridW / CELL);
-        int col = (mx - gridX) / CELL;
-        int row = (my - gridY) / CELL;
+        int cols = Math.max(1, gridW / cell);
+        int col = (mx - gridX) / cell;
+        int row = (my - gridY) / cell;
 
         int idx = row * cols + col;
-        int maxVisible = cols * Math.max(1, gridH / CELL);
+        int maxVisible = cols * Math.max(1, gridH / cell);
 
         if (idx < 0 || idx >= maxVisible) return -1;
         if (idx >= grid.size()) return -1;
@@ -1188,26 +1236,29 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     @Override
     protected void renderBg(GuiGraphics ctx, float delta, int mouseX, int mouseY) {
+        int topBarH = topBarH();
+        int infoBarH = infoBarH();
+
         // dim the world
         ctx.fill(0, 0, this.width, this.height, DIM_BG);
 
         // top bar + info strip
-        ctx.fill(topX, topY, topX + topW, topY + TOP_H, PANEL_BG);
-        ctx.fill(infoX, infoY, infoX + infoW, infoY + INFO_H, STRIP_BG);
+        ctx.fill(topX, topY, topX + topW, topY + topBarH, PANEL_BG);
+        ctx.fill(infoX, infoY, infoX + infoW, infoY + infoBarH, STRIP_BG);
 
         // main panels
         ctx.fill(leftX, leftY, leftX + leftW, leftY + leftH, PANEL_BG);
         ctx.fill(rightX, rightY, rightX + rightW, rightY + rightH, PANEL_BG);
 
         // subtle separators (optional but makes it feel “LifeBlock polished”)
-        ctx.fill(topX, topY + TOP_H - 1, topX + topW, topY + TOP_H, EDGE_LINE);
-        ctx.fill(infoX, infoY + INFO_H - 1, infoX + infoW, infoY + INFO_H, EDGE_SOFT);
+        ctx.fill(topX, topY + topBarH - 1, topX + topW, topY + topBarH, EDGE_LINE);
+        ctx.fill(infoX, infoY + infoBarH - 1, infoX + infoW, infoY + infoBarH, EDGE_SOFT);
 
         // inventory sub-panel
-        int invPanelX = rightX + 2;
-        int invPanelY = (rightY + rightH) - RIGHT_PAD - INV_H - 14;
-        int invPanelW = rightW - 4;
-        int invPanelH = INV_H + 14 + RIGHT_PAD;
+        int invPanelX = rightX + ui(2);
+        int invPanelY = invPanelY();
+        int invPanelW = rightW - ui(4);
+        int invPanelH = invPanelH();
         ctx.fill(invPanelX, invPanelY, invPanelX + invPanelW, invPanelY + invPanelH, INNER_BG);
 
         // preview + grid boxes
@@ -1233,14 +1284,14 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         refreshBuyEnabled();
 
         if (status != null && !status.isBlank()) {
-            ctx.drawString(this.font, Component.literal(status), infoX + 6, infoY + 3, 0xFFFFFFFF, false);
+            ctx.drawString(this.font, Component.literal(status), infoX + ui(6), infoY + ui(3), 0xFFFFFFFF, false);
         }
 
         drawDropHint(ctx);
 
         if (tab == Tab.STORE) {
             // fields
-        searchField.render(ctx, mouseX, mouseY, delta);
+        searchField.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
 
             // helper text under search field
             int hx = searchField.getX() + 2;
@@ -1278,8 +1329,8 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
                     + "  •  Lines: " + lines;
 
             // anchor in right panel (top-left)
-            int tx = rightX + RIGHT_PAD;
-            int ty = rightY + RIGHT_PAD + 6;
+            int tx = rightX + rightPad();
+            int ty = rightY + rightPad() + ui(6);
 
             // total
             ctx.drawString(this.font, Component.literal(totalStr), tx, ty, 0xFFFFFFFF, false);
@@ -1287,11 +1338,11 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             // price icon immediately after total value
             int tw = this.font.width(totalStr);
             if (!priceIcon.isEmpty()) {
-                ctx.renderItem(priceIcon, tx + tw + 6, ty - 2);
+                ctx.renderItem(priceIcon, tx + tw + ui(6), ty - ui(2));
             }
 
             // meta line
-            ctx.drawString(this.font, Component.literal(meta), tx, ty + 12, 0xFFAAAAAA, false);
+            ctx.drawString(this.font, Component.literal(meta), tx, ty + ui(12), 0xFFAAAAAA, false);
 
         }
 
@@ -1313,13 +1364,13 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         int gx = gridAreaX();
         int gy = gridAreaY();
         int gw = gridAreaW();
-        int pagerY = gy + gridAreaH() - PAGER_H - 6;
+        int pagerY = gy + gridAreaH() - pagerH() - ui(6);
 
         int maxPages = Math.max(1, (int) Math.ceil(gridTotal / (double) lastRequestedPageSize));
 
         String label = "Page " + gridPage + " / " + maxPages;
         int labelW = this.font.width(label);
-        ctx.drawString(this.font, Component.literal(label), gx + (gw - labelW) / 2, pagerY + 5, 0xFFFFFFFF, false);
+        ctx.drawString(this.font, Component.literal(label), gx + (gw - labelW) / 2, pagerY + ui(5), 0xFFFFFFFF, false);
     }
 
     private void drawPreviewPanel(GuiGraphics ctx) {
@@ -1332,8 +1383,9 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
         // If STORE tab, reserve space for sort button at top
         if (tab == Tab.STORE) {
-            py += 22;
-            boxH -= 22;
+            int sortReserve = sortButtonH() + ui(4);
+            py += sortReserve;
+            boxH -= sortReserve;
         }
 
         previewTex = CardArtManager.getOrRequestFace(preview, previewFace);
@@ -1387,8 +1439,8 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             m.popMatrix();
 
             // price strip (same as before)
-            int pricePad = 6;
-            int priceRowH = 18;
+            int pricePad = ui(6);
+            int priceRowH = ui(18);
 
             int priceX = px + pricePad;
             int priceY = (py + boxH) - pricePad - priceRowH;
@@ -1398,17 +1450,17 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             if (!priceIcon.isEmpty()) ctx.renderItem(priceIcon, priceX, priceY);
 
             String costText = (selectedPriceItems <= 0) ? "Cost: —" : ("Cost: " + selectedPriceItems);
-            int textX = priceX + 18;
+            int textX = priceX + ui(18);
 
-            ctx.drawString(this.font, Component.literal(costText), textX, priceY + 5, 0xFFFFFFFF, false);
+            ctx.drawString(this.font, Component.literal(costText), textX, priceY + ui(5), 0xFFFFFFFF, false);
 
             if (priceBasis != null && !priceBasis.isBlank()) {
                 String basis = "(" + priceBasis.toUpperCase() + ")";
                 ctx.drawString(
                         this.font,
                         Component.literal(basis),
-                        textX + this.font.width(costText) + 6,
-                        priceY + 5,
+                        textX + this.font.width(costText) + ui(6),
+                        priceY + ui(5),
                         0xFFAAAAAA,
                         false
                 );
@@ -1491,14 +1543,14 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     private static final Component DROP_HINT = Component.literal("Drag in .txt or .csv files");
 
     private void drawDropHint(GuiGraphics ctx) {
-        int pad = 6;
-        int y = topY + 6;
+        int pad = ui(6);
+        int y = topY + ui(6);
 
         int w = this.font.width(DROP_HINT);
         int x = (topX + topW) - pad - w;
 
         // subtle shadow plate so it reads on bright backgrounds
-        ctx.fill(x - 4, y - 2, x + w + 4, y + 10, 0x33202A33);
+        ctx.fill(x - ui(4), y - ui(2), x + w + ui(4), y + ui(10), 0x33202A33);
         ctx.drawString(this.font, DROP_HINT, x, y, TEXT_MUTED, false);
     }
 
@@ -1856,6 +1908,13 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     public static final int MAX_PAGE_SIZE = 175;
 
     private void drawCartRows(GuiGraphics ctx, int mouseX, int mouseY) {
+        int headerH = cartHeaderH();
+        int rowH = cartRowH();
+        int qBtn = quantityButtonSize();
+        int qGap = quantityButtonGap();
+        int thumb = cartThumbSize();
+        int thumbPad = cartThumbPad();
+        int textPad = cartTextPad();
 
         int x = cartListX();
         int y = cartListY();
@@ -1865,10 +1924,10 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         // list background
         ctx.fill(x, y, x + w, y + h, 0x33000000);
         // header background
-        int hx0 = x + 6;
-        int hy0 = cartListY() + 2;
-        int hx1 = x + w - 6;
-        int hy1 = hy0 + CART_HEADER_H;
+        int hx0 = x + ui(6);
+        int hy0 = cartListY() + ui(2);
+        int hx1 = x + w - ui(6);
+        int hy1 = hy0 + headerH;
 
 
         ctx.fill(hx0, hy0, hx1, hy1, 0x22000000);
@@ -1877,9 +1936,9 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
 
 // Header labels: Art | Name | Qty | Set | CN | Price
-        int labelY = hy0 + 5;
-        ctx.drawString(this.font, Component.literal("Art"),  hx0 + 6, labelY, 0xFFAAAAAA, false);
-        ctx.drawString(this.font, Component.literal("Name"), hx0 + 30, labelY, 0xFFAAAAAA, false);
+        int labelY = hy0 + ui(5);
+        ctx.drawString(this.font, Component.literal("Art"),  hx0 + ui(6), labelY, 0xFFAAAAAA, false);
+        ctx.drawString(this.font, Component.literal("Name"), hx0 + ui(30), labelY, 0xFFAAAAAA, false);
 
 // Right-aligned labels (match your column order)
         String hPrice = "Price";
@@ -1887,18 +1946,18 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         String hSet   = "Set";
         String hQty   = "Qty";
 
-        int r = hx1 - 6;
+        int r = hx1 - ui(6);
         int wPrice = this.font.width(hPrice);
         ctx.drawString(this.font, Component.literal(hPrice), r - wPrice, labelY, 0xFFAAAAAA, false);
-        r -= wPrice + 10;
+        r -= wPrice + ui(10);
 
         int wCn = this.font.width(hCn);
         ctx.drawString(this.font, Component.literal(hCn), r - wCn, labelY, 0xFFAAAAAA, false);
-        r -= wCn + 10;
+        r -= wCn + ui(10);
 
         int wSet = this.font.width(hSet);
         ctx.drawString(this.font, Component.literal(hSet), r - wSet, labelY, 0xFFAAAAAA, false);
-        r -= wSet + 10;
+        r -= wSet + ui(10);
 
         int wQty = this.font.width(hQty);
         ctx.drawString(this.font, Component.literal(hQty), r - wQty, labelY, 0xFFAAAAAA, false);
@@ -1909,24 +1968,24 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         int hRows = cartRowsH();
 
         // visible range (with scroll)
-        int first = Math.max(0, cartScrollPx / CART_ROW_H);
-        int last = Math.min(cart.size(), first + (hRows / CART_ROW_H) + 2);
+        int first = Math.max(0, cartScrollPx / rowH);
+        int last = Math.min(cart.size(), first + (hRows / rowH) + 2);
 
         int clipTop = yRows;
         int clipBot = yRows + hRows;
 
         for (int i = first; i < last; i++) {
-            int rowY = yRows + (i * CART_ROW_H) - cartScrollPx;
-            if (rowY + CART_ROW_H < clipTop || rowY > clipBot) continue;
+            int rowY = yRows + (i * rowH) - cartScrollPx;
+            if (rowY + rowH < clipTop || rowY > clipBot) continue;
 
             boolean sel = (i == selectedCartIndex);
             boolean hov = (i == hovered);
 
             // row rect (clean like Counters)
-            int rx0 = x + 6;
-            int ry0 = rowY + 2;
-            int rx1 = x + w - 6;
-            int ry1 = rowY + CART_ROW_H - 2;
+            int rx0 = x + ui(6);
+            int ry0 = rowY + ui(2);
+            int rx1 = x + w - ui(6);
+            int ry1 = rowY + rowH - ui(2);
 
             int base = 0x22000000;
             int hover = 0x2AFFFFFF;
@@ -1942,16 +2001,16 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             CartLine line = cart.get(i);
 
             // --- thumb (card art) ---
-            int thumbX = rx0 + CART_THUMB_PAD;
-            int thumbY = ry0 + ( (ry1 - ry0) - CART_THUMB ) / 2;
+            int thumbX = rx0 + thumbPad;
+            int thumbY = ry0 + ((ry1 - ry0) - thumb) / 2;
 
             // dark plate behind thumb so art always reads
-            ctx.fill(thumbX, thumbY, thumbX + CART_THUMB, thumbY + CART_THUMB, 0x44000000);
-            drawCardThumb(ctx, line.stack, thumbX, thumbY, CART_THUMB);
+            ctx.fill(thumbX, thumbY, thumbX + thumb, thumbY + thumb, 0x44000000);
+            drawCardThumb(ctx, line.stack, thumbX, thumbY, thumb);
 
             // --- text columns ---
-            int textX = thumbX + CART_THUMB + CART_TEXT_PAD;
-            int textY = ry0 + 6;
+            int textX = thumbX + thumb + textPad;
+            int textY = ry0 + ui(6);
 
             String name  = line.stack.getHoverName().getString();
             String set   = shortSet(line.set).toUpperCase();
@@ -1961,7 +2020,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             String qty   = "x" + Math.max(1, line.qty);
 
             // left: name (truncate if needed)
-            int rightEdge = rx1 - 6;
+            int rightEdge = rx1 - ui(6);
 
             // Reserve space for right-side columns: [-][qty pill][+], plus set/cn/price with gaps
             int pw  = this.font.width(price);
@@ -1969,14 +2028,14 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             int sw  = this.font.width(set);
             int qw  = this.font.width(qty);
 
-            int pillW = qw + 8;
-            int qtyControlsW = (QBTN /*-*/ + QBTN_GAP + pillW + QBTN_GAP + QBTN /*+*/);
+            int pillW = qw + ui(8);
+            int qtyControlsW = qBtn + qGap + pillW + qGap + qBtn;
 
             // match your draw spacing: after price/cn/set you subtract +10 each time
             int rightColumnsW = qtyControlsW
-                    + 10 + sw
-                    + 10 + cnw
-                    + 10 + pw;
+                    + ui(10) + sw
+                    + ui(10) + cnw
+                    + ui(10) + pw;
 
             // how much width the name is allowed to use
             int nameMaxW = Math.max(10, (rightEdge - rightColumnsW) - textX);
@@ -1994,45 +2053,45 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             // price
 
             ctx.drawString(this.font, Component.literal(price), right - pw, textY, 0xFFFFFFFF, false);
-            right -= pw + 10;
+            right -= pw + ui(10);
 
             // cn
 
             ctx.drawString(this.font, Component.literal(cn), right - cnw, textY, 0xFFDDDDDD, false);
-            right -= cnw + 10;
+            right -= cnw + ui(10);
 
             // set
 
             ctx.drawString(this.font, Component.literal(set), right - sw, textY, 0xFFDDDDDD, false);
-            right -= sw + 10;
+            right -= sw + ui(10);
 
             // qty pill (looks nice, optional)
             // qty controls: [-] [x#] [+]
-            int pillH = 12;
+            int pillH = ui(12);
             int pillY = textY + 1;
             int btnY = pillY - 1;
 
-            int plusX  = right - QBTN;
-            int pillX  = plusX - QBTN_GAP - pillW;
-            int minusX = pillX - QBTN_GAP - QBTN;
+            int plusX  = right - qBtn;
+            int pillX  = plusX - qGap - pillW;
+            int minusX = pillX - qGap - qBtn;
 
             // minus button
-            ctx.fill(minusX, btnY, minusX + QBTN, btnY + QBTN, 0x22000000);
-            ctx.fill(minusX, btnY, minusX + QBTN, btnY + 1, 0x26FFFFFF);
-            ctx.fill(minusX, btnY + QBTN - 1, minusX + QBTN, btnY + QBTN, 0x26000000);
-            ctx.drawString(this.font, Component.literal("-"), minusX + 4, btnY + 3, 0xFFFFFFFF, false);
+            ctx.fill(minusX, btnY, minusX + qBtn, btnY + qBtn, 0x22000000);
+            ctx.fill(minusX, btnY, minusX + qBtn, btnY + 1, 0x26FFFFFF);
+            ctx.fill(minusX, btnY + qBtn - 1, minusX + qBtn, btnY + qBtn, 0x26000000);
+            ctx.drawString(this.font, Component.literal("-"), minusX + ui(4), btnY + ui(3), 0xFFFFFFFF, false);
 
             // qty pill
             ctx.fill(pillX, pillY, pillX + pillW, pillY + pillH, 0x22000000);
             ctx.fill(pillX, pillY, pillX + pillW, pillY + 1, 0x26FFFFFF);
             ctx.fill(pillX, pillY + pillH - 1, pillX + pillW, pillY + pillH, 0x26000000);
-            ctx.drawString(this.font, Component.literal(qty), pillX + 4, pillY + 2, 0xFFDDDDDD, false);
+            ctx.drawString(this.font, Component.literal(qty), pillX + ui(4), pillY + ui(2), 0xFFDDDDDD, false);
 
             // plus button
-            ctx.fill(plusX, btnY, plusX + QBTN, btnY + QBTN, 0x22000000);
-            ctx.fill(plusX, btnY, plusX + QBTN, btnY + 1, 0x26FFFFFF);
-            ctx.fill(plusX, btnY + QBTN - 1, plusX + QBTN, btnY + QBTN, 0x26000000);
-            ctx.drawString(this.font, Component.literal("+"), plusX + 4, btnY + 3, 0xFFFFFFFF, false);
+            ctx.fill(plusX, btnY, plusX + qBtn, btnY + qBtn, 0x22000000);
+            ctx.fill(plusX, btnY, plusX + qBtn, btnY + 1, 0x26FFFFFF);
+            ctx.fill(plusX, btnY + qBtn - 1, plusX + qBtn, btnY + qBtn, 0x26000000);
+            ctx.drawString(this.font, Component.literal("+"), plusX + ui(4), btnY + ui(3), 0xFFFFFFFF, false);
 
         }
     }

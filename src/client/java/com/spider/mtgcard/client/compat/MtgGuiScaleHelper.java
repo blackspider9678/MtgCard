@@ -92,7 +92,7 @@ public final class MtgGuiScaleHelper {
 
         ORIGINAL_GUI_SCALES.putIfAbsent(screen, currentScale);
         minecraft.options.guiScale().set(resolvedPreferredScale);
-        minecraft.resizeDisplay();
+        minecraft.resizeGui();
         return true;
     }
 
@@ -136,7 +136,7 @@ public final class MtgGuiScaleHelper {
             }
 
             minecraft.options.guiScale().set(originalScale);
-            minecraft.resizeDisplay();
+            minecraft.resizeGui();
         } finally {
             RESTORING_SCREENS.remove(screen);
         }

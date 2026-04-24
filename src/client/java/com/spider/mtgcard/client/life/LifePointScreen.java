@@ -239,10 +239,10 @@ public final class LifePointScreen extends LegacyScreen {
     private int uiW = DESIGN_W, uiH = DESIGN_H;
 
     private void recomputeLayoutScale() {
-        // scale DOWN only when needed; never scale up above 1 so text stays crisp
+        // Grow into larger screens, but stop at 2x so the HUD does not become oversized.
         float sx = this.width  / (float) DESIGN_W;
         float sy = this.height / (float) DESIGN_H;
-        uiScale = Math.min(1f, Math.min(sx, sy));
+        uiScale = Math.min(2f, Math.min(sx, sy));
 
         uiW = Math.round(DESIGN_W * uiScale);
         uiH = Math.round(DESIGN_H * uiScale);

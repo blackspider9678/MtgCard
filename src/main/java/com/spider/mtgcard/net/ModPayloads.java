@@ -40,20 +40,20 @@ public final class ModPayloads {
         Mtgcard.LOGGER.info("[ModPayloads] registerTypes() starting...");
 
         // ---- Art streaming (chunked) ----
-        PayloadTypeRegistry.playC2S().register(ArtPackets.ArtRequest.ID, ArtPackets.ArtRequest.CODEC);
-        PayloadTypeRegistry.playS2C().register(ArtPackets.ArtChunk.ID, ArtPackets.ArtChunk.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ArtPackets.ArtRequest.ID, ArtPackets.ArtRequest.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(ArtPackets.ArtChunk.ID, ArtPackets.ArtChunk.CODEC);
 
         // ---- Custom import GUI (server -> client) ----
-        PayloadTypeRegistry.playS2C().register(CustomImportPackets.OpenImportGui.ID, CustomImportPackets.OpenImportGui.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CustomImportPackets.OpenImportGui.ID, CustomImportPackets.OpenImportGui.CODEC);
 
         // ---- Custom cards ----
         CustomCardPackets.registerTypes();
 
         // ---- Counters / tabs ----
-        PayloadTypeRegistry.playC2S().register(SetCounterValuePayload.ID, SetCounterValuePayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(SetCounterMetaPayload.ID, SetCounterMetaPayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(DeleteCounterPayload.ID, DeleteCounterPayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(DeckboxTabNamesPayload.ID, DeckboxTabNamesPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetCounterValuePayload.ID, SetCounterValuePayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetCounterMetaPayload.ID, SetCounterMetaPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(DeleteCounterPayload.ID, DeleteCounterPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(DeckboxTabNamesPayload.ID, DeckboxTabNamesPayload.CODEC);
 
         // ---- Deck Control types ONLY (no receivers here) ----
         com.spider.mtgcard.deckcontrol.DeckControlPackets.registerTypes();
@@ -62,27 +62,27 @@ public final class ModPayloads {
         CardStorePackets.registerTypes();
 
         // ---- Hidden flags / display payloads ----
-        PayloadTypeRegistry.playC2S().register(SetHiddenPayload.ID, SetHiddenPayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(CardDisplayPayloads.DisplaySetHiddenC2S.ID, CardDisplayPayloads.DisplaySetHiddenC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetHiddenPayload.ID, SetHiddenPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CardDisplayPayloads.DisplaySetHiddenC2S.ID, CardDisplayPayloads.DisplaySetHiddenC2S.CODEC);
 
-        PayloadTypeRegistry.playS2C().register(CardDisplayPayloads.OpenDisplayViewS2C.ID, CardDisplayPayloads.OpenDisplayViewS2C.CODEC);
-        PayloadTypeRegistry.playC2S().register(CardDisplayPayloads.DisplaySetFaceC2S.ID, CardDisplayPayloads.DisplaySetFaceC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(CardDisplayPayloads.DisplaySetCounterValueC2S.ID, CardDisplayPayloads.DisplaySetCounterValueC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(CardDisplayPayloads.DisplaySetCounterMetaC2S.ID, CardDisplayPayloads.DisplaySetCounterMetaC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(CardDisplayPayloads.DisplayDeleteCounterC2S.ID, CardDisplayPayloads.DisplayDeleteCounterC2S.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CardDisplayPayloads.OpenDisplayViewS2C.ID, CardDisplayPayloads.OpenDisplayViewS2C.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CardDisplayPayloads.DisplaySetFaceC2S.ID, CardDisplayPayloads.DisplaySetFaceC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CardDisplayPayloads.DisplaySetCounterValueC2S.ID, CardDisplayPayloads.DisplaySetCounterValueC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CardDisplayPayloads.DisplaySetCounterMetaC2S.ID, CardDisplayPayloads.DisplaySetCounterMetaC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CardDisplayPayloads.DisplayDeleteCounterC2S.ID, CardDisplayPayloads.DisplayDeleteCounterC2S.CODEC);
 
         // ---- From old ModNetworking (moved here) ----
         // NOTE: SetFacePayload is expected to be SLOT-based: (slot, face)
-        PayloadTypeRegistry.playC2S().register(SetFacePayload.ID, SetFacePayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(XmlArtUploadPayload.ID, XmlArtUploadPayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(UnbundleProgressPayload.ID, UnbundleProgressPayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(GraveyardActionPayload.ID, GraveyardActionPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetFacePayload.ID, SetFacePayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(XmlArtUploadPayload.ID, XmlArtUploadPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(UnbundleProgressPayload.ID, UnbundleProgressPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(GraveyardActionPayload.ID, GraveyardActionPayload.CODEC);
 
-        PayloadTypeRegistry.playC2S().register(FlipHeldCardFacePayload.ID, FlipHeldCardFacePayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(FlipHeldCardFacePayload.ID, FlipHeldCardFacePayload.CODEC);
 
         // ---- Deck export/list (server -> client) ----
-        PayloadTypeRegistry.playS2C().register(DeckPayloads.DeckExportRequestS2C.ID, DeckPayloads.DeckExportRequestS2C.CODEC);
-        PayloadTypeRegistry.playS2C().register(DeckPayloads.DeckListRequestS2C.ID, DeckPayloads.DeckListRequestS2C.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(DeckPayloads.DeckExportRequestS2C.ID, DeckPayloads.DeckExportRequestS2C.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(DeckPayloads.DeckListRequestS2C.ID, DeckPayloads.DeckListRequestS2C.CODEC);
 
         Mtgcard.LOGGER.info("[ModPayloads] registerTypes() DONE");
     }
@@ -255,6 +255,7 @@ public final class ModPayloads {
                     case EXILE_ALL -> gy.exileAll();
                     case RETURN_ALL -> gy.returnAll();
                 }
+                sh.broadcastFullState();
             });
         });
 

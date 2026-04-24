@@ -210,18 +210,18 @@ public final class CustomCardPackets {
     // =========================
     public static void registerTypes() {
         // C2S
-        PayloadTypeRegistry.playC2S().register(CustomBatchCreate.ID, CustomBatchCreate.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CustomBatchCreate.ID, CustomBatchCreate.CODEC);
 
         // S2C
-        PayloadTypeRegistry.playS2C().register(CustomSyncFull.ID,  CustomSyncFull.CODEC);
-        PayloadTypeRegistry.playS2C().register(CustomSyncDelta.ID, CustomSyncDelta.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CustomSyncFull.ID,  CustomSyncFull.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CustomSyncDelta.ID, CustomSyncDelta.CODEC);
 
-        PayloadTypeRegistry.playS2C().register(CustomArtReady.ID,  CustomArtReady.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CustomArtReady.ID,  CustomArtReady.CODEC);
 
         // C2S art upload
-        PayloadTypeRegistry.playC2S().register(CustomArtBegin.ID,  CustomArtBegin.CODEC);
-        PayloadTypeRegistry.playC2S().register(CustomArtChunk.ID,  CustomArtChunk.CODEC);
-        PayloadTypeRegistry.playC2S().register(CustomArtFinish.ID, CustomArtFinish.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CustomArtBegin.ID,  CustomArtBegin.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CustomArtChunk.ID,  CustomArtChunk.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CustomArtFinish.ID, CustomArtFinish.CODEC);
     }
 
 

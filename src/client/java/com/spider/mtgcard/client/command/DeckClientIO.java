@@ -46,13 +46,13 @@ public final class DeckClientIO {
 
         ItemStack hand = mc.player.getMainHandItem();
         if (hand.isEmpty() || !(hand.getItem() instanceof DeckboxBlockItem)) {
-            mc.player.displayClientMessage(Component.literal(SEC + "cHold a Deckbox in your main hand to export."), false);
+            mc.player.sendSystemMessage(Component.literal(SEC + "cHold a Deckbox in your main hand to export."));
             return;
         }
 
         List<ExportRow> rows = readDeckboxExportRows(hand);
         if (rows.isEmpty()) {
-            mc.player.displayClientMessage(Component.literal(SEC + "eDeckbox has no MTG cards to export."), false);
+            mc.player.sendSystemMessage(Component.literal(SEC + "eDeckbox has no MTG cards to export."));
             return;
         }
 
@@ -82,18 +82,18 @@ public final class DeckClientIO {
             Files.writeString(txt, txtOut.toString(), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
             Files.writeString(csv, csvOut.toString(), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         } catch (IOException e) {
-            mc.player.displayClientMessage(Component.literal(SEC + "cExport failed: " + SEC + "7" + e.getMessage()), false);
+            mc.player.sendSystemMessage(Component.literal(SEC + "cExport failed: " + SEC + "7" + e.getMessage()));
             return;
         }
 
-        mc.player.displayClientMessage(Component.literal(SEC + "aExported deck:"), false);
-        mc.player.displayClientMessage(
-                Component.literal(SEC + "7- ").append(openFileLink(SEC + "f" + txt.getFileName(), txt)), false);
-        mc.player.displayClientMessage(
-                Component.literal(SEC + "7- ").append(openFileLink(SEC + "f" + csv.getFileName(), csv)), false);
-        mc.player.displayClientMessage(
-                Component.literal(SEC + "7Folder: ").append(openFileLink(SEC + "eopen decks folder", dir)), false);
-        mc.player.displayClientMessage(Component.literal(SEC + "7Saved to: " + SEC + "e" + dir.toAbsolutePath()), false);
+        mc.player.sendSystemMessage(Component.literal(SEC + "aExported deck:"));
+        mc.player.sendSystemMessage(
+                Component.literal(SEC + "7- ").append(openFileLink(SEC + "f" + txt.getFileName(), txt)));
+        mc.player.sendSystemMessage(
+                Component.literal(SEC + "7- ").append(openFileLink(SEC + "f" + csv.getFileName(), csv)));
+        mc.player.sendSystemMessage(
+                Component.literal(SEC + "7Folder: ").append(openFileLink(SEC + "eopen decks folder", dir)));
+        mc.player.sendSystemMessage(Component.literal(SEC + "7Saved to: " + SEC + "e" + dir.toAbsolutePath()));
     }
 
     public static void handleList() {
@@ -102,8 +102,8 @@ public final class DeckClientIO {
 
         Path dir = decksDir();
         if (!Files.exists(dir)) {
-            mc.player.displayClientMessage(Component.literal(SEC + "aDecks (Found " + SEC + "e0" + SEC + "a)."), false);
-            mc.player.displayClientMessage(Component.literal(SEC + "7Folder: " + SEC + "e" + dir.toAbsolutePath()), false);
+            mc.player.sendSystemMessage(Component.literal(SEC + "aDecks (Found " + SEC + "e0" + SEC + "a)."));
+            mc.player.sendSystemMessage(Component.literal(SEC + "7Folder: " + SEC + "e" + dir.toAbsolutePath()));
             return;
         }
 
@@ -118,16 +118,16 @@ public final class DeckClientIO {
                     .sorted()
                     .toList();
         } catch (IOException e) {
-            mc.player.displayClientMessage(Component.literal(SEC + "cFailed to list decks: " + SEC + "7" + e.getMessage()), false);
+            mc.player.sendSystemMessage(Component.literal(SEC + "cFailed to list decks: " + SEC + "7" + e.getMessage()));
             return;
         }
 
-        mc.player.displayClientMessage(Component.literal(SEC + "aDecks (Found " + SEC + "e" + files.size() + SEC + "a):"), false);
+        mc.player.sendSystemMessage(Component.literal(SEC + "aDecks (Found " + SEC + "e" + files.size() + SEC + "a):"));
         if (files.isEmpty()) {
-            mc.player.displayClientMessage(Component.literal(SEC + "7- (none)"), false);
+            mc.player.sendSystemMessage(Component.literal(SEC + "7- (none)"));
         } else {
             for (String fn : files) {
-                mc.player.displayClientMessage(Component.literal(SEC + "7- " + SEC + "f" + fn), false);
+                mc.player.sendSystemMessage(Component.literal(SEC + "7- " + SEC + "f" + fn));
             }
         }
     }

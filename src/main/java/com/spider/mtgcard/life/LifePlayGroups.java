@@ -173,7 +173,7 @@ public final class LifePlayGroups {
 
     private static final net.minecraft.world.level.saveddata.SavedDataType<State> TYPE =
             new net.minecraft.world.level.saveddata.SavedDataType<>(
-                    KEY,
+                    net.minecraft.resources.Identifier.fromNamespaceAndPath(com.spider.mtgcard.Mtgcard.MOD_ID, KEY),
                     State::new,
                     CODEC,
                     null

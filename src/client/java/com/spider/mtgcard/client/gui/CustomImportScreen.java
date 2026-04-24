@@ -45,7 +45,7 @@ import java.util.function.Predicate;
  *   • Link-hint overlay shown under banner (not covered by “Images added”).
  *   • FRONT/BACK badges on thumbnails.
  */
-public final class CustomImportScreen extends Screen implements FileDropReceiver {
+public final class CustomImportScreen extends com.spider.mtgcard.client.compat.LegacyScreen implements FileDropReceiver {
     // ---- Data model ----
     public static final class Entry {
         public String fileName;
@@ -2128,7 +2128,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
 
     private void toast(String s) {
         if (minecraft != null && minecraft.player != null)
-            minecraft.player.displayClientMessage(Component.literal(s), false);
+            minecraft.player.sendSystemMessage(Component.literal(s));
     }
 
     // ---- Image helpers ----
@@ -2332,7 +2332,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     }
 
     // --- Simple multiline text area (full editor behaviors) ---
-    private final class SimpleTextArea extends AbstractWidget {
+    private final class SimpleTextArea extends com.spider.mtgcard.client.compat.LegacyWidget {
         private String value = "";
         private String placeholder = "";
         private int maxLength = 1_000_000;

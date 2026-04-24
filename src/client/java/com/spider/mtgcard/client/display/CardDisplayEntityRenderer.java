@@ -7,13 +7,12 @@ import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.display.CardDisplayEntity;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
-import net.minecraft.client.renderer.state.CameraRenderState;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
@@ -148,11 +147,11 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
             float y = startY - i * (icon + gapY);
 
             Identifier iconTex = s.counters.get(i).texture();
-            var layer = RenderTypes.entityCutoutNoCull(iconTex);
+            var layer = RenderTypes.entityCutout(iconTex);
 
             queue.submitCustomGeometry(matrices, layer, (entry, vc) -> {
                 Matrix4f mat = entry.pose();
-                int fullLight = LightTexture.FULL_BRIGHT;
+                int fullLight = 0x00F000F0;
 
                 float x0 = x;
                 float y0 = y - icon; // bottom
@@ -175,7 +174,7 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
     public void submit(State s, PoseStack matrices, SubmitNodeCollector queue, CameraRenderState cameraState) {
         if (s.stack == null || s.stack.isEmpty()) return;
 
-        var layer = RenderTypes.entityCutoutNoCull(s.texId);
+        var layer = RenderTypes.entityCutout(s.texId);
 
         matrices.pushPose();
 
@@ -209,7 +208,7 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
 
         queue.submitCustomGeometry(matrices, layer, (entry, vc) -> {
             Matrix4f mat = entry.pose();
-            int fullLight = LightTexture.FULL_BRIGHT;
+            int fullLight = 0x00F000F0;
 
             put(vc, mat, -halfW, -halfH, 0f, u0, v0, fullLight, OverlayTexture.NO_OVERLAY);
             put(vc, mat, -halfW,  halfH, 0f, u0, v1, fullLight, OverlayTexture.NO_OVERLAY);
@@ -229,7 +228,7 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
                 var foilLayer = RenderTypes.entityTranslucent(s.texId);
                 queue.submitCustomGeometry(matrices, foilLayer, (entry, vc) -> {
                     Matrix4f mat = entry.pose();
-                    int fullLight = LightTexture.FULL_BRIGHT;
+                    int fullLight = 0x00F000F0;
 
                     put(vc, mat, overlayX0, -halfH, 0f, sweep.u0(), v0, fullLight, OverlayTexture.NO_OVERLAY, com.spider.mtgcard.client.render.CardFoilUtil.WORLD_SWEEP_ALPHA);
                     put(vc, mat, overlayX0,  halfH, 0f, sweep.u0(), v1, fullLight, OverlayTexture.NO_OVERLAY, com.spider.mtgcard.client.render.CardFoilUtil.WORLD_SWEEP_ALPHA);

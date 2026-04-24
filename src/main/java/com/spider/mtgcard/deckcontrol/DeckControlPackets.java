@@ -156,14 +156,14 @@ public final class DeckControlPackets {
 
     // -------------------- registration --------------------
     public static void registerTypes() {
-        PayloadTypeRegistry.playC2S().register(ActionC2S.ID, ActionC2S.CODEC);
-        PayloadTypeRegistry.playS2C().register(OverlayS2C.ID, OverlayS2C.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ActionC2S.ID, ActionC2S.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(OverlayS2C.ID, OverlayS2C.CODEC);
 
-        PayloadTypeRegistry.playC2S().register(CascadeStartC2S.ID, CascadeStartC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(CascadeResolveC2S.ID, CascadeResolveC2S.CODEC);
-        PayloadTypeRegistry.playS2C().register(CascadeS2C.ID, CascadeS2C.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CascadeStartC2S.ID, CascadeStartC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CascadeResolveC2S.ID, CascadeResolveC2S.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CascadeS2C.ID, CascadeS2C.CODEC);
 
-        PayloadTypeRegistry.playC2S().register(ResolveOrderedC2S.ID, ResolveOrderedC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ResolveOrderedC2S.ID, ResolveOrderedC2S.CODEC);
     }
 
     public static void registerReceivers() {

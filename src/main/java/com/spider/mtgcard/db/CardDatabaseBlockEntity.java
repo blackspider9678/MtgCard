@@ -123,7 +123,7 @@ public class CardDatabaseBlockEntity extends BlockEntity {
         if (this.intakeAll.size() >= MAX_INTAKE) {
             if (this.level instanceof ServerLevel sw) {
                 var p = sw.getNearestPlayer(this.worldPosition.getX()+0.5, this.worldPosition.getY()+0.5, this.worldPosition.getZ()+0.5, 8.0, false);
-                if (p != null) p.displayClientMessage(net.minecraft.network.chat.Component.literal("Card Database intake is full."), false);
+                if (p != null) p.sendSystemMessage(net.minecraft.network.chat.Component.literal("Card Database intake is full."));
             }
             return;
         }

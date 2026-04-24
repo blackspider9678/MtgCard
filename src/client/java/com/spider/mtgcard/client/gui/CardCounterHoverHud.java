@@ -1,10 +1,11 @@
 package com.spider.mtgcard.client.gui;
 
+import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.display.CardDisplayEntity;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.gui.GuiGraphics;
@@ -31,7 +32,10 @@ public final class CardCounterHoverHud {
 
     public static void init() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> tick(client));
-        HudRenderCallback.EVENT.register((ctx, tickDelta) -> renderHud(ctx));
+        HudElementRegistry.addLast(
+                Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "card_counter_hover"),
+                (graphics, tickDelta) -> renderHud(new GuiGraphics(graphics))
+        );
     }
 
     private static void tick(Minecraft client) {

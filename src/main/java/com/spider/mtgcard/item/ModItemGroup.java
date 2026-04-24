@@ -1,7 +1,7 @@
 package com.spider.mtgcard.item;
 
 import com.spider.mtgcard.Mtgcard;
-import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
+import net.fabricmc.fabric.api.creativetab.v1.FabricCreativeModeTab;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -17,7 +17,7 @@ public final class ModItemGroup {
         GROUP = Registry.register(
                 BuiltInRegistries.CREATIVE_MODE_TAB,
                 Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "main"),
-                FabricItemGroup.builder()
+                FabricCreativeModeTab.builder()
                         // SAFE ICON: don’t depend on your static fields here
                         .icon(() -> new ItemStack(ModItems.CARD))
                         .title(Component.translatable("itemGroup.mtgcard"))

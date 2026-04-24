@@ -5,7 +5,7 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.spider.mtgcard.registry.ModBlockEntities; // or ModBlocks.GRAVEYARD_BE if you kept it there
 
-import net.minecraft.world.MenuProvider;
+import net.fabricmc.fabric.api.menu.v1.ExtendedMenuProvider;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -26,7 +26,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.Objects;
 
-public class GraveyardBlockEntity extends BlockEntity implements MenuProvider, WorldlyContainer {
+public class GraveyardBlockEntity extends BlockEntity implements ExtendedMenuProvider<BlockPos>, WorldlyContainer {
 
     private int viewers = 0;
 
@@ -96,7 +96,7 @@ public class GraveyardBlockEntity extends BlockEntity implements MenuProvider, W
 
     @Override
     public boolean shouldCloseCurrentScreen() {
-        return MenuProvider.super.shouldCloseCurrentScreen();
+        return true;
     }
 
     @Override
@@ -107,6 +107,11 @@ public class GraveyardBlockEntity extends BlockEntity implements MenuProvider, W
                 this.worldPosition,
                 ContainerLevelAccess.create(Objects.requireNonNull(level), this.worldPosition)
         );
+    }
+
+    @Override
+    public BlockPos getScreenOpeningData(ServerPlayer player) {
+        return this.worldPosition;
     }
 
     // ---- inventory access (ScreenHandler will use these) ----

@@ -6,7 +6,7 @@ import com.spider.mtgcard.db.CardDatabaseScreenHandler;
 import com.spider.mtgcard.deckbox.DeckboxScreenHandler;
 import com.spider.mtgcard.deckcontrol.DeckControlScreenHandler;
 import com.spider.mtgcard.graveyard.GraveyardScreenHandler;
-import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerType;
+import net.fabricmc.fabric.api.menu.v1.ExtendedMenuType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -19,10 +19,10 @@ public final class ModScreenHandlers {
     private static boolean registered = false;
 
     public static MenuType<DeckboxScreenHandler> DECKBOX;
-    public static ExtendedScreenHandlerType<DeckControlScreenHandler, BlockPos> DECKCONTROL;
-    public static MenuType<GraveyardScreenHandler> GRAVEYARD;
-    public static ExtendedScreenHandlerType<CardStoreScreenHandler, CardStoreScreenHandler.OpenData> CARD_STORE;
-    public static ExtendedScreenHandlerType<CardDatabaseScreenHandler, BlockPos> CARD_DB;
+    public static ExtendedMenuType<DeckControlScreenHandler, BlockPos> DECKCONTROL;
+    public static ExtendedMenuType<GraveyardScreenHandler, BlockPos> GRAVEYARD;
+    public static ExtendedMenuType<CardStoreScreenHandler, CardStoreScreenHandler.OpenData> CARD_STORE;
+    public static ExtendedMenuType<CardDatabaseScreenHandler, BlockPos> CARD_DB;
 
     public static void register() {
         if (registered) return;
@@ -37,25 +37,25 @@ public final class ModScreenHandlers {
         DECKCONTROL = Registry.register(
                 BuiltInRegistries.MENU,
                 Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "deck_control"),
-                new ExtendedScreenHandlerType<>(DeckControlScreenHandler::new, BlockPos.STREAM_CODEC)
+                new ExtendedMenuType<>(DeckControlScreenHandler::new, BlockPos.STREAM_CODEC)
         );
 
         GRAVEYARD = Registry.register(
                 BuiltInRegistries.MENU,
                 Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "graveyard"),
-                new MenuType<>(GraveyardScreenHandler::new, FeatureFlags.VANILLA_SET)
+                new ExtendedMenuType<>(GraveyardScreenHandler::new, BlockPos.STREAM_CODEC)
         );
 
         CARD_STORE = Registry.register(
                 BuiltInRegistries.MENU,
                 Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "card_store"),
-                new ExtendedScreenHandlerType<>(CardStoreScreenHandler::new, CardStoreScreenHandler.OpenData.STREAM_CODEC)
+                new ExtendedMenuType<>(CardStoreScreenHandler::new, CardStoreScreenHandler.OpenData.STREAM_CODEC)
         );
 
         CARD_DB = Registry.register(
                 BuiltInRegistries.MENU,
                 Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "card_database_sh"),
-                new ExtendedScreenHandlerType<>(CardDatabaseScreenHandler::new, BlockPos.STREAM_CODEC)
+                new ExtendedMenuType<>(CardDatabaseScreenHandler::new, BlockPos.STREAM_CODEC)
         );
     }
 

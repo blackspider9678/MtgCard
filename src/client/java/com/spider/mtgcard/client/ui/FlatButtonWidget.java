@@ -2,13 +2,13 @@ package com.spider.mtgcard.client.ui;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.AbstractWidget;
+import com.spider.mtgcard.client.compat.LegacyWidget;
 import net.minecraft.client.gui.narration.NarratedElementType;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
-public class FlatButtonWidget extends AbstractWidget {
+public class FlatButtonWidget extends LegacyWidget {
     private static final int BG = 0xFF1E1E1E;
     private static final int BG_HOVER = 0xFF2A2A2A;
     private static final int BG_OFF = 0xFF141414;
