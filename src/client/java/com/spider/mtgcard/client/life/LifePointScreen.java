@@ -912,28 +912,10 @@ public final class LifePointScreen extends LegacyScreen {
         int boxX = leftX + 10;
         int boxY = y0 + 26;
 
-        // Health sub-panel (behind life square + buttons)
+        // Health sub-panel (behind life square + life controls)
         int healthPanelX = leftX + 6;
         int healthPanelY = y0 + 22;
         int healthPanelW = colW - 12;
-
-        int countersStartY = y0 + 26 + 72 + 12 + 18 + 18 + 10;
-        int healthPanelBottom = countersStartY - 12;
-
-        lifeHealthPanel = new Rect(
-                healthPanelX,
-                healthPanelY,
-                healthPanelW,
-                Math.max(30, healthPanelBottom - healthPanelY)
-        );
-
-        // Counters viewport under health panel
-        int vpX = leftX + 6;
-        int vpY = lifeHealthPanel.y + lifeHealthPanel.h + 8;
-        int vpW = colW - 12;
-        int vpBottom = y0 + h0 - 10;
-        int vpH = Math.max(40, vpBottom - vpY);
-        lifeCounterViewport = new Rect(vpX, vpY, vpW, vpH);
 
         valueField = new EditBox(font, boxX, boxY, box, box, Component.literal(""));
         valueField.setValue(Integer.toString(life));
@@ -984,10 +966,28 @@ public final class LifePointScreen extends LegacyScreen {
                 ClientPlayNetworking.send(new LifePointPackets.AddLifeC2S(pos, +10))
         ).bounds(bx, by, btnW + 10, btnH).build());
 
-        int hintY = boxY + box + 10;
-        int hintW = (lifeHealthPanel != null) ? (lifeHealthPanel.w - ps(20)) : (colW - ps(20));
+        int hintY = boxY + box + ps(10);
+        int hintW = healthPanelW - ps(20);
         addHintLabel(leftX + ps(10), hintY, hintW, "Scroll Â±1");
         addHintLabel(leftX + ps(10), hintY + ps(16), hintW, "Shift Ã—10");
+
+        int hintBottom = hintY + ps(16) + 18;
+        int healthPanelBottom = Math.max(by + btnH, hintBottom) + ps(8);
+
+        lifeHealthPanel = new Rect(
+                healthPanelX,
+                healthPanelY,
+                healthPanelW,
+                Math.max(30, healthPanelBottom - healthPanelY)
+        );
+
+        // Counters viewport under health panel
+        int vpX = leftX + 6;
+        int vpY = lifeHealthPanel.y + lifeHealthPanel.h + ps(8);
+        int vpW = colW - 12;
+        int vpBottom = y0 + h0 - ps(10);
+        int vpH = Math.max(40, vpBottom - vpY);
+        lifeCounterViewport = new Rect(vpX, vpY, vpW, vpH);
 
         // MIDDLE: Other players flat list
         int listY = y0 + 26;
