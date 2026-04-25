@@ -41,6 +41,8 @@ public final class ModItemGroup {
                             var dc_polished_deepslate   = BuiltInRegistries.ITEM.getValue(Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "deck_control_polished_deepslate"));
                             var dc_polished_blackstone  = BuiltInRegistries.ITEM.getValue(Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "deck_control_polished_blackstone"));
                             var dc_prismarine           = BuiltInRegistries.ITEM.getValue(Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "deck_control_prismarine"));
+                            var dc_cut_sandstone        = BuiltInRegistries.ITEM.getValue(Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "deck_control_cut_sandstone"));
+                            var dc_cut_red_sandstone    = BuiltInRegistries.ITEM.getValue(Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "deck_control_cut_red_sandstone"));
 
                             // Dice
                             var d4_dice                 = BuiltInRegistries.ITEM.getValue(Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "d4_dice"));
@@ -75,6 +77,8 @@ public final class ModItemGroup {
                             if (dc_polished_deepslate   != Items.AIR) entries.accept(new ItemStack(dc_polished_deepslate));
                             if (dc_polished_blackstone  != Items.AIR) entries.accept(new ItemStack(dc_polished_blackstone));
                             if (dc_prismarine           != Items.AIR) entries.accept(new ItemStack(dc_prismarine));
+                            if (dc_cut_sandstone        != Items.AIR) entries.accept(new ItemStack(dc_cut_sandstone));
+                            if (dc_cut_red_sandstone    != Items.AIR) entries.accept(new ItemStack(dc_cut_red_sandstone));
 
                             // Dice
                             if (d4_dice                 != Items.AIR) entries.accept(new ItemStack(d4_dice));

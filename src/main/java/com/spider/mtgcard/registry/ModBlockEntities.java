@@ -63,7 +63,9 @@ public final class ModBlockEntities {
                         ModBlocks.DECK_CONTROL_POLISHED_TUFF,
                         ModBlocks.DECK_CONTROL_POLISHED_DEEPSLATE,
                         ModBlocks.DECK_CONTROL_POLISHED_BLACKSTONE,
-                        ModBlocks.DECK_CONTROL_PRISMARINE
+                        ModBlocks.DECK_CONTROL_PRISMARINE,
+                        ModBlocks.DECK_CONTROL_CUT_SANDSTONE,
+                        ModBlocks.DECK_CONTROL_CUT_RED_SANDSTONE
                 ).build()
         );
 

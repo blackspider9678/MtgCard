@@ -60,6 +60,8 @@ public final class ModBlocks {
     public static Block DECK_CONTROL_POLISHED_DEEPSLATE;
     public static Block DECK_CONTROL_POLISHED_BLACKSTONE;
     public static Block DECK_CONTROL_PRISMARINE;
+    public static Block DECK_CONTROL_CUT_SANDSTONE;
+    public static Block DECK_CONTROL_CUT_RED_SANDSTONE;
 
     public static Block CARD_STORE;
     public static Block GRAVEYARD;
@@ -146,6 +148,8 @@ public final class ModBlocks {
         DECK_CONTROL_POLISHED_DEEPSLATE = registerBlockItem("deck_control_polished_deepslate", dcSettings, DeckControlBlock::new);
         DECK_CONTROL_POLISHED_BLACKSTONE = registerBlockItem("deck_control_polished_blackstone", dcSettings, DeckControlBlock::new);
         DECK_CONTROL_PRISMARINE = registerBlockItem("deck_control_prismarine", dcSettings, DeckControlBlock::new);
+        DECK_CONTROL_CUT_SANDSTONE = registerBlockItem("deck_control_cut_sandstone", dcSettings, DeckControlBlock::new);
+        DECK_CONTROL_CUT_RED_SANDSTONE = registerBlockItem("deck_control_cut_red_sandstone", dcSettings, DeckControlBlock::new);
 
         // ---- Card Store ----
         CARD_STORE = registerBlockItem(
