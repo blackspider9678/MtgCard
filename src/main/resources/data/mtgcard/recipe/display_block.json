@@ -7,7 +7,7 @@
   ],
   "key": {
     "I": "minecraft:iron_ingot",
-    "T": "minecraft:tinted_glass",
+    "T": "#c:glass_blocks",
     "G": "minecraft:black_concrete",
     "R": "minecraft:redstone"
   },
