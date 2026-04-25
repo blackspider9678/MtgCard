@@ -8,7 +8,7 @@
   "key": {
     "P": "minecraft:crimson_planks",
     "G": "minecraft:gold_ingot",
-    "C": "minecraft:chest"
+    "C": "#c:chests"
   },
   "result": {
     "id": "mtgcard:crimson_deckbox",
