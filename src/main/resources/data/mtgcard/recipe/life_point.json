@@ -8,7 +8,7 @@
   "key": {
     "I": "minecraft:iron_ingot",
     "C": "minecraft:comparator",
-    "T": "minecraft:tinted_glass",
+    "T": "#c:glass_blocks",
     "B": "minecraft:redstone_block",
     "R": "minecraft:redstone"
   },
