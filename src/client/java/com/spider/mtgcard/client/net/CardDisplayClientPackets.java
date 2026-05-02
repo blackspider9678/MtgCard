@@ -15,7 +15,7 @@ public final class CardDisplayClientPackets {
                     if (mc == null) return;
 
                     // handSlot is irrelevant for display mode; pass -1
-                    mc.setScreen(new com.spider.mtgcard.client.CardLargeViewScreen(
+                    mc.gui.setScreen(new com.spider.mtgcard.client.CardLargeViewScreen(
                             payload.stack(),
                             -1,
                             payload.entityId()

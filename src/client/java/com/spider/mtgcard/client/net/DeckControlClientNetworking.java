@@ -11,14 +11,14 @@ public final class DeckControlClientNetworking {
         ClientPlayNetworking.registerGlobalReceiver(DeckControlPackets.OverlayS2C.ID, (payload, ctx) ->
                 ctx.client().execute(() -> {
                     var client = Minecraft.getInstance();
-                    if (client.screen instanceof DeckControlScreen screen) {
+                    if (client.gui.screen() instanceof DeckControlScreen screen) {
                         screen.onOverlayPayload(payload);
                     }
                 })
         );
         ClientPlayNetworking.registerGlobalReceiver(DeckControlPackets.CascadeS2C.ID, (payload, ctx) -> {
             ctx.client().execute(() -> {
-                if (ctx.client().screen instanceof com.spider.mtgcard.client.gui.DeckControlScreen sc) {
+                if (ctx.client().gui.screen() instanceof com.spider.mtgcard.client.gui.DeckControlScreen sc) {
                     sc.onCascadePayload(payload);
                 }
             });

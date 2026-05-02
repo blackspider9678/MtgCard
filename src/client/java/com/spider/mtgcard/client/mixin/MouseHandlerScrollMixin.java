@@ -18,7 +18,7 @@ public class MouseHandlerScrollMixin {
     private void mtgcard$lifePointScroll(long window, double horizontal, double vertical, CallbackInfo ci) {
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.player == null || client.level == null) return;
-        if (client.screen != null) return; // only in-world
+        if (client.gui.screen() != null) return; // only in-world
 
         HitResult hr = client.hitResult;
         if (!(hr instanceof BlockHitResult bhr)) return;

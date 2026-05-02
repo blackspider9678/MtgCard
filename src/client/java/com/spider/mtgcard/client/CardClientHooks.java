@@ -20,7 +20,7 @@ public class CardClientHooks {
 
         int slot = (hand == InteractionHand.OFF_HAND) ? 40 : player.getInventory().getSelectedSlot();
 
-        mc.setScreen(new CardLargeViewScreen(stack, slot, -1));
+        mc.gui.setScreen(new CardLargeViewScreen(stack, slot, -1));
     }
 
     /** Legacy: old reflective entrypoint. Works, but can pick wrong slot if duplicates exist. */
@@ -32,7 +32,7 @@ public class CardClientHooks {
         int slot = findHandSlot(mc.player, stack);
         if (slot < 0) slot = mc.player.getInventory().getSelectedSlot();
 
-        mc.setScreen(new CardLargeViewScreen(stack, slot, -1));
+        mc.gui.setScreen(new CardLargeViewScreen(stack, slot, -1));
     }
 
     /** Returns inventory slot index for the held stack, or -1 if unknown. */

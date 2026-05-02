@@ -18,7 +18,7 @@ public final class LifePointClientPackets {
         ClientPlayNetworking.registerGlobalReceiver(LifePointPackets.SyncLifePayload.ID, (payload, ctx) ->
                 ctx.client().execute(() -> {
                     LifePointClientState.onSync(payload.pos(), payload.state());
-                    if (Minecraft.getInstance().screen instanceof LifePointScreen s
+                    if (Minecraft.getInstance().gui.screen() instanceof LifePointScreen s
                             && s.getPos().equals(payload.pos())) {
                         s.refresh();
                     }
@@ -27,7 +27,7 @@ public final class LifePointClientPackets {
 
         ClientPlayNetworking.registerGlobalReceiver(LifePointPackets.YourPresetIdS2C.ID, (payload, ctx) ->
                 ctx.client().execute(() -> {
-                    var scr = Minecraft.getInstance().screen;
+                    var scr = Minecraft.getInstance().gui.screen();
                     if (scr instanceof LifePointScreen s) {
                         s.setYourPresetId(payload.id());
                     }
@@ -38,7 +38,7 @@ public final class LifePointClientPackets {
                 ctx.client().execute(() -> {
                     LifePointClientState.onNearby(payload.origin(), payload.found());
 
-                    if (Minecraft.getInstance().screen instanceof LifePointScreen s) {
+                    if (Minecraft.getInstance().gui.screen() instanceof LifePointScreen s) {
                         s.onScanArrived(payload.origin());
                     }
                 })
@@ -48,7 +48,7 @@ public final class LifePointClientPackets {
                 ctx.client().execute(() -> {
                     LifePointClientState.onGroupsList(payload.groups());
 
-                    if (Minecraft.getInstance().screen instanceof LifePointScreen s) {
+                    if (Minecraft.getInstance().gui.screen() instanceof LifePointScreen s) {
                         s.refresh();
                     }
                 })
@@ -66,7 +66,7 @@ public final class LifePointClientPackets {
                             payload.dead()
                     );
 
-                    var st = Minecraft.getInstance().screen;
+                    var st = Minecraft.getInstance().gui.screen();
                     if (st instanceof LifePointScreen lp) lp.refresh();
                 })
         );
@@ -75,7 +75,7 @@ public final class LifePointClientPackets {
                 ctx.client().execute(() -> {
                     LifePointClientState.onGroupRemoved(payload.groupId());
 
-                    if (Minecraft.getInstance().screen instanceof LifePointScreen s) {
+                    if (Minecraft.getInstance().gui.screen() instanceof LifePointScreen s) {
                         s.refresh();
                     }
                 })

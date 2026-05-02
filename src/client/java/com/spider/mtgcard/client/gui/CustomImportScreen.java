@@ -745,7 +745,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
 
     public static void open() {
         var mc = Minecraft.getInstance();
-        mc.execute(() -> mc.setScreen(new CustomImportScreen()));
+        mc.execute(() -> mc.gui.setScreen(new CustomImportScreen()));
     }
 
     public CustomImportScreen() { super(Component.literal("Import Custom Cards")); }

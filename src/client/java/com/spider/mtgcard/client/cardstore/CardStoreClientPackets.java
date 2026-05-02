@@ -10,21 +10,21 @@ public final class CardStoreClientPackets {
 
         ClientPlayNetworking.registerGlobalReceiver(CardStorePackets.SearchPrintsStartS2C.ID, (payload, context) -> {
             context.client().execute(() -> {
-                var screen = context.client().screen;
+                var screen = context.client().gui.screen();
                 if (screen instanceof CardStoreScreen cs) cs.onPrintsStart(payload);
             });
         });
 
         ClientPlayNetworking.registerGlobalReceiver(CardStorePackets.SearchPrintsAddS2C.ID, (payload, context) -> {
             context.client().execute(() -> {
-                var screen = context.client().screen;
+                var screen = context.client().gui.screen();
                 if (screen instanceof CardStoreScreen cs) cs.onPrintsAdd(payload);
             });
         });
 
         ClientPlayNetworking.registerGlobalReceiver(CardStorePackets.SearchPrintsDoneS2C.ID, (payload, context) -> {
             context.client().execute(() -> {
-                var screen = context.client().screen;
+                var screen = context.client().gui.screen();
                 if (screen instanceof CardStoreScreen cs) cs.onPrintsDone(payload);
             });
         });

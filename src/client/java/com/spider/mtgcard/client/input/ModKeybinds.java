@@ -101,7 +101,7 @@ public final class ModKeybinds {
             if (client.player == null) continue;
 
             // Optional: don't flip while a GUI is open
-            if (client.screen != null) continue;
+            if (client.gui.screen() != null) continue;
 
             // Prefer main hand card, else offhand card
             var main = client.player.getMainHandItem();

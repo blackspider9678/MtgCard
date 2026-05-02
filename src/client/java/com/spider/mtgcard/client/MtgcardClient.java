@@ -119,7 +119,7 @@ public final class MtgcardClient implements ClientModInitializer {
             if (paths.isEmpty()) return;
 
             client.execute(() -> {
-                Screen s = client.screen;
+                Screen s = client.gui.screen();
                 if (s instanceof CustomImportScreen cis) {
                     cis.handleFileDrop(paths);
                 } else if (s != null) {

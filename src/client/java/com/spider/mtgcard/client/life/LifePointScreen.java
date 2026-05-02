@@ -493,7 +493,7 @@ public final class LifePointScreen extends LegacyScreen {
         var gv = (gid != null) ? LifePointClientState.getGroup(gid) : null;
         s.lastStarted = (gv != null && gv.started);
 
-        Minecraft.getInstance().setScreen(s);
+        Minecraft.getInstance().gui.setScreen(s);
     }
 
     // -------------------------------------------------------------------------
@@ -694,7 +694,7 @@ public final class LifePointScreen extends LegacyScreen {
         var startBtn = Button.builder(Component.literal("Start"), b -> {
             b.active = false;
             ClientPlayNetworking.send(new LifePointPackets.StartGameC2S(pos));
-            Minecraft.getInstance().setScreen(null);
+            Minecraft.getInstance().gui.setScreen(null);
         }).bounds(startX + (btnW + gap) * 0, btnY, btnW, btnH).build();
         startBtn.active = hasGroup && !started;
         addRenderableWidget(startBtn);
@@ -794,7 +794,7 @@ public final class LifePointScreen extends LegacyScreen {
         var startBtn = Button.builder(Component.literal("Start"), b -> {
             b.active = false;
             ClientPlayNetworking.send(new LifePointPackets.StartGameC2S(pos));
-            Minecraft.getInstance().setScreen(null);
+            Minecraft.getInstance().gui.setScreen(null);
         }).bounds(startX + (btnW + gap) * 0, btnY, btnW, btnH).build();
         startBtn.active = hasGroup && !started;
         addRenderableWidget(startBtn);
@@ -1480,7 +1480,7 @@ public final class LifePointScreen extends LegacyScreen {
         }).bounds(inpodX + 6, controlsY + 22, (colW - 12) / 2 - 4, 18).build());
 
         addRenderableWidget(Button.builder(Component.literal("Delete"), b ->
-                Minecraft.getInstance().setScreen(new ConfirmDeleteGroupScreen(this, selectedGroupId))
+                Minecraft.getInstance().gui.setScreen(new ConfirmDeleteGroupScreen(this, selectedGroupId))
         ).bounds(inpodX + 6 + (colW - 12) / 2 + 4, controlsY + 22, (colW - 12) / 2 - 4, 18).build());
     }
 
@@ -3399,7 +3399,7 @@ public final class LifePointScreen extends LegacyScreen {
 
             addRenderableWidget(Button.builder(Component.literal("Confirm"), b -> {
                 ClientPlayNetworking.send(new LifePointPackets.DeleteGroupC2S(groupId));
-                Minecraft.getInstance().setScreen(parent);
+                Minecraft.getInstance().gui.setScreen(parent);
 
                 parent.selectedGroupId = null;
                 parent.groupDirty = false;
@@ -3410,7 +3410,7 @@ public final class LifePointScreen extends LegacyScreen {
             }).bounds(cx - 90, y, 80, 20).build());
 
             addRenderableWidget(Button.builder(Component.literal("Cancel"), b -> {
-                Minecraft.getInstance().setScreen(parent);
+                Minecraft.getInstance().gui.setScreen(parent);
                 parent.refresh();
             }).bounds(cx + 10, y, 80, 20).build());
         }

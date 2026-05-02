@@ -48,7 +48,7 @@ public final class CardPeekHud implements HudElement {
         if (client == null || client.player == null) return;
 
         // Never show when ANY screen is open
-        if (client.screen != null) {
+        if (client.gui.screen() != null) {
             stepToward(0f, tickCounter);
             return;
         }

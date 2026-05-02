@@ -6,7 +6,7 @@ import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
@@ -392,7 +392,7 @@ public class LifePointBlockEntity extends BlockEntity {
             glowEntityId = null;
         }
 
-        Shulker sh = new Shulker(EntityType.SHULKER, sw);
+        Shulker sh = new Shulker(EntityTypes.SHULKER, sw);
 
         sh.snapTo(
                 worldPosition.getX() + 0.5,
