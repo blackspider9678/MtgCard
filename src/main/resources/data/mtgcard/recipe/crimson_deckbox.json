@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "PGP",
+    "GCG",
+    "PGP"
+  ],
+  "key": {
+    "P": "minecraft:crimson_planks",
+    "G": "minecraft:gold_ingot",
+    "C": "minecraft:chest"
+  },
+  "result": {
+    "id": "mtgcard:crimson_deckbox",
+    "count": 1
+  }
+}
