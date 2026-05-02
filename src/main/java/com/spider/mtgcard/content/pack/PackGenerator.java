@@ -135,7 +135,7 @@ public final class PackGenerator {
                 final String packUid = active == null ? "missing" : active.packUid;
                 final boolean packDebug = MtgcardConfig.packDebugEnabled();
 
-                final Set<String> seenIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
+                final Set<String> seenCardKeys = Collections.newSetFromMap(new ConcurrentHashMap<>());
                 final CustomMode customMode = customModeForPack(server, desiredSet);
 
                 if (packDebug) {
@@ -179,7 +179,7 @@ public final class PackGenerator {
                         chain = chain.thenCompose(v -> {
                                 if (active != null && active.cancelled) return CompletableFuture.completedFuture(null);
 
-                                return makeCardAsyncNoDupe(server, player, slot, desiredSet, customMode, seenIds, 6)
+                                return makeCardAsyncNoDupe(server, player, slot, desiredSet, customMode, seenCardKeys, 6)
                                         .thenApply(st -> requireResolvedCard(slot, st))
                                         .thenAccept(st -> {
                                                 if (active != null && active.cancelled) return;
@@ -595,7 +595,7 @@ public final class PackGenerator {
                 RaritySlot slot,
                 String desiredSet,
                 CustomMode customMode,
-                Set<String> seenIds,
+                Set<String> seenCardKeys,
                 int attemptsLeft
         ) {
                 return makeCardAsync(server, player, slot, desiredSet, customMode)
@@ -604,16 +604,18 @@ public final class PackGenerator {
                                         if (attemptsLeft <= 0) {
                                                 return CompletableFuture.failedFuture(new IllegalStateException("Could not resolve " + slot + " pack card"));
                                         }
-                                        return makeCardAsyncNoDupe(server, player, slot, desiredSet, customMode, seenIds, attemptsLeft - 1);
+                                        return makeCardAsyncNoDupe(server, player, slot, desiredSet, customMode, seenCardKeys, attemptsLeft - 1);
                                 }
 
-                                String id = readMtgId(st);
-                                if (seenIds.contains(id)) {
+                                String cardKey = readCanonicalCardKey(st);
+                                if (cardKey != null && seenCardKeys.contains(cardKey)) {
                                         if (attemptsLeft <= 0) return CompletableFuture.completedFuture(st);
-                                        return makeCardAsyncNoDupe(server, player, slot, desiredSet, customMode, seenIds, attemptsLeft - 1);
+                                        return makeCardAsyncNoDupe(server, player, slot, desiredSet, customMode, seenCardKeys, attemptsLeft - 1);
                                 }
 
-                                seenIds.add(id);
+                                if (cardKey != null) {
+                                        seenCardKeys.add(cardKey);
+                                }
                                 return CompletableFuture.completedFuture(st);
                         });
         }
@@ -788,6 +790,25 @@ public final class PackGenerator {
                 if (meta == null) return null;
                 String id = meta.getString("id").orElse("");
                 return id.isBlank() ? null : id;
+        }
+
+        private static String readCanonicalCardKey(ItemStack st) {
+                String oracleId = readMetaString(st, "oracle_id");
+                if (!oracleId.isBlank()) {
+                        return "oracle:" + oracleId.trim().toLowerCase(Locale.ROOT);
+                }
+
+                String name = readMetaString(st, "name");
+                if (!name.isBlank()) {
+                        return "name:" + name.trim().toLowerCase(Locale.ROOT);
+                }
+
+                String id = readMtgId(st);
+                if (id != null && !id.isBlank()) {
+                        return "id:" + id.trim().toLowerCase(Locale.ROOT);
+                }
+
+                return null;
         }
 
         private static boolean isTokenLike(ItemStack st) {

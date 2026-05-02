@@ -7,6 +7,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 public final class ScryfallCache {
     public record Context(
@@ -188,16 +189,20 @@ public final class ScryfallCache {
             ServerLevel world, Context ctx, Query q, boolean foil, boolean allowVariant
     ) {
         final String query = buildQuery(ctx, q, foil, allowVariant);
-        return pickFromPoolAsync(world, ctx, q, query)
-                .exceptionally(ex -> null)
-                .thenCompose(card -> {
-                    if (card != null) return CompletableFuture.completedFuture(card);
-                    return fetchRandomRemoteAsync(world, ctx, q, query);
-                })
-                .exceptionally(ex -> {
+        return fetchRandomRemoteAsync(world, ctx, q, query)
+                .handle((card, ex) -> {
+                    if (card != null) return card;
+
                     ScryfallModels.Card fallback = fallbackFromLocalCache(world, ctx, q);
                     if (fallback != null) return fallback;
-                    throw new RuntimeException("Scryfall fetch failed: " + ex.getMessage(), ex);
+
+                    if (ex instanceof CompletionException ce && ce.getCause() != null) {
+                        throw ce;
+                    }
+                    if (ex != null) {
+                        throw new CompletionException(new RuntimeException("Scryfall fetch failed: " + ex.getMessage(), ex));
+                    }
+                    throw new CompletionException(new RuntimeException("Scryfall fetch returned no card for query: " + query));
                 });
     }
 
