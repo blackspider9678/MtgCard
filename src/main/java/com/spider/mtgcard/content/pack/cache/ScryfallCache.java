@@ -7,6 +7,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 public final class ScryfallCache {
     public record Context(
@@ -148,7 +149,7 @@ public final class ScryfallCache {
     private static final int QUERY_POOL_TARGET = 36;
     private static final int QUERY_POOL_LOW_WATER = 8;
     private static final int SCRYFALL_SEARCH_PAGE_SIZE = 175;
-    private static final int MAX_RANDOM_SEARCH_PAGE = 50;
+    private static final int QUERY_POOL_PAGE_SAMPLES = 4;
     private static final Random RNG = new Random();
     private static final Map<String, ScryfallModels.Card> SESSION = new HashMap<>();
     private static final Map<String, QueryPool> QUERY_POOLS = new HashMap<>();
@@ -188,16 +189,20 @@ public final class ScryfallCache {
             ServerLevel world, Context ctx, Query q, boolean foil, boolean allowVariant
     ) {
         final String query = buildQuery(ctx, q, foil, allowVariant);
-        return pickFromPoolAsync(world, ctx, q, query)
-                .exceptionally(ex -> null)
-                .thenCompose(card -> {
-                    if (card != null) return CompletableFuture.completedFuture(card);
-                    return fetchRandomRemoteAsync(world, ctx, q, query);
-                })
-                .exceptionally(ex -> {
+        return fetchRandomRemoteAsync(world, ctx, q, query)
+                .handle((card, ex) -> {
+                    if (card != null) return card;
+
                     ScryfallModels.Card fallback = fallbackFromLocalCache(world, ctx, q);
                     if (fallback != null) return fallback;
-                    throw new RuntimeException("Scryfall fetch failed: " + ex.getMessage(), ex);
+
+                    if (ex instanceof CompletionException ce && ce.getCause() != null) {
+                        throw ce;
+                    }
+                    if (ex != null) {
+                        throw new CompletionException(new RuntimeException("Scryfall fetch failed: " + ex.getMessage(), ex));
+                    }
+                    throw new CompletionException(new RuntimeException("Scryfall fetch returned no card for query: " + query));
                 });
     }
 
@@ -275,29 +280,67 @@ public final class ScryfallCache {
             }
 
             int totalPages = Math.max(1, (int) Math.ceil(firstPage.totalCards() / (double) SCRYFALL_SEARCH_PAGE_SIZE));
-            int pageCap = Math.max(1, Math.min(totalPages, MAX_RANDOM_SEARCH_PAGE));
-            int chosenPage = 1 + RNG.nextInt(pageCap);
+            List<Integer> sampledPages = randomPageSample(totalPages, QUERY_POOL_PAGE_SAMPLES);
+            int perPageTarget = Math.max(1, (int) Math.ceil(QUERY_POOL_TARGET / (double) sampledPages.size()));
 
-            CompletableFuture<ScryfallPrintSearchFetch.Page> pageFuture =
-                    (chosenPage == 1)
-                            ? CompletableFuture.completedFuture(firstPage)
-                            : ScryfallPrintSearchFetch.fetchSearchAsync(query, chosenPage)
-                            .exceptionally(ex -> firstPage);
-
-            return pageFuture.thenCompose(page -> {
-                List<ScryfallPrintSearchFetch.PrintHit> sample = sampleHits(page.hits(), QUERY_POOL_TARGET);
-                if (sample.isEmpty() && page != firstPage) {
-                    sample = sampleHits(firstPage.hits(), QUERY_POOL_TARGET);
+            ArrayList<CompletableFuture<ScryfallPrintSearchFetch.Page>> pageFutures = new ArrayList<>(sampledPages.size());
+            for (int pageNumber : sampledPages) {
+                if (pageNumber == 1) {
+                    pageFutures.add(CompletableFuture.completedFuture(firstPage));
+                } else {
+                    pageFutures.add(
+                            ScryfallPrintSearchFetch.fetchSearchAsync(query, pageNumber)
+                                    .exceptionally(ex -> null)
+                    );
                 }
-                if (sample.isEmpty()) return CompletableFuture.completedFuture(List.of());
+            }
 
-                return ScryfallExactFetch.fetchCollectionByPrintHitsAsync(sample).thenApply(cards -> {
-                    List<ScryfallModels.Card> usable = sanitize(cards);
-                    cacheCards(world, usable);
-                    return usable;
-                });
-            });
+            return CompletableFuture.allOf(pageFutures.toArray(CompletableFuture[]::new))
+                    .thenCompose(ignored -> {
+                        ArrayList<ScryfallPrintSearchFetch.PrintHit> sample = new ArrayList<>(QUERY_POOL_TARGET);
+                        HashSet<String> seenPrints = new HashSet<>();
+
+                        for (CompletableFuture<ScryfallPrintSearchFetch.Page> future : pageFutures) {
+                            ScryfallPrintSearchFetch.Page page = future.getNow(null);
+                            if (page == null || page.hits().isEmpty()) continue;
+
+                            for (ScryfallPrintSearchFetch.PrintHit hit : sampleHits(page.hits(), perPageTarget)) {
+                                if (hit == null) continue;
+                                String key = lower(hit.set()) + "#" + hit.collectorNumber();
+                                if (seenPrints.add(key)) sample.add(hit);
+                            }
+                        }
+
+                        if (sample.isEmpty()) {
+                            sample.addAll(sampleHits(firstPage.hits(), QUERY_POOL_TARGET));
+                        } else if (sample.size() > QUERY_POOL_TARGET) {
+                            Collections.shuffle(sample, RNG);
+                            sample.subList(QUERY_POOL_TARGET, sample.size()).clear();
+                        }
+
+                        if (sample.isEmpty()) return CompletableFuture.completedFuture(List.of());
+
+                        return ScryfallExactFetch.fetchCollectionByPrintHitsAsync(sample).thenApply(cards -> {
+                            List<ScryfallModels.Card> usable = sanitize(cards);
+                            cacheCards(world, usable);
+                            return usable;
+                        });
+                    });
         });
+    }
+
+    private static List<Integer> randomPageSample(int totalPages, int desiredCount) {
+        if (totalPages <= 0) return List.of(1);
+
+        int count = Math.max(1, Math.min(totalPages, desiredCount));
+        ArrayList<Integer> pages = new ArrayList<>(totalPages);
+        for (int page = 1; page <= totalPages; page++) {
+            pages.add(page);
+        }
+
+        Collections.shuffle(pages, RNG);
+        if (pages.size() > count) pages.subList(count, pages.size()).clear();
+        return pages;
     }
 
     private static List<ScryfallPrintSearchFetch.PrintHit> sampleHits(
@@ -316,7 +359,7 @@ public final class ScryfallCache {
         HashSet<String> seen = new HashSet<>();
         for (ScryfallModels.Card card : cards) {
             if (card == null || card.id == null || card.id.isBlank()) continue;
-            if (seen.add(card.id)) usable.add(card);
+            if (seen.add(canonicalCardKey(card))) usable.add(card);
         }
         return usable;
     }
@@ -333,11 +376,11 @@ public final class ScryfallCache {
 
         synchronized (ScryfallCache.class) {
             for (ScryfallModels.Card card : SESSION.values()) {
-                if (matchesQuery(card, ctx, q) && seen.add(card.id)) matches.add(card);
+                if (matchesQuery(card, ctx, q) && seen.add(canonicalCardKey(card))) matches.add(card);
             }
         }
         for (ScryfallModels.Card card : store(world).snapshot()) {
-            if (matchesQuery(card, ctx, q) && seen.add(card.id)) matches.add(card);
+            if (matchesQuery(card, ctx, q) && seen.add(canonicalCardKey(card))) matches.add(card);
         }
 
         if (matches.isEmpty()) return 0;
@@ -353,11 +396,11 @@ public final class ScryfallCache {
     private static void addToPool(QueryPool pool, List<ScryfallModels.Card> cards) {
         HashSet<String> existing = new HashSet<>();
         for (ScryfallModels.Card card : pool.cards) {
-            if (card != null && card.id != null && !card.id.isBlank()) existing.add(card.id);
+            if (card != null && card.id != null && !card.id.isBlank()) existing.add(canonicalCardKey(card));
         }
         for (ScryfallModels.Card card : cards) {
             if (card == null || card.id == null || card.id.isBlank()) continue;
-            if (existing.add(card.id)) pool.cards.add(card);
+            if (existing.add(canonicalCardKey(card))) pool.cards.add(card);
         }
         while (pool.cards.size() > QUERY_POOL_TARGET * 2) {
             pool.cards.remove(RNG.nextInt(pool.cards.size()));
@@ -391,16 +434,31 @@ public final class ScryfallCache {
 
         synchronized (ScryfallCache.class) {
             for (ScryfallModels.Card card : SESSION.values()) {
-                if (matchesQuery(card, ctx, q) && seen.add(card.id)) matches.add(card);
+                if (matchesQuery(card, ctx, q) && seen.add(canonicalCardKey(card))) matches.add(card);
             }
         }
         if (matches.isEmpty()) {
             for (ScryfallModels.Card card : store(world).snapshot()) {
-                if (matchesQuery(card, ctx, q) && seen.add(card.id)) matches.add(card);
+                if (matchesQuery(card, ctx, q) && seen.add(canonicalCardKey(card))) matches.add(card);
             }
         }
         if (!matches.isEmpty()) return matches.get(RNG.nextInt(matches.size()));
         return null;
+    }
+
+    private static String canonicalCardKey(ScryfallModels.Card card) {
+        if (card == null) return "";
+
+        String oracleId = lower(card.oracleId);
+        if (!oracleId.isBlank()) return "oracle:" + oracleId;
+
+        String name = lower(card.name);
+        if (!name.isBlank()) return "name:" + name;
+
+        String id = lower(card.id);
+        if (!id.isBlank()) return "id:" + id;
+
+        return "";
     }
 
     private static boolean matchesQuery(ScryfallModels.Card card, Context ctx, Query q) {
