@@ -94,7 +94,9 @@ public final class MtgcardClient implements ClientModInitializer {
 
         // Render layers (safe either place, but fine here too)
         BlockRenderLayerMap.putBlock(LifePointRegistry.LIFE_POINT_BLOCK, ChunkSectionLayer.CUTOUT);
-        BlockRenderLayerMap.putBlock(ModBlocks.DECKBOX, ChunkSectionLayer.CUTOUT);
+        for (var deckbox : ModBlocks.getDeckboxBlocks()) {
+            BlockRenderLayerMap.putBlock(deckbox, ChunkSectionLayer.CUTOUT);
+        }
         BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_STONE, ChunkSectionLayer.CUTOUT);
         BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_GRANITE, ChunkSectionLayer.CUTOUT);
         BlockRenderLayerMap.putBlock(ModBlocks.DECK_CONTROL_POLISHED_DIORITE, ChunkSectionLayer.CUTOUT);

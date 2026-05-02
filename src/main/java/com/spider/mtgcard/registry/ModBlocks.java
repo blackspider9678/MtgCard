@@ -16,18 +16,38 @@ import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.material.PushReaction;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.Registry;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.block.state.BlockState;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
 public final class ModBlocks {
 
     private static boolean inited = false;
+    private static final List<String> DECKBOX_REGISTRY_PATHS = List.of(
+            "deckbox",
+            "oak_deckbox",
+            "birch_deckbox",
+            "jungle_deckbox",
+            "acacia_deckbox",
+            "dark_oak_deckbox",
+            "mangrove_deckbox",
+            "cherry_deckbox",
+            "pale_oak_deckbox",
+            "bamboo_deckbox",
+            "crimson_deckbox",
+            "warped_deckbox"
+    );
+    private static final List<Block> DECKBOX_BLOCKS = new ArrayList<>();
+    private static final List<Item> DECKBOX_ITEMS = new ArrayList<>();
 
     // ---- Blocks (assigned in init) ----
     public static Block DECKBOX;
@@ -57,25 +77,48 @@ public final class ModBlocks {
         return Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, path);
     }
 
+    public static List<Block> getDeckboxBlocks() {
+        return List.copyOf(DECKBOX_BLOCKS);
+    }
+
+    public static List<Item> getDeckboxItems() {
+        return List.copyOf(DECKBOX_ITEMS);
+    }
+
+    public static boolean isDeckbox(BlockState state) {
+        return state != null && state.getBlock() instanceof DeckboxBlock;
+    }
+
+    public static boolean isDeckbox(ItemStack stack) {
+        return stack != null && stack.getItem() instanceof DeckboxBlockItem;
+    }
+
     public static void init() {
         if (inited) return;
         inited = true;
 
         // ---- Deckbox ----
-        var deckbox = registerBlockWithItem(
-                "deckbox",
-                BlockBehaviour.Properties.of()
-                        .mapColor(MapColor.WOOD)
-                        .strength(2.5f)
-                        .noOcclusion()
-                        .isRedstoneConductor((s, w, p) -> false)
-                        .pushReaction(PushReaction.DESTROY),
-                DeckboxBlock::new,
-                (block, itemSettings) -> new DeckboxBlockItem(block, itemSettings.stacksTo(1))
-        );
+        for (String path : DECKBOX_REGISTRY_PATHS) {
+            var deckbox = registerBlockWithItem(
+                    path,
+                    BlockBehaviour.Properties.of()
+                            .mapColor(MapColor.WOOD)
+                            .strength(2.5f)
+                            .noOcclusion()
+                            .isRedstoneConductor((s, w, p) -> false)
+                            .pushReaction(PushReaction.DESTROY),
+                    DeckboxBlock::new,
+                    (block, itemSettings) -> new DeckboxBlockItem(block, itemSettings.stacksTo(1))
+            );
 
-        DECKBOX = deckbox.block;
-        DECKBOX_ITEM = deckbox.item;
+            if ("deckbox".equals(path)) {
+                DECKBOX = deckbox.block;
+                DECKBOX_ITEM = deckbox.item;
+            }
+
+            DECKBOX_BLOCKS.add(deckbox.block);
+            DECKBOX_ITEMS.add(deckbox.item);
+        }
 
         // ---- Deck Control ----
         var dcSettings = BlockBehaviour.Properties.of()

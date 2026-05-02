@@ -12,7 +12,7 @@ public final class DeckboxTooltips {
 
     public static void register() {
         ItemTooltipCallback.EVENT.register((stack, context, displayComponent, lines) -> {
-            if (!stack.is(ModBlocks.DECKBOX_ITEM)) return;
+            if (!ModBlocks.isDeckbox(stack)) return;
 
             Component commanderName = DeckboxNaming.getCommanderName(stack);
             Component partnerName = DeckboxNaming.getPartnerName(stack);

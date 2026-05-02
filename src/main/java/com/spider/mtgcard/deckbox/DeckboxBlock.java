@@ -1,7 +1,6 @@
 package com.spider.mtgcard.deckbox;
 
 import com.mojang.serialization.MapCodec;
-import com.spider.mtgcard.registry.ModBlocks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
@@ -303,7 +302,7 @@ public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBl
     /* ---------------- helpers ---------------- */
 
     private static ItemStack createDeckboxDrop(DeckboxBlockEntity deckbox) {
-        ItemStack drop = new ItemStack(ModBlocks.DECKBOX_ITEM);
+        ItemStack drop = new ItemStack(deckbox.getBlockState().getBlock());
         drop.applyComponents(deckbox.collectComponents());
 
         CompoundTag itemData = drop.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();

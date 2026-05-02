@@ -72,7 +72,7 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
         BlockPos pos = be.getBlockPos();
         state.pos = pos;
 
-        state.hasDeckbox = hasAdjacent(world, pos, ModBlocks.DECKBOX);
+        state.hasDeckbox = hasAdjacentDeckbox(world, pos);
         state.hasGraveyard = hasAdjacent(world, pos, ModBlocks.GRAVEYARD);
 
         BlockState bs = world.getBlockState(pos);
@@ -114,6 +114,13 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
     private static boolean hasAdjacent(Level world, BlockPos pos, net.minecraft.world.level.block.Block block) {
         for (Direction d : Direction.values()) { // includes UP + DOWN
             if (world.getBlockState(pos.relative(d)).is(block)) return true;
+        }
+        return false;
+    }
+
+    private static boolean hasAdjacentDeckbox(Level world, BlockPos pos) {
+        for (Direction d : Direction.values()) {
+            if (ModBlocks.isDeckbox(world.getBlockState(pos.relative(d)))) return true;
         }
         return false;
     }

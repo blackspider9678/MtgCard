@@ -45,8 +45,6 @@ public class DeckboxBlockEntity extends RandomizableContainerBlockEntity {
     public static final int SECOND_SIDE_SLOT = MAIN_SLOTS + 1; // 100
     public static final int THIRD_SIDE_SLOT  = MAIN_SLOTS + 2; // 101
 
-    private static final Component NAME = Component.translatable("block.mtgcard.deckbox");
-
     private static final int[] AVAILABLE_SLOTS = java.util.stream.IntStream
             .range(0, INVENTORY_SIZE)
             .toArray();
@@ -105,9 +103,14 @@ public class DeckboxBlockEntity extends RandomizableContainerBlockEntity {
         setChanged();
     }
 
+    private Component getDeckboxName() {
+        Block block = getBlockState().getBlock();
+        return Component.translatable(block.getDescriptionId());
+    }
+
     @Override
     protected Component getDefaultName() {
-        return NAME;
+        return getDeckboxName();
     }
 
     @Override
@@ -203,7 +206,7 @@ public class DeckboxBlockEntity extends RandomizableContainerBlockEntity {
     @Override
     public Component getName() {
         Component commanderName = getCommanderName();
-        return commanderName != null ? commanderName : NAME;
+        return commanderName != null ? commanderName : getDeckboxName();
     }
 
     @Override
