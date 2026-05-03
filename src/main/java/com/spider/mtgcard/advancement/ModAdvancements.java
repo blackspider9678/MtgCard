@@ -18,6 +18,7 @@ public final class ModAdvancements {
     private static final Identifier OPEN_25_BOOSTER_PACKS = id("open_25_booster_packs");
     private static final Identifier OPEN_50_BOOSTER_PACKS = id("open_50_booster_packs");
     private static final Identifier OPEN_100_BOOSTER_PACKS = id("open_100_booster_packs");
+    private static final Identifier OPEN_1000_BOOSTER_PACKS = id("open_1000_booster_packs");
 
     private static final Set<Identifier> MISSING_ADVANCEMENTS = ConcurrentHashMap.newKeySet();
 
@@ -41,6 +42,9 @@ public final class ModAdvancements {
         }
         if (opened >= 100) {
             grant(player, OPEN_100_BOOSTER_PACKS, PACK_CRITERION);
+        }
+        if (opened >= 1000) {
+            grant(player, OPEN_1000_BOOSTER_PACKS, PACK_CRITERION);
         }
     }
 
