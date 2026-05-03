@@ -21,6 +21,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -303,6 +305,16 @@ public final class PackGenerator {
                                         throw new IllegalStateException("Pack reward delivery failed: " + delivery.mode());
                                 }
                                 delivered = true;
+                                player.level().playSound(
+                                        null,
+                                        player.getX(),
+                                        player.getY(),
+                                        player.getZ(),
+                                        SoundEvents.PLAYER_LEVELUP,
+                                        SoundSource.PLAYERS,
+                                        0.75f,
+                                        1.0f
+                                );
 
                                 try {
                                         ModAdvancements.onBoosterPackOpened(player);
