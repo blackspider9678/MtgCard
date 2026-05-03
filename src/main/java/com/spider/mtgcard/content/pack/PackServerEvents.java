@@ -2,6 +2,7 @@ package com.spider.mtgcard.content.pack;
 
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.config.MtgcardConfig;
+import com.spider.mtgcard.net.ModPayloads;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -16,6 +17,7 @@ public final class PackServerEvents {
                         PackInventoryUtil.describeInventoryState(player, player.getInventory().getSelectedSlot())
                 );
             }
+            ModPayloads.clearUnpackProgress(player);
             PackOpenManager.cancelAndRefund(server, player.getUUID());
         });
 

@@ -225,7 +225,7 @@ public final class PackGenerator {
                                                 );
                                         }
                                         PackOpenManager.finish(player);
-                                        ModPayloads.sendUnpackProgress(player, 0);
+                                        ModPayloads.clearUnpackProgress(player);
                                         return;
                                 }
 
@@ -236,7 +236,7 @@ public final class PackGenerator {
                                         PackInventoryUtil.DeliveryResult refundResult = refundPackIfNeeded(player, active);
 
                                         PackOpenManager.finish(player);
-                                        ModPayloads.sendUnpackProgress(player, 0);
+                                        ModPayloads.clearUnpackProgress(player);
 
                                         Mtgcard.LOGGER.error(
                                                 "[MTGCard] Pack opening failed for player={} set={} after {} ms",
@@ -254,7 +254,7 @@ public final class PackGenerator {
                                         PackInventoryUtil.DeliveryResult refundResult = refundPackIfNeeded(player, active);
 
                                         PackOpenManager.finish(player);
-                                        ModPayloads.sendUnpackProgress(player, 0);
+                                        ModPayloads.clearUnpackProgress(player);
                                         logFailureOutcome(playerName, null, refundResult);
                                         Mtgcard.LOGGER.error(
                                                 "[MTGCard] Pack opening produced unresolved cards for player={} set={} after {} ms: {}",
@@ -341,7 +341,7 @@ public final class PackGenerator {
                                 if (!delivered) {
                                         PackInventoryUtil.DeliveryResult refundResult = refundPackIfNeeded(player, active);
                                         logFailureOutcome(playerName, t, refundResult);
-                                        ModPayloads.sendUnpackProgress(player, 0);
+                                        ModPayloads.clearUnpackProgress(player);
                                 } else {
                                         ModPayloads.sendUnpackProgress(player, 100);
                                 }
