@@ -6,6 +6,8 @@ import com.electronwill.nightconfig.toml.TomlFormat;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.entity.EntityType;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -42,6 +44,23 @@ public final class MtgcardConfig {
     public double chance_custom_basic_land = 0.15;
     public double chance_custom_token_or_art = 0.02;
     public boolean Pack_Debug = false;
+    public boolean Mob_Pack_Drops_Enabled = false;
+    public boolean Mob_Pack_Drop_Player_Kill_Only = true;
+    public double Mob_Pack_Drop_Chance = 0.01;
+    public int Mob_Pack_Drop_Warden = 2;
+    public int Mob_Pack_Drop_Elder_Guardian = 2;
+    public int Mob_Pack_Drop_Ender_Dragon = 2;
+    public int Mob_Pack_Drop_Wither = 2;
+    public Set<String> Mob_Pack_Drop_Blacklist = new LinkedHashSet<>();
+
+    public boolean Dice_Mob_Drops_Enabled = false;
+    public boolean Dice_Mob_Drop_Player_Kill_Only = true;
+    public double Dice_Mob_Drop_Chance = 0.01;
+    public int Dice_Mob_Drop_Warden = 0;
+    public int Dice_Mob_Drop_Elder_Guardian = 0;
+    public int Dice_Mob_Drop_Ender_Dragon = 0;
+    public int Dice_Mob_Drop_Wither = 0;
+    public Set<String> Dice_Mob_Drop_Blacklist = new LinkedHashSet<>();
 
     // Price display
     public String Price_Item = "minecraft:diamond";
@@ -66,6 +85,9 @@ public final class MtgcardConfig {
         if (Files.exists(tomlPath)) {
             MtgcardConfig cfg = loadToml(tomlPath);
             applyDefaultsAndClamp(cfg);
+            if (needsMobDropBackfill(tomlPath)) {
+                saveToml(cfg);
+            }
             return cfg;
         }
 
@@ -122,6 +144,22 @@ public final class MtgcardConfig {
             cfg.chance_custom_basic_land = file.getOrElse("pack.custom_chances.basic_land", cfg.chance_custom_basic_land);
             cfg.chance_custom_token_or_art = file.getOrElse("pack.custom_chances.token_or_art", cfg.chance_custom_token_or_art);
             cfg.Pack_Debug = file.getOrElse("pack.debug", cfg.Pack_Debug);
+            cfg.Mob_Pack_Drops_Enabled = file.getOrElse("pack.mob_drops.enabled", cfg.Mob_Pack_Drops_Enabled);
+            cfg.Mob_Pack_Drop_Player_Kill_Only = file.getOrElse("pack.mob_drops.player_kill_only", cfg.Mob_Pack_Drop_Player_Kill_Only);
+            cfg.Mob_Pack_Drop_Chance = file.getOrElse("pack.mob_drops.chance", cfg.Mob_Pack_Drop_Chance);
+            cfg.Mob_Pack_Drop_Warden = file.getOrElse("pack.mob_drops.bosses.warden_count", cfg.Mob_Pack_Drop_Warden);
+            cfg.Mob_Pack_Drop_Elder_Guardian = file.getOrElse("pack.mob_drops.bosses.elder_guardian_count", cfg.Mob_Pack_Drop_Elder_Guardian);
+            cfg.Mob_Pack_Drop_Ender_Dragon = file.getOrElse("pack.mob_drops.bosses.ender_dragon_count", cfg.Mob_Pack_Drop_Ender_Dragon);
+            cfg.Mob_Pack_Drop_Wither = file.getOrElse("pack.mob_drops.bosses.wither_count", cfg.Mob_Pack_Drop_Wither);
+            cfg.Mob_Pack_Drop_Blacklist = new LinkedHashSet<>(file.getOrElse("pack.mob_drops.blacklist", cfg.Mob_Pack_Drop_Blacklist));
+            cfg.Dice_Mob_Drops_Enabled = file.getOrElse("dice.mob_drops.enabled", cfg.Dice_Mob_Drops_Enabled);
+            cfg.Dice_Mob_Drop_Player_Kill_Only = file.getOrElse("dice.mob_drops.player_kill_only", cfg.Dice_Mob_Drop_Player_Kill_Only);
+            cfg.Dice_Mob_Drop_Chance = file.getOrElse("dice.mob_drops.chance", cfg.Dice_Mob_Drop_Chance);
+            cfg.Dice_Mob_Drop_Warden = file.getOrElse("dice.mob_drops.bosses.warden_count", cfg.Dice_Mob_Drop_Warden);
+            cfg.Dice_Mob_Drop_Elder_Guardian = file.getOrElse("dice.mob_drops.bosses.elder_guardian_count", cfg.Dice_Mob_Drop_Elder_Guardian);
+            cfg.Dice_Mob_Drop_Ender_Dragon = file.getOrElse("dice.mob_drops.bosses.ender_dragon_count", cfg.Dice_Mob_Drop_Ender_Dragon);
+            cfg.Dice_Mob_Drop_Wither = file.getOrElse("dice.mob_drops.bosses.wither_count", cfg.Dice_Mob_Drop_Wither);
+            cfg.Dice_Mob_Drop_Blacklist = new LinkedHashSet<>(file.getOrElse("dice.mob_drops.blacklist", cfg.Dice_Mob_Drop_Blacklist));
 
             // --- price ---
             cfg.Price_Item = file.getOrElse("price.item", cfg.Price_Item);
@@ -159,6 +197,22 @@ public final class MtgcardConfig {
                 file.set("pack.custom_chances.basic_land", cfg.chance_custom_basic_land);
                 file.set("pack.custom_chances.token_or_art", cfg.chance_custom_token_or_art);
                 file.set("pack.debug", cfg.Pack_Debug);
+                file.set("pack.mob_drops.enabled", cfg.Mob_Pack_Drops_Enabled);
+                file.set("pack.mob_drops.player_kill_only", cfg.Mob_Pack_Drop_Player_Kill_Only);
+                file.set("pack.mob_drops.chance", cfg.Mob_Pack_Drop_Chance);
+                file.set("pack.mob_drops.bosses.warden_count", cfg.Mob_Pack_Drop_Warden);
+                file.set("pack.mob_drops.bosses.elder_guardian_count", cfg.Mob_Pack_Drop_Elder_Guardian);
+                file.set("pack.mob_drops.bosses.ender_dragon_count", cfg.Mob_Pack_Drop_Ender_Dragon);
+                file.set("pack.mob_drops.bosses.wither_count", cfg.Mob_Pack_Drop_Wither);
+                file.set("pack.mob_drops.blacklist", new java.util.ArrayList<>(cfg.Mob_Pack_Drop_Blacklist));
+                file.set("dice.mob_drops.enabled", cfg.Dice_Mob_Drops_Enabled);
+                file.set("dice.mob_drops.player_kill_only", cfg.Dice_Mob_Drop_Player_Kill_Only);
+                file.set("dice.mob_drops.chance", cfg.Dice_Mob_Drop_Chance);
+                file.set("dice.mob_drops.bosses.warden_count", cfg.Dice_Mob_Drop_Warden);
+                file.set("dice.mob_drops.bosses.elder_guardian_count", cfg.Dice_Mob_Drop_Elder_Guardian);
+                file.set("dice.mob_drops.bosses.ender_dragon_count", cfg.Dice_Mob_Drop_Ender_Dragon);
+                file.set("dice.mob_drops.bosses.wither_count", cfg.Dice_Mob_Drop_Wither);
+                file.set("dice.mob_drops.blacklist", new java.util.ArrayList<>(cfg.Dice_Mob_Drop_Blacklist));
 
                 file.set("price.item", cfg.Price_Item);
                 file.set("price.basis", cfg.Price_Basis);
@@ -192,7 +246,8 @@ public final class MtgcardConfig {
         file.setComment("pack",
                 "Pack settings.\n" +
                         "custom_chances are 0.0 to 1.0 (e.g. 0.10 = 10%).\n" +
-                        "debug: enables verbose server-side booster pack logs.");
+                        "debug: enables verbose server-side booster pack logs.\n" +
+                        "mob_drops: controls booster pack drops from hostile mobs and bosses.");
 
         file.setComment("pack.custom_chances.common", "Chance for a custom COMMON.");
         file.setComment("pack.custom_chances.uncommon", "Chance for a custom UNCOMMON.");
@@ -203,6 +258,46 @@ public final class MtgcardConfig {
         file.setComment("pack.custom_chances.basic_land", "Chance for a custom basic land.");
         file.setComment("pack.custom_chances.token_or_art", "Chance for a custom token/art slot.");
         file.setComment("pack.debug", "Enable verbose booster pack debug logging on the server.");
+        file.setComment("pack.mob_drops",
+                "Mob pack drops.\n" +
+                        "enabled: master toggle for booster pack drops from hostile mobs and the listed bosses.\n" +
+                        "player_kill_only: if true, only player kills can drop booster packs.\n" +
+                        "chance: 0.0 to 1.0 chance for normal hostile mobs.\n" +
+                        "blacklist: entity ids that should never drop booster packs, for example minecraft:zombie.\n" +
+                        "bosses: guaranteed pack counts for supported bosses, clamped to 2..3.");
+        file.setComment("pack.mob_drops.enabled", "Enable booster pack drops from hostile mobs and configured bosses.");
+        file.setComment("pack.mob_drops.player_kill_only", "If true, booster packs only drop when the mob was killed by a player.");
+        file.setComment("pack.mob_drops.chance", "Chance for a non-boss hostile mob to drop 1 booster pack.");
+        file.setComment("pack.mob_drops.blacklist", "Entity ids that should never drop booster packs (example: minecraft:zombie).");
+        file.setComment("pack.mob_drops.bosses",
+                "Guaranteed boss pack drops.\n" +
+                        "Each count is clamped to 2..3 while mob drops are enabled.");
+        file.setComment("pack.mob_drops.bosses.warden_count", "Guaranteed booster pack count for the Warden.");
+        file.setComment("pack.mob_drops.bosses.elder_guardian_count", "Guaranteed booster pack count for the Elder Guardian.");
+        file.setComment("pack.mob_drops.bosses.ender_dragon_count", "Guaranteed booster pack count for the Ender Dragon.");
+        file.setComment("pack.mob_drops.bosses.wither_count", "Guaranteed booster pack count for the Wither.");
+
+        file.setComment("dice",
+                "Dice settings.\n" +
+                        "mob_drops: controls random dice drops from hostile mobs.");
+        file.setComment("dice.mob_drops",
+                "Mob dice drops.\n" +
+                        "enabled: master toggle for random dice drops from hostile mobs.\n" +
+                        "player_kill_only: if true, only player kills can drop dice.\n" +
+                        "chance: 0.0 to 1.0 chance for a hostile mob to drop one random dice item.\n" +
+                        "blacklist: entity ids that should never drop dice, for example minecraft:zombie.\n" +
+                        "bosses: guaranteed random dice drop counts for supported bosses, clamped to 0..3.");
+        file.setComment("dice.mob_drops.enabled", "Enable random dice drops from hostile mobs.");
+        file.setComment("dice.mob_drops.player_kill_only", "If true, dice only drop when the mob was killed by a player.");
+        file.setComment("dice.mob_drops.chance", "Chance for a hostile mob to drop 1 random dice item.");
+        file.setComment("dice.mob_drops.blacklist", "Entity ids that should never drop dice (example: minecraft:zombie).");
+        file.setComment("dice.mob_drops.bosses",
+                "Guaranteed boss dice drops.\n" +
+                        "Each count is clamped to 0..3 and each dropped item rolls a random dice type.");
+        file.setComment("dice.mob_drops.bosses.warden_count", "Guaranteed random dice drop count for the Warden.");
+        file.setComment("dice.mob_drops.bosses.elder_guardian_count", "Guaranteed random dice drop count for the Elder Guardian.");
+        file.setComment("dice.mob_drops.bosses.ender_dragon_count", "Guaranteed random dice drop count for the Ender Dragon.");
+        file.setComment("dice.mob_drops.bosses.wither_count", "Guaranteed random dice drop count for the Wither.");
 
         file.setComment("price",
                 "Price display settings (Large View panel).\n" +
@@ -230,6 +325,18 @@ public final class MtgcardConfig {
         cfg.chance_custom_random_foil = clamp01(cfg.chance_custom_random_foil);
         cfg.chance_custom_basic_land = clamp01(cfg.chance_custom_basic_land);
         cfg.chance_custom_token_or_art = clamp01(cfg.chance_custom_token_or_art);
+        cfg.Mob_Pack_Drop_Chance = clamp01(cfg.Mob_Pack_Drop_Chance);
+        cfg.Mob_Pack_Drop_Warden = clampInt(cfg.Mob_Pack_Drop_Warden, 2, 3);
+        cfg.Mob_Pack_Drop_Elder_Guardian = clampInt(cfg.Mob_Pack_Drop_Elder_Guardian, 2, 3);
+        cfg.Mob_Pack_Drop_Ender_Dragon = clampInt(cfg.Mob_Pack_Drop_Ender_Dragon, 2, 3);
+        cfg.Mob_Pack_Drop_Wither = clampInt(cfg.Mob_Pack_Drop_Wither, 2, 3);
+        cfg.Mob_Pack_Drop_Blacklist = normalizeIdentifierSet(cfg.Mob_Pack_Drop_Blacklist);
+        cfg.Dice_Mob_Drop_Chance = clamp01(cfg.Dice_Mob_Drop_Chance);
+        cfg.Dice_Mob_Drop_Warden = clampInt(cfg.Dice_Mob_Drop_Warden, 0, 3);
+        cfg.Dice_Mob_Drop_Elder_Guardian = clampInt(cfg.Dice_Mob_Drop_Elder_Guardian, 0, 3);
+        cfg.Dice_Mob_Drop_Ender_Dragon = clampInt(cfg.Dice_Mob_Drop_Ender_Dragon, 0, 3);
+        cfg.Dice_Mob_Drop_Wither = clampInt(cfg.Dice_Mob_Drop_Wither, 0, 3);
+        cfg.Dice_Mob_Drop_Blacklist = normalizeIdentifierSet(cfg.Dice_Mob_Drop_Blacklist);
     }
 
     private static double clamp01(double v) {
@@ -237,6 +344,24 @@ public final class MtgcardConfig {
         if (v < 0.0) return 0.0;
         if (v > 1.0) return 1.0;
         return v;
+    }
+
+    private static int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static Set<String> normalizeIdentifierSet(Set<String> raw) {
+        Set<String> normalized = new LinkedHashSet<>();
+        if (raw == null) return normalized;
+
+        for (String entry : raw) {
+            if (entry == null) continue;
+            String cleaned = entry.trim().toLowerCase(Locale.ROOT);
+            if (!cleaned.isBlank()) {
+                normalized.add(cleaned);
+            }
+        }
+        return normalized;
     }
 
     private static String normalizeLang(String raw) {
@@ -273,6 +398,82 @@ public final class MtgcardConfig {
     public static boolean packDebugEnabled() {
         MtgcardConfig cfg = get();
         return cfg != null && cfg.Pack_Debug;
+    }
+
+    public boolean mobPackDropsEnabled() {
+        return Mob_Pack_Drops_Enabled;
+    }
+
+    public double mobPackDropChance() {
+        return clamp01(Mob_Pack_Drop_Chance);
+    }
+
+    public boolean mobPackDropsRequirePlayerKill() {
+        return Mob_Pack_Drop_Player_Kill_Only;
+    }
+
+    public boolean isPackMobDropBlacklisted(EntityType<?> type) {
+        if (type == null) return false;
+        String id = BuiltInRegistries.ENTITY_TYPE.getKey(type).toString().toLowerCase(Locale.ROOT);
+        return Mob_Pack_Drop_Blacklist.contains(id);
+    }
+
+    public int mobPackBossDropCount(EntityType<?> type) {
+        if (type == EntityType.WARDEN) return Mob_Pack_Drop_Warden;
+        if (type == EntityType.ELDER_GUARDIAN) return Mob_Pack_Drop_Elder_Guardian;
+        if (type == EntityType.ENDER_DRAGON) return Mob_Pack_Drop_Ender_Dragon;
+        if (type == EntityType.WITHER) return Mob_Pack_Drop_Wither;
+        return 0;
+    }
+
+    public boolean diceMobDropsEnabled() {
+        return Dice_Mob_Drops_Enabled;
+    }
+
+    public boolean diceMobDropsRequirePlayerKill() {
+        return Dice_Mob_Drop_Player_Kill_Only;
+    }
+
+    public int diceMobBossDropCount(EntityType<?> type) {
+        if (type == EntityType.WARDEN) return Dice_Mob_Drop_Warden;
+        if (type == EntityType.ELDER_GUARDIAN) return Dice_Mob_Drop_Elder_Guardian;
+        if (type == EntityType.ENDER_DRAGON) return Dice_Mob_Drop_Ender_Dragon;
+        if (type == EntityType.WITHER) return Dice_Mob_Drop_Wither;
+        return 0;
+    }
+
+    public boolean isDiceMobDropBlacklisted(EntityType<?> type) {
+        if (type == null) return false;
+        String id = BuiltInRegistries.ENTITY_TYPE.getKey(type).toString().toLowerCase(Locale.ROOT);
+        return Dice_Mob_Drop_Blacklist.contains(id);
+    }
+
+    public double diceMobDropChance() {
+        return clamp01(Dice_Mob_Drop_Chance);
+    }
+
+    private static boolean needsMobDropBackfill(Path path) {
+        try {
+            String raw = Files.readString(path);
+            return !raw.contains("[pack.mob_drops]")
+                    || !raw.contains("[pack.mob_drops.bosses]")
+                    || !raw.contains("[dice.mob_drops]")
+                    || !raw.contains("[dice.mob_drops.bosses]")
+                    || countOccurrences(raw, "player_kill_only") < 2
+                    || countOccurrences(raw, "blacklist =") < 2;
+        } catch (Throwable e) {
+            return false;
+        }
+    }
+
+    private static int countOccurrences(String raw, String needle) {
+        int count = 0;
+        int index = 0;
+        while ((index = raw.indexOf(needle, index)) >= 0) {
+            count++;
+            index += needle.length();
+        }
+        return count;
     }
 
     private MtgcardConfig() {}
