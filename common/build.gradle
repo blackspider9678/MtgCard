@@ -1,0 +1,29 @@
+plugins {
+    id 'base'
+}
+
+configurations {
+    commonMainJava {
+        canBeResolved = false
+        canBeConsumed = true
+    }
+    commonClientJava {
+        canBeResolved = false
+        canBeConsumed = true
+    }
+    commonMainResources {
+        canBeResolved = false
+        canBeConsumed = true
+    }
+    commonClientResources {
+        canBeResolved = false
+        canBeConsumed = true
+    }
+}
+
+artifacts {
+    commonMainJava file('src/main/java')
+    commonClientJava file('src/client/java')
+    commonMainResources file('src/main/resources')
+    commonClientResources file('src/client/resources')
+}

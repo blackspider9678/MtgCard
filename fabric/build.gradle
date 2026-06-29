@@ -1,0 +1,75 @@
+plugins {
+    id 'net.fabricmc.fabric-loom-remap'
+    id 'maven-publish'
+}
+
+base {
+    archivesName = "${rootProject.archives_base_name}-fabric"
+}
+
+loom {
+    splitEnvironmentSourceSets()
+
+    mods {
+        "${rootProject.mod_id}" {
+            sourceSet sourceSets.main
+            sourceSet sourceSets.client
+        }
+    }
+}
+
+sourceSets {
+    main {
+        java.srcDirs = ['src/main/java']
+        resources.srcDirs = ['src/main/resources']
+        output.resourcesDir = file("$buildDir/classes/java/main")
+    }
+    client {
+        java.srcDirs = ['src/client/java']
+        resources.srcDirs = ['src/client/resources']
+        output.resourcesDir = file("$buildDir/classes/java/client")
+    }
+}
+
+dependencies {
+    implementation("org.sejda.imageio:webp-imageio:0.1.6")
+    implementation("com.electronwill.night-config:core:3.6.7")
+    implementation("com.electronwill.night-config:toml:3.6.7")
+
+    minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${rootProject.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${rootProject.fabric_api_version}"
+    compileOnly "mezz.jei:jei-${rootProject.jei_minecraft_version}-fabric-api:${rootProject.jei_version}"
+
+    include("org.sejda.imageio:webp-imageio:0.1.6")
+    include("com.electronwill.night-config:core:3.6.7")
+    include("com.electronwill.night-config:toml:3.6.7")
+}
+
+processResources {
+    inputs.property 'version', rootProject.version
+    inputs.property 'minecraft_version', rootProject.minecraft_version
+    inputs.property 'minecraft_version_range', rootProject.minecraft_version_range
+    inputs.property 'loader_version', rootProject.loader_version
+    inputs.property 'fabric_api_version', rootProject.fabric_api_version
+    inputs.property 'fabric_api_version_range', rootProject.fabric_api_version_range
+    filteringCharset 'UTF-8'
+
+    filesMatching('fabric.mod.json') {
+        expand 'version': rootProject.version,
+                'minecraft_version': rootProject.minecraft_version,
+                'minecraft_version_range': rootProject.minecraft_version_range,
+                'loader_version': rootProject.loader_version,
+                'fabric_api_version': rootProject.fabric_api_version,
+                'fabric_api_version_range': rootProject.fabric_api_version_range
+    }
+}
+
+publishing {
+    publications {
+        create('mavenJava', MavenPublication) {
+            artifactId = base.archivesName.get()
+            from components.java
+        }
+    }
+}

@@ -1,0 +1,24 @@
+modLoader = "javafml"
+loaderVersion = "${neoforge_loader_version_range}"
+license = "All-Rights-Reserved"
+
+[[mods]]
+modId = "mtgcard"
+version = "${version}"
+displayName = "MtgCard"
+authors = "Spider"
+description = '''satisfactory oreposits in the world of minecraft'''
+
+[[dependencies.mtgcard]]
+modId = "neoforge"
+type = "required"
+versionRange = "[${neoforge_version},)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.mtgcard]]
+modId = "minecraft"
+type = "required"
+versionRange = "${minecraft_version_range}"
+ordering = "NONE"
+side = "BOTH"

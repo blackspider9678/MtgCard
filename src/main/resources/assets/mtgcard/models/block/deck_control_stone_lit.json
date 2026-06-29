@@ -1,6 +1,0 @@
-{
-  "parent": "mtgcard:block/deck_control_stone",
-  "textures": {
-    "window": "mtgcard:block/deck_control_window_lit"
-  }
-}

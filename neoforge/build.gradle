@@ -1,0 +1,149 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev'
+    id 'maven-publish'
+}
+
+base {
+    archivesName = "${rootProject.archives_base_name}-neoforge"
+}
+
+def commonMainJava = fileTree('../common/src/main/java') {
+    include 'com/spider/mtgcard/Mtgcard.java'
+    include 'com/spider/mtgcard/advancement/ModAdvancements.java'
+    include 'com/spider/mtgcard/cards/**'
+    include 'com/spider/mtgcard/cardstore/CardStoreBlock.java'
+    include 'com/spider/mtgcard/cardstore/CardStoreCartLine.java'
+    include 'com/spider/mtgcard/cardstore/CardStorePrice.java'
+    include 'com/spider/mtgcard/cardstore/CardStorePurchaseService.java'
+    include 'com/spider/mtgcard/cardstore/CardStoreScreenHandler.java'
+    include 'com/spider/mtgcard/command/**'
+    include 'com/spider/mtgcard/config/ImportPerms.java'
+    include 'com/spider/mtgcard/config/Perms.java'
+    include 'com/spider/mtgcard/content/pack/**'
+    include 'com/spider/mtgcard/db/**'
+    include 'com/spider/mtgcard/deckbox/**'
+    include 'com/spider/mtgcard/deckcontrol/DeckControlBlock.java'
+    include 'com/spider/mtgcard/deckcontrol/DeckControlScreenHandler.java'
+    include 'com/spider/mtgcard/deckcontrol/DeckControlWindowColor.java'
+    include 'com/spider/mtgcard/displayblock/DisplayBlock.java'
+    include 'com/spider/mtgcard/displayblock/DisplayBlockItem.java'
+    include 'com/spider/mtgcard/displayblock/DisplayScreenClientHooks.java'
+    include 'com/spider/mtgcard/displayblock/DisplayShape.java'
+    include 'com/spider/mtgcard/graveyard/GraveyardBlock.java'
+    include 'com/spider/mtgcard/graveyard/GraveyardInventory.java'
+    include 'com/spider/mtgcard/graveyard/GraveyardScreenHandler.java'
+    include 'com/spider/mtgcard/graveyard/GraveyardSlot.java'
+    include 'com/spider/mtgcard/guidebook/**'
+    include 'com/spider/mtgcard/item/CardItem.java'
+    include 'com/spider/mtgcard/item/DiceItem.java'
+    include 'com/spider/mtgcard/item/GuideBookItem.java'
+    include 'com/spider/mtgcard/life/LifePointBlock.java'
+    include 'com/spider/mtgcard/life/LifePointBlockEntity.java'
+    include 'com/spider/mtgcard/life/LifePlayGroups.java'
+    include 'com/spider/mtgcard/net/CustomCardServer.java'
+    include 'com/spider/mtgcard/net/WorldState.java'
+    include 'com/spider/mtgcard/net/payload/**'
+    include 'com/spider/mtgcard/shared/**'
+    include 'com/spider/mtgcard/trade/ModTrades.java'
+    include 'com/spider/mtgcard/util/**'
+    exclude 'com/spider/mtgcard/content/pack/PackMobDropEvents.java'
+    exclude 'com/spider/mtgcard/content/pack/PackServerEvents.java'
+}
+
+def commonClientJava = fileTree('../common/src/client/java') {
+    include 'com/spider/mtgcard/client/compat/GuiGraphics.java'
+    include 'com/spider/mtgcard/client/compat/LegacyContainerScreen.java'
+    include 'com/spider/mtgcard/client/compat/LegacyScreen.java'
+    include 'com/spider/mtgcard/client/compat/LegacyWidget.java'
+    include 'com/spider/mtgcard/client/compat/MtgGuiScaleHelper.java'
+    include 'com/spider/mtgcard/client/content/pack/custom/ClientCardIndex.java'
+    include 'com/spider/mtgcard/client/deckcontrol/DeckControlEntityRenderer.java'
+    include 'com/spider/mtgcard/client/display/CardDisplayEntityRenderer.java'
+    include 'com/spider/mtgcard/client/displayblock/**'
+    include 'com/spider/mtgcard/client/gui/CardDatabaseScreen.java'
+    include 'com/spider/mtgcard/client/gui/DeckboxScreen.java'
+    include 'com/spider/mtgcard/client/gui/MtgGuiChrome.java'
+    include 'com/spider/mtgcard/client/guidebook/**'
+    include 'com/spider/mtgcard/client/life/ColorWheelWidget.java'
+    include 'com/spider/mtgcard/client/life/LifePointClientState.java'
+    include 'com/spider/mtgcard/client/life/LifePointFrontTextRenderer.java'
+    include 'com/spider/mtgcard/client/render/CardDatabaseBlockEntityRenderer.java'
+    include 'com/spider/mtgcard/client/render/CardFoilUtil.java'
+    include 'com/spider/mtgcard/client/render/tex/CardDbBinderOverlayTex.java'
+    include 'com/spider/mtgcard/client/ui/PreviewLayout.java'
+}
+
+sourceSets {
+    main {
+        java.srcDirs = ['src/main/java']
+        resources.srcDirs = ['src/main/resources', '../common/src/main/resources']
+    }
+}
+
+tasks.named('compileJava') {
+    source(commonMainJava)
+    source(commonClientJava)
+}
+
+tasks.named('sourcesJar') {
+    from(commonMainJava)
+    from(commonClientJava)
+}
+
+neoForge {
+    version = rootProject.neoforge_version
+
+    runs {
+        configureEach {
+            systemProperty('neoforge.enabledGameTestNamespaces', rootProject.mod_id)
+            ideName = "NeoForge ${it.name.capitalize()} (${project.path})"
+        }
+        client {
+            client()
+            gameDirectory = file('runs/client')
+        }
+        server {
+            server()
+            gameDirectory = file('runs/server')
+        }
+    }
+
+    mods {
+        "${rootProject.mod_id}" {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+dependencies {
+    implementation("org.sejda.imageio:webp-imageio:0.1.6")
+    implementation("com.electronwill.night-config:core:3.6.7")
+    implementation("com.electronwill.night-config:toml:3.6.7")
+}
+
+processResources {
+    inputs.property 'version', rootProject.version
+    inputs.property 'minecraft_version', rootProject.minecraft_version
+    inputs.property 'minecraft_version_range', rootProject.minecraft_version_range
+    inputs.property 'neoforge_version', rootProject.neoforge_version
+    inputs.property 'neoforge_loader_version_range', rootProject.neoforge_loader_version_range
+    filteringCharset 'UTF-8'
+
+    filesMatching('META-INF/neoforge.mods.toml') {
+        expand 'version': rootProject.version,
+                'minecraft_version': rootProject.minecraft_version,
+                'minecraft_version_range': rootProject.minecraft_version_range,
+                'neoforge_version': rootProject.neoforge_version,
+                'neoforge_loader_version_range': rootProject.neoforge_loader_version_range
+    }
+}
+
+publishing {
+    publications {
+        create('mavenJava', MavenPublication) {
+            artifactId = base.archivesName.get()
+            from components.java
+        }
+    }
+}

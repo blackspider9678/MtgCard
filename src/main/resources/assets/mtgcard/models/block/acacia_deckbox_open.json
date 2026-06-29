@@ -1,7 +1,0 @@
-{
-  "parent": "mtgcard:block/deckbox_open",
-  "textures": {
-    "3": "minecraft:block/acacia_planks",
-    "particle": "minecraft:block/acacia_planks"
-  }
-}

@@ -1,7 +1,0 @@
-{
-  "parent": "mtgcard:block/deck_control_base_solid",
-  "textures": {
-    "stone": "minecraft:block/polished_deepslate",
-    "particle": "minecraft:block/polished_deepslate"
-  }
-}
