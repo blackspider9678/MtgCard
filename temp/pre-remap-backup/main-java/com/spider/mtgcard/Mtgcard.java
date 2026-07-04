@@ -3,6 +3,7 @@ package com.spider.mtgcard;
 import com.spider.mtgcard.cardstore.CardStorePackets;
 import com.spider.mtgcard.command.MtgRootCommand;
 import com.spider.mtgcard.config.MtgcardConfig;
+import com.spider.mtgcard.content.pack.PackServerEvents;
 import com.spider.mtgcard.guidebook.GuideBook;
 import com.spider.mtgcard.item.ModItemGroup;
 import com.spider.mtgcard.item.ModItems;
@@ -13,7 +14,9 @@ import com.spider.mtgcard.net.*;
 import com.spider.mtgcard.registry.ModBlockEntities;
 import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.screen.ModScreenHandlers;
+import com.spider.mtgcard.trade.ModTrades;
 
+import com.spider.mtgcard.util.ArtImageStorage;
 import com.spider.mtgcard.util.ModDispenserBehaviors;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -27,6 +30,8 @@ public final class Mtgcard implements ModInitializer {
     @Override
     public void onInitialize() {
         Mtgcard.LOGGER.info("[Mtgcard] Mod Unpacked");
+        ArtImageStorage.ensureWebpCodecsRegistered();
+
         // 1) Register ALL payload CODECs (safe on both sides, must happen before receiver registration)
         ModPayloads.registerTypes();
 
@@ -41,9 +46,6 @@ public final class Mtgcard implements ModInitializer {
         // 4) Register server-side networking receivers (must be after types)
         ModPayloads.registerServerReceivers();
         CounterPackets.registerReceivers();
-
-        // If CardStorePackets has server receivers, you STILL need this:
-        CardStorePackets.registerServer();
 
         // Other server/common systems
         MtgcardConfig.load();
@@ -64,15 +66,19 @@ public final class Mtgcard implements ModInitializer {
         // Entities/items/registry
         ModEntities.init();
         ModItems.initialize();
+        ModTrades.init();
         ModItemGroup.register();
 
         // Commands
         MtgRootCommand.register();
 
         // Ticks / loot / events
-        ServerTickEvents.END_WORLD_TICK.register(LifePlayGroups::tickWorld);
+        ServerTickEvents.END_LEVEL_TICK.register(LifePlayGroups::tickWorld);
+        ServerTickEvents.END_SERVER_TICK.register(CustomCardServer::tick);
+        ServerTickEvents.END_SERVER_TICK.register(CustomCardSync::tick);
         MtgLootInject.init();
         ModEvents.register();
+        PackServerEvents.init();
 
         //Guide Book
         GuideBookPackets.init();

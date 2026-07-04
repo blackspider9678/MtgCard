@@ -10,6 +10,7 @@ import com.spider.mtgcard.guidebook.GuideBook;
 import com.spider.mtgcard.item.ModItemGroup;
 import com.spider.mtgcard.item.ModItems;
 import com.spider.mtgcard.life.LifePlayGroups;
+import com.spider.mtgcard.net.CustomCardServer;
 import com.spider.mtgcard.net.CustomCardSync;
 import com.spider.mtgcard.net.ModPayloads;
 import com.spider.mtgcard.registry.ModBlockEntities;
@@ -58,6 +59,8 @@ public final class MtgcardNeoForge {
 
     private static void onServerTick(ServerTickEvent.Post event) {
         ModPayloads.tickUnpackProgressBars(event.getServer());
+        CustomCardServer.tick(event.getServer());
+        CustomCardSync.tick(event.getServer());
     }
 
     private static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {

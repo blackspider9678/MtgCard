@@ -23,11 +23,13 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class NeoForgeClientPayloadHandlers {
     private static int unpackProgress;
     private static final Map<String, IncomingArt> INCOMING_ART = new ConcurrentHashMap<>();
+    private static final Map<UUID, FullSyncAccumulator> FULL_SYNCS = new ConcurrentHashMap<>();
 
     private NeoForgeClientPayloadHandlers() {}
 
@@ -56,6 +58,7 @@ public final class NeoForgeClientPayloadHandlers {
             case "card_store_prints_done" -> invokeOnCurrentScreen("onPrintsDone", CardStorePackets.SearchPrintsDoneS2C.class, payload);
             case "card_store_import_deck" -> invokeOnCurrentScreen("onImportDeckResult", CardStorePackets.ImportDeckS2C.class, payload);
             case "custom_sync_full" -> customSyncFull((CustomCardPackets.CustomSyncFull) payload);
+            case "custom_sync_full_chunk" -> customSyncFullChunk((CustomCardPackets.CustomSyncFullChunk) payload);
             case "custom_sync_delta" -> customSyncDelta((CustomCardPackets.CustomSyncDelta) payload);
             case "custom_art_ready" -> customArtReady((CustomCardPackets.CustomArtReady) payload);
             default -> {
@@ -221,6 +224,29 @@ public final class NeoForgeClientPayloadHandlers {
         ClientCardIndex.applyFull(toClientList(payload.entries()));
     }
 
+    private static void customSyncFullChunk(CustomCardPackets.CustomSyncFullChunk payload) {
+        if (payload == null || payload.syncId() == null) return;
+        int total = Math.max(1, payload.total());
+        int index = payload.index();
+        if (index < 0 || index >= total) return;
+
+        FullSyncAccumulator acc = FULL_SYNCS.get(payload.syncId());
+        if (acc == null || acc.total != total) {
+            acc = new FullSyncAccumulator(total);
+            FULL_SYNCS.put(payload.syncId(), acc);
+        }
+
+        if (acc.seen[index]) return;
+        acc.seen[index] = true;
+        acc.seenCount++;
+        acc.entries.addAll(toClientList(payload.entries()));
+
+        if (acc.seenCount >= acc.total) {
+            FULL_SYNCS.remove(payload.syncId());
+            ClientCardIndex.applyFull(acc.entries);
+        }
+    }
+
     private static void customSyncDelta(CustomCardPackets.CustomSyncDelta payload) {
         ClientCardIndex.applyDelta(toClient(payload.entry()));
     }
@@ -316,6 +342,18 @@ public final class NeoForgeClientPayloadHandlers {
                 offset += part.length;
             }
             return out;
+        }
+    }
+
+    private static final class FullSyncAccumulator {
+        final int total;
+        final boolean[] seen;
+        final ArrayList<ClientCardIndex.WireMeta> entries = new ArrayList<>();
+        int seenCount;
+
+        FullSyncAccumulator(int total) {
+            this.total = Math.max(1, total);
+            this.seen = new boolean[this.total];
         }
     }
 
