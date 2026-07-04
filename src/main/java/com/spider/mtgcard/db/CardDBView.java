@@ -21,6 +21,14 @@ public interface CardDBView {
     /** Append a CARD stack to the unbounded intake list (server only). */
     void appendToIntake(ItemStack stack);
 
+    /** Append multiple CARD stacks with one persistence/update pass when supported. */
+    default void appendAllToIntake(java.util.List<ItemStack> stacks) {
+        if (stacks == null || stacks.isEmpty()) return;
+        for (ItemStack stack : stacks) {
+            appendToIntake(stack);
+        }
+    }
+
     /** True if the window is showing a transient projection (search). */
     boolean isProjectingSearch();
 

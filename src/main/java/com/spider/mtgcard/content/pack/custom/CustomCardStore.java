@@ -1,6 +1,7 @@
 // com.spider.mtgcard.content.pack.custom.CustomCardStore.java
 package com.spider.mtgcard.content.pack.custom;
 
+import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.net.CustomCardPackets;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.MinecraftServer;
@@ -14,6 +15,9 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public final class CustomCardStore {
     private final Path artDir;
@@ -26,6 +30,13 @@ public final class CustomCardStore {
             .setPrettyPrinting()
             .disableHtmlEscaping()
             .create();
+
+    private static final ExecutorService SAVE_EXECUTOR =
+            Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "mtgcard-custom-card-save");
+                t.setDaemon(true);
+                return t;
+            });
 
 
     public CustomCardStore(MinecraftServer server) {
@@ -75,7 +86,13 @@ public final class CustomCardStore {
     public synchronized void saveIfDirty() {
         if (!dirty) return;
         dirty = false;
-        save();
+        saveSnapshot(new ArrayList<>(byId.values()));
+    }
+
+    public synchronized CompletableFuture<Boolean> saveIfDirtyAsync() {
+        if (!dirty) return CompletableFuture.completedFuture(false);
+        dirty = false;
+        return saveSnapshotAsync(new ArrayList<>(byId.values()));
     }
 
     private static String sanitizeClientId(String id) {
@@ -113,19 +130,39 @@ public final class CustomCardStore {
             }
         } catch (Exception e) {
             // Optional: log once so you know why it failed
-            System.out.println("[MTGCard] Failed to load " + json + ": " + e);
+            Mtgcard.LOGGER.warn("[MTGCard] Failed to load {}: {}", json, e.toString());
         }
     }
 
     private void save() {
+        saveSnapshot(new ArrayList<>(byId.values()));
+    }
+
+    private CompletableFuture<Boolean> saveSnapshotAsync(List<CardMeta> snapshot) {
+        List<CardMeta> stableSnapshot = List.copyOf(snapshot);
+        return CompletableFuture.supplyAsync(() -> saveSnapshot(stableSnapshot), SAVE_EXECUTOR);
+    }
+
+    private boolean saveSnapshot(List<CardMeta> snapshot) {
         try {
             Files.createDirectories(json.getParent());
-            var list = new ArrayList<>(byId.values());
-            String s = GSON.toJson(list);
-            Files.writeString(json, s, StandardCharsets.UTF_8,
+            String s = GSON.toJson(snapshot);
+            Path tmp = json.resolveSibling(json.getFileName().toString() + ".tmp");
+            Files.writeString(tmp, s, StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            moveAtomically(tmp, json);
+            return true;
         } catch (Exception e) {
-            System.out.println("[MTGCard] Failed to save " + json + ": " + e);
+            Mtgcard.LOGGER.error("[MTGCard] Failed to save {}: {}", json, e.toString());
+            return false;
+        }
+    }
+
+    private static void moveAtomically(Path tmp, Path target) throws java.io.IOException {
+        try {
+            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException ignored) {
+            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
