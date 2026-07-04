@@ -5,9 +5,25 @@ import com.spider.mtgcard.net.CustomCardPackets;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 public final class CustomCardClientPackets {
+    private static final Map<UUID, FullSyncAccumulator> FULL_SYNCS = new HashMap<>();
+
+    private static final class FullSyncAccumulator {
+        final int total;
+        final boolean[] seen;
+        final ArrayList<ClientCardIndex.WireMeta> entries = new ArrayList<>();
+        int seenCount;
+
+        FullSyncAccumulator(int total) {
+            this.total = Math.max(1, total);
+            this.seen = new boolean[this.total];
+        }
+    }
 
     public static void registerClientReceivers() {
         ClientPlayNetworking.registerGlobalReceiver(CustomCardPackets.CustomSyncFull.ID, (payload, ctx) ->
@@ -16,11 +32,38 @@ public final class CustomCardClientPackets {
                 )
         );
 
+        ClientPlayNetworking.registerGlobalReceiver(CustomCardPackets.CustomSyncFullChunk.ID, (payload, ctx) ->
+                ctx.client().execute(() -> applyFullChunk(payload))
+        );
+
         ClientPlayNetworking.registerGlobalReceiver(CustomCardPackets.CustomSyncDelta.ID, (payload, ctx) ->
                 ctx.client().execute(() ->
                         ClientCardIndex.applyDelta(toClient(payload.entry()))
                 )
         );
+    }
+
+    private static void applyFullChunk(CustomCardPackets.CustomSyncFullChunk payload) {
+        if (payload == null || payload.syncId() == null) return;
+        int total = Math.max(1, payload.total());
+        int index = payload.index();
+        if (index < 0 || index >= total) return;
+
+        FullSyncAccumulator acc = FULL_SYNCS.get(payload.syncId());
+        if (acc == null || acc.total != total) {
+            acc = new FullSyncAccumulator(total);
+            FULL_SYNCS.put(payload.syncId(), acc);
+        }
+
+        if (acc.seen[index]) return;
+        acc.seen[index] = true;
+        acc.seenCount++;
+        acc.entries.addAll(toClientList(payload.entries()));
+
+        if (acc.seenCount >= acc.total) {
+            FULL_SYNCS.remove(payload.syncId());
+            ClientCardIndex.applyFull(acc.entries);
+        }
     }
 
     private static List<ClientCardIndex.WireMeta> toClientList(List<CustomCardPackets.WireMeta> entries) {

@@ -1127,15 +1127,19 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         if (view == null) return;
         if (playerInvRef == null) return;
 
+        java.util.ArrayList<ItemStack> toStore = new java.util.ArrayList<>();
         for (int i = 0; i < 36; i++) {
             ItemStack st = playerInvRef.getItem(i);
             if (st == null || st.isEmpty()) continue;
             if (!st.is(ModItems.CARD)) continue;
 
-            view.appendToIntake(st.copy());
+            toStore.add(st.copy());
             playerInvRef.setItem(i, ItemStack.EMPTY);
         }
 
+        if (toStore.isEmpty()) return;
+
+        view.appendAllToIntake(toStore);
         playerInvRef.setChanged();
         if (view.isProjectingSearch()) {
             reprojectCurrentPage();

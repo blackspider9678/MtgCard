@@ -66,11 +66,21 @@ public final class ArtImageStorage {
 
     public static Path write(Path dir, String baseName, StoredArt art) throws IOException {
         Files.createDirectories(dir);
-        deleteSiblingFormats(dir, baseName, art.ext);
 
         Path out = art.pathIn(dir, baseName);
-        Files.write(out, art.bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        Path tmp = dir.resolve(baseName + "." + art.ext + ".tmp");
+        Files.write(tmp, art.bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        moveAtomically(tmp, out);
+        deleteSiblingFormats(dir, baseName, art.ext);
         return out;
+    }
+
+    private static void moveAtomically(Path tmp, Path target) throws IOException {
+        try {
+            Files.move(tmp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+            Files.move(tmp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     public static void deleteSiblingFormats(Path dir, String baseName, String keepExt) throws IOException {
