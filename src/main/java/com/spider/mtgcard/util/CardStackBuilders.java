@@ -89,6 +89,10 @@ public final class CardStackBuilders {
         if (m.loyalty != null) meta.putString("loyalty", m.loyalty);
         if (m.rarity != null) meta.putString("rarity", m.rarity);
 
+        if (m.doubleFaced) {
+            putCustomFaces(meta, m, frontKey, backKey);
+        }
+
         String setCode = (m.set == null || m.set.isBlank()) ? "cstm" : m.set.toLowerCase(java.util.Locale.ROOT);
         meta.putString("set", setCode);
         meta.putString("collector_number", m.id);
@@ -105,6 +109,45 @@ public final class CardStackBuilders {
 
         if (foilVisual) card.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
         return card;
+    }
+
+    private static void putCustomFaces(
+            CompoundTag meta,
+            com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta m,
+            String frontKey,
+            String backKey
+    ) {
+        ListTag faces = new ListTag();
+
+        CompoundTag front = new CompoundTag();
+        putIfNotBlank(front, "name", m.name);
+        putIfNotBlank(front, "mana_cost", m.manaCost);
+        putIfNotBlank(front, "type_line", m.typeLine);
+        putIfNotBlank(front, "oracle_text", m.oracleText);
+        putIfNotBlank(front, "power", m.power);
+        putIfNotBlank(front, "toughness", m.toughness);
+        putIfNotBlank(front, "loyalty", m.loyalty);
+        putIfNotBlank(front, "world_art", frontKey);
+        faces.add(front);
+
+        CompoundTag back = new CompoundTag();
+        putIfNotBlank(back, "name", m.backName);
+        putIfNotBlank(back, "type_line", m.backTypeLine);
+        putIfNotBlank(back, "oracle_text", m.backOracleText);
+        putIfNotBlank(back, "power", m.backPower);
+        putIfNotBlank(back, "toughness", m.backToughness);
+        putIfNotBlank(back, "loyalty", m.backLoyalty);
+        putIfNotBlank(back, "world_art", backKey);
+        faces.add(back);
+
+        meta.put("card_faces", faces);
+    }
+
+    private static void putIfNotBlank(CompoundTag tag, String key, String value) {
+        if (tag == null || key == null || key.isBlank() || value == null || value.isBlank()) {
+            return;
+        }
+        tag.putString(key, value);
     }
 
     private static String bestImageUrl(Map<String, String> imageUris) {

@@ -89,6 +89,13 @@ public final class CustomCardSync {
         }
     }
 
+    public static void broadcastFull(MinecraftServer server, java.util.Collection<CardMeta> metas) {
+        if (server == null || metas == null) return;
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            enqueueFullSync(player, metas);
+        }
+    }
+
     private static List<WireMeta> toWire(java.util.Collection<CardMeta> metas) {
         var out = new ArrayList<WireMeta>(metas.size());
         for (var m : metas) out.add(toWire(m));
@@ -103,12 +110,8 @@ public final class CustomCardSync {
         );
     }
 
-    // inside class CustomCardSync
-    private static final ConcurrentHashMap<MinecraftServer, CustomCardStore> STORES =
-            new ConcurrentHashMap<>();
-
     public static CustomCardStore getStore(MinecraftServer server) {
-        return STORES.computeIfAbsent(server, CustomCardStore::new);
+        return WorldState.get(server).customCards();
     }
 
     // NEW overload: keep your existing initServerHooks(Function<...>) as-is.

@@ -320,6 +320,43 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
                 && my < this.topPos + DB_H;
     }
 
+    private boolean isOverDbGrid(double mx, double my) {
+        int x0 = this.leftPos + CardDatabaseScreenHandler.DB_GRID_X;
+        int y0 = this.topPos + CardDatabaseScreenHandler.DB_GRID_Y;
+        int w = CardDatabaseScreenHandler.DB_COLS * CardDatabaseScreenHandler.SLOT_SIZE;
+        int h = CardDatabaseScreenHandler.DB_ROWS * CardDatabaseScreenHandler.SLOT_SIZE;
+        return mx >= x0 && mx < x0 + w && my >= y0 && my < y0 + h;
+    }
+
+    private int dbGridSlotAt(double mx, double my) {
+        if (!isOverDbGrid(mx, my)) return -1;
+
+        int x0 = this.leftPos + CardDatabaseScreenHandler.DB_GRID_X;
+        int y0 = this.topPos + CardDatabaseScreenHandler.DB_GRID_Y;
+        int col = (int) ((mx - x0) / CardDatabaseScreenHandler.SLOT_SIZE);
+        int row = (int) ((my - y0) / CardDatabaseScreenHandler.SLOT_SIZE);
+        if (col < 0 || col >= CardDatabaseScreenHandler.DB_COLS || row < 0 || row >= CardDatabaseScreenHandler.DB_ROWS) {
+            return -1;
+        }
+        return row * CardDatabaseScreenHandler.DB_COLS + col;
+    }
+
+    private boolean sendDbGridAction(int slot, int action) {
+        if (slot < 0 || slot >= CardDatabaseScreenHandler.DB_ROWS * CardDatabaseScreenHandler.DB_COLS) return false;
+        if (this.minecraft == null || this.minecraft.gameMode == null) return false;
+
+        int id = CardDatabaseScreenHandler.DB_INTERACT_BASE + slot * 8 + action;
+        this.minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId, id);
+        return true;
+    }
+
+    private boolean shiftDown() {
+        if (this.minecraft == null || this.minecraft.getWindow() == null) return false;
+        long handle = this.minecraft.getWindow().handle();
+        return GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
+    }
+
     private void triggerSearchFromUI(boolean rememberSort) {
         sendSearchToServer(rememberSort);
     }
@@ -328,6 +365,15 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
     @Override
     public boolean mouseScrolled(double mx, double my, double hx, double vy) {
         if (vy == 0) return false;
+        if (isOverDbGrid(mx, my)) {
+            int id = (vy < 0) ? CardDatabaseScreenHandler.SCROLL_ROW_DOWN
+                    : CardDatabaseScreenHandler.SCROLL_ROW_UP;
+            if (this.minecraft != null && this.minecraft.gameMode != null) {
+                this.minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId, id);
+                return true;
+            }
+        }
+
         var scrollbar = intakeScrollbar();
         boolean overScrollbar =
                 scrollbar != null &&
@@ -398,6 +444,20 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
             }
             return true;
         }
+        int gridSlot = dbGridSlotAt(mouseX, mouseY);
+        if (gridSlot >= 0 && (button == 0 || button == 1)) {
+            int action;
+            if (button == 1) {
+                action = shiftDown()
+                        ? CardDatabaseScreenHandler.DB_INTERACT_SHIFT_RIGHT
+                        : CardDatabaseScreenHandler.DB_INTERACT_RIGHT;
+            } else {
+                action = shiftDown()
+                        ? CardDatabaseScreenHandler.DB_INTERACT_SHIFT_LEFT
+                        : CardDatabaseScreenHandler.DB_INTERACT_LEFT;
+            }
+            return sendDbGridAction(gridSlot, action);
+        }
         return super.mouseClicked(click, isSimulated);
     }
 
@@ -460,6 +520,9 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
             }
             return true;
         }
+        if (isOverDbGrid(click.x(), click.y())) {
+            return true;
+        }
         return super.mouseDragged(click, dx, dy);
     }
 
@@ -467,6 +530,9 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
     public boolean mouseReleased(MouseButtonEvent click) {
         if (click.button() == 0 && dragging) {
             dragging = false;
+            return true;
+        }
+        if (isOverDbGrid(click.x(), click.y())) {
             return true;
         }
         return super.mouseReleased(click);

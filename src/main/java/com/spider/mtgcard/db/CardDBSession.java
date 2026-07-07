@@ -133,6 +133,10 @@ public final class CardDBSession implements CardDBView {
         if (uiFrozen) { needsReproject = true; persist(); return; }
         intakeAll.removeIf(s -> s == null || s.isEmpty());
         this.windowOffset = clampOffset(this.windowOffset);
+        if (projectingSearch) {
+            persist();
+            return;
+        }
         // quiet redraw only
         reprojectQuietly();
         // persist explicit (no window.markDirty side-effects)

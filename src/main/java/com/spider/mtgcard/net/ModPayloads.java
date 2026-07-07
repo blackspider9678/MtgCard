@@ -3,6 +3,7 @@ package com.spider.mtgcard.net;
 
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.cardstore.CardStorePackets;
+import com.spider.mtgcard.content.pack.PackProgressBars;
 import com.spider.mtgcard.graveyard.GraveyardBlockEntity;
 import com.spider.mtgcard.net.payload.*;
 import com.spider.mtgcard.util.ArtImageStorage;
@@ -376,21 +377,22 @@ public final class ModPayloads {
         Mtgcard.LOGGER.info("[ModPayloads] registerServerReceivers() DONE");
     }
 
-    /** Server helper: send unbundle progress to a player (0..100). Thread-safe. */
+    /** Server helper: update the per-player pack-unwrapping boss bar (0..100). Thread-safe. */
     public static void sendUnpackProgress(ServerPlayer player, int percent) {
         if (player == null) return;
 
         int p = Math.max(0, Math.min(100, percent));
-        var server = player.level().getServer();
-        if (server == null) return;
+        PackProgressBars.update(player, p);
+    }
 
-        Runnable send = () -> {
-            if (player.connection == null) return;
-            ServerPlayNetworking.send(player, new UnbundleProgressPayload(p));
-        };
+    public static void clearUnpackProgress(ServerPlayer player) {
+        if (player == null) return;
 
-        if (server.isSameThread()) send.run();
-        else server.execute(send);
+        PackProgressBars.clear(player);
+    }
+
+    public static void tickUnpackProgressBars(MinecraftServer server) {
+        PackProgressBars.tick(server);
     }
 
     // Portable world root that works for both dedicated and dev client

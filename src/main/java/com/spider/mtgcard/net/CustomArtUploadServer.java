@@ -176,8 +176,7 @@ public final class CustomArtUploadServer {
                 Mtgcard.LOGGER.info("[MTGCard] Custom art {} saved for {} in {} ms", artKey, playerName, elapsedMs);
 
                 server.execute(() -> {
-                    ServerPlayer current = server.getPlayerList().getPlayer(playerId);
-                    if (current != null) {
+                    for (ServerPlayer current : server.getPlayerList().getPlayers()) {
                         ServerPlayNetworking.send(current, new CustomCardPackets.CustomArtReady(artKey));
                     }
                 });

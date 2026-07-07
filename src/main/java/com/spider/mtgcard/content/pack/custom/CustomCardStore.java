@@ -108,6 +108,96 @@ public final class CustomCardStore {
 
     public synchronized Collection<CardMeta> all() { return List.copyOf(byId.values()); }
 
+    public synchronized CardMeta getById(String id) {
+        if (id == null || id.isBlank()) return null;
+        return byId.get(id);
+    }
+
+    public synchronized List<CardMeta> findByName(String name, String setFilter) {
+        if (name == null || name.isBlank()) return List.of();
+
+        String needleName = name.trim().toLowerCase(Locale.ROOT);
+        String needleSet = setFilter == null || setFilter.isBlank()
+                ? null
+                : setFilter.trim().toLowerCase(Locale.ROOT);
+
+        ArrayList<CardMeta> matches = new ArrayList<>();
+        for (CardMeta meta : byId.values()) {
+            if (meta == null) continue;
+            if (meta.name == null || !meta.name.trim().toLowerCase(Locale.ROOT).equals(needleName)) continue;
+            if (needleSet != null) {
+                String set = meta.set == null ? "" : meta.set.trim().toLowerCase(Locale.ROOT);
+                if (!set.equals(needleSet)) continue;
+            }
+            matches.add(meta);
+        }
+        return matches;
+    }
+
+    public synchronized RemoveResult removeByIds(Collection<String> ids, boolean removeOwnedArt) {
+        if (ids == null || ids.isEmpty()) {
+            return new RemoveResult(List.of(), List.of(), 0, 0, 0, false);
+        }
+
+        LinkedHashSet<String> wanted = new LinkedHashSet<>();
+        for (String id : ids) {
+            if (id != null && !id.isBlank()) wanted.add(id);
+        }
+        if (wanted.isEmpty()) {
+            return new RemoveResult(List.of(), List.of(), 0, 0, 0, false);
+        }
+
+        ArrayList<CardMeta> removed = new ArrayList<>();
+        for (String id : wanted) {
+            CardMeta meta = byId.remove(id);
+            if (meta != null) {
+                removed.add(meta);
+            }
+        }
+
+        if (removed.isEmpty()) {
+            return new RemoveResult(List.of(), List.of(), 0, 0, 0, false);
+        }
+
+        LinkedHashSet<String> artKeys = new LinkedHashSet<>();
+        for (CardMeta meta : removed) {
+            collectArtKeys(meta, artKeys);
+        }
+
+        int artFilesDeleted = 0;
+        int artKeysRemoved = 0;
+        int artKeysKept = 0;
+        ArrayList<String> invalidated = new ArrayList<>();
+
+        if (removeOwnedArt) {
+            for (String key : artKeys) {
+                if (key == null || key.isBlank()) continue;
+
+                if (isArtKeyUsed(key)) {
+                    artKeysKept++;
+                    continue;
+                }
+
+                artFilesDeleted += deleteArtFiles(key);
+                artKeysRemoved++;
+                invalidated.add(key);
+            }
+        }
+
+        boolean saved = saveSnapshot(new ArrayList<>(byId.values()));
+        dirty = false;
+        return new RemoveResult(List.copyOf(removed), List.copyOf(invalidated), artFilesDeleted, artKeysRemoved, artKeysKept, saved);
+    }
+
+    public record RemoveResult(
+            List<CardMeta> removed,
+            List<String> invalidatedArtKeys,
+            int artFilesDeleted,
+            int artKeysRemoved,
+            int artKeysKept,
+            boolean saved
+    ) {}
+
     // Replace your load() and save() with these:
 
     @SuppressWarnings("unchecked")
@@ -187,6 +277,56 @@ public final class CustomCardStore {
         } catch (Exception ignored) {
             return false;
         }
+    }
+
+    private static void collectArtKeys(CardMeta meta, Set<String> out) {
+        if (meta == null || out == null) return;
+
+        addArtKey(out, normalizeCustomKey(meta.artKeyFront, meta.id, 0));
+        addArtKey(out, normalizeCustomKey(meta.artKeyBack, meta.id, 1));
+    }
+
+    private static void addArtKey(Set<String> out, String key) {
+        if (key != null && !key.isBlank()) {
+            out.add(key.trim());
+        }
+    }
+
+    private boolean isArtKeyUsed(String key) {
+        if (key == null || key.isBlank()) return false;
+        String needle = key.trim();
+
+        for (CardMeta meta : byId.values()) {
+            if (meta == null) continue;
+            if (needle.equals(normalizeCustomKey(meta.artKeyFront, meta.id, 0))) return true;
+            if (needle.equals(normalizeCustomKey(meta.artKeyBack, meta.id, 1))) return true;
+        }
+        return false;
+    }
+
+    private int deleteArtFiles(String artKey) {
+        if (artKey == null || artKey.isBlank()) return 0;
+
+        int deleted = 0;
+        for (String ext : List.of("webp", "png", "jpg", "jpeg")) {
+            try {
+                if (Files.deleteIfExists(artDir.resolve(artKey + "." + ext))) {
+                    deleted++;
+                }
+            } catch (Exception e) {
+                Mtgcard.LOGGER.warn("[MTGCard] Failed to delete custom art {}.{}: {}", artKey, ext, e.toString());
+            }
+        }
+        return deleted;
+    }
+
+    private static String normalizeCustomKey(String key, String customId, int face) {
+        String fallback = "custom_" + (customId == null ? "" : customId.trim()) + "_f" + face;
+        if (key == null || key.isBlank()) return fallback;
+
+        String normalized = key.trim();
+        if (!normalized.startsWith("custom_")) normalized = "custom_" + normalized;
+        return normalized;
     }
 
     // Minimal meta POJO you can extend later

@@ -242,6 +242,7 @@ public final class CustomCardPackets {
         PayloadTypeRegistry.playS2C().register(CustomSyncDelta.ID, CustomSyncDelta.CODEC);
 
         PayloadTypeRegistry.playS2C().register(CustomArtReady.ID,  CustomArtReady.CODEC);
+        PayloadTypeRegistry.playS2C().register(CustomArtInvalidate.ID, CustomArtInvalidate.CODEC);
 
         // C2S art upload
         PayloadTypeRegistry.playC2S().register(CustomArtBegin.ID,  CustomArtBegin.CODEC);
@@ -348,6 +349,7 @@ public final class CustomCardPackets {
     }
 
     public static final Identifier ART_READY_ID = Identifier.fromNamespaceAndPath("mtgcard","custom_art_ready");
+    public static final Identifier ART_INVALIDATE_ID = Identifier.fromNamespaceAndPath("mtgcard","custom_art_invalidate");
 
     public record CustomArtReady(String artKey) implements CustomPacketPayload {
         public static final Type<CustomArtReady> ID = new Type<>(ART_READY_ID);
@@ -356,6 +358,22 @@ public final class CustomCardPackets {
                 StreamCodec.composite(
                         ByteBufCodecs.STRING_UTF8, CustomArtReady::artKey,
                         CustomArtReady::new
+                );
+
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
+    }
+
+    private static final StreamCodec<RegistryFriendlyByteBuf, List<String>> STRING_LIST_CODEC =
+            ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.STRING_UTF8);
+
+    public record CustomArtInvalidate(List<String> artKeys) implements CustomPacketPayload {
+        public static final Type<CustomArtInvalidate> ID = new Type<>(ART_INVALIDATE_ID);
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, CustomArtInvalidate> CODEC =
+                StreamCodec.composite(
+                        STRING_LIST_CODEC,
+                        CustomArtInvalidate::artKeys,
+                        CustomArtInvalidate::new
                 );
 
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }

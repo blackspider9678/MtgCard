@@ -29,8 +29,10 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -1537,6 +1539,68 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
 
     private static String nz(String s) { return s == null ? "" : s; }
     private void withSel(Consumer<Entry> c) { if (selected >= 0 && selected < entries.size()) c.accept(entries.get(selected)); }
+
+    private static String stableCustomId(Entry entry) {
+        if (entry == null) return "custom_" + shortHash(UUID.randomUUID().toString());
+
+        String explicit = sanitizeCustomId(entry.meta == null ? "" : entry.meta.id);
+        if (!explicit.isBlank()) return explicit;
+
+        String set = nz(entry.meta == null ? "" : entry.meta.set).trim();
+        String name = nz(entry.meta == null ? "" : entry.meta.name).trim();
+        if (name.isBlank()) {
+            name = stripExt(nz(entry.fileName).toLowerCase(Locale.ROOT));
+        }
+        if (name.isBlank()) {
+            name = "card";
+        }
+        if (set.isBlank()) {
+            set = "cstm";
+        }
+
+        String identity = set.toLowerCase(Locale.ROOT) + ":" + name.toLowerCase(Locale.ROOT);
+        String slug = slugPart(set) + "_" + slugPart(name);
+        if (slug.length() > 48) {
+            slug = slug.substring(0, 48);
+        }
+
+        return sanitizeCustomId(slug + "_" + shortHash(identity));
+    }
+
+    private static String sanitizeCustomId(String raw) {
+        if (raw == null) return "";
+
+        String s = raw.trim().toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9_\\-]+", "_")
+                .replaceAll("_+", "_")
+                .replaceAll("^_+", "")
+                .replaceAll("_+$", "");
+
+        if (s.length() > 64) {
+            s = s.substring(0, 64);
+        }
+        return s;
+    }
+
+    private static String slugPart(String raw) {
+        String s = sanitizeCustomId(raw);
+        return s.isBlank() ? "card" : s;
+    }
+
+    private static String shortHash(String raw) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-1")
+                    .digest(nz(raw).getBytes(StandardCharsets.UTF_8));
+            StringBuilder out = new StringBuilder(10);
+            for (int i = 0; i < 5 && i < digest.length; i++) {
+                out.append(String.format(Locale.ROOT, "%02x", digest[i] & 0xFF));
+            }
+            return out.toString();
+        } catch (Throwable ignored) {
+            return Integer.toHexString(nz(raw).hashCode()).replace("-", "0");
+        }
+    }
+
     private static String nextRarity(String r) {
         String[] rs = {"common","uncommon","rare","mythic"};
         int i = 0; for (int k = 0; k < rs.length; k++) if (rs[k].equalsIgnoreCase(r)) { i = k; break; }
@@ -2037,9 +2101,9 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
             }
 
             // ✅ Stable custom id + stable art keys
-            String customId = UUID.randomUUID().toString().replace("-", "");
-            String frontKey = customId + "_f0";
-            String backKey  = (df ? customId + "_f1" : "");
+            String customId = stableCustomId(frontEntry);
+            String frontKey = "custom_" + customId + "_f0";
+            String backKey  = (df ? "custom_" + customId + "_f1" : "");
 
             // 1) Upload art first (chunked)
             enqueueArtUpload(frontKey, frontBytes);

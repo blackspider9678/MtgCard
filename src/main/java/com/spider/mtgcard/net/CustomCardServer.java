@@ -170,6 +170,7 @@ public final class CustomCardServer {
                 player.sendSystemMessage(Component.literal("[MTGCard] Custom card import complete: "
                         + job.added + " added, " + job.failed + " skipped."));
             }
+            CustomCardSync.broadcastFull(job.server, job.store.all());
         }));
     }
 
