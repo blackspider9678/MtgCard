@@ -501,6 +501,17 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
         BundleContents contents = bundle.getOrDefault(DataComponents.BUNDLE_CONTENTS, BundleContents.EMPTY);
         java.util.ArrayList<ItemStack> out = new java.util.ArrayList<>();
+
+        try {
+            contents.itemCopyStream()
+                    .filter(stack -> stack != null && !stack.isEmpty())
+                    .forEach(stack -> out.add(stack.copy()));
+            if (!out.isEmpty()) {
+                return out;
+            }
+        } catch (Throwable ignored) {
+        }
+
         try {
             java.lang.reflect.Method itemsMethod = BundleContents.class.getMethod("items");
             Object value = itemsMethod.invoke(contents);
@@ -508,6 +519,11 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
                 for (Object obj : iterable) {
                     if (obj instanceof ItemStack stack && !stack.isEmpty()) {
                         out.add(stack.copy());
+                    } else if (obj instanceof ItemStackTemplate template) {
+                        ItemStack stack = template.create();
+                        if (!stack.isEmpty()) {
+                            out.add(stack);
+                        }
                     }
                 }
             }
