@@ -79,8 +79,10 @@ public final class CardStackBuilders {
         meta.putString("world_art",       frontKey);
         meta.putString("world_art_back",  backKey);
 
+        String displayName = customDisplayName(m);
+
         // Mirror Scryfall-style fields so UI/search behaves consistently
-        if (m.name != null) meta.putString("name", m.name);
+        if (displayName != null) meta.putString("name", displayName);
         if (m.manaCost != null) meta.putString("mana_cost", m.manaCost);
         if (m.typeLine != null) meta.putString("type_line", m.typeLine);
         if (m.oracleText != null) meta.putString("oracle_text", m.oracleText);
@@ -105,7 +107,7 @@ public final class CardStackBuilders {
         card.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
 
         // ✅ IMPORTANT: give it a visible name so it’s not just "Card"
-        applyColoredNameIfUnset(card, m.name, m.rarity);
+        applyColoredNameIfUnset(card, displayName, m.rarity);
 
         if (foilVisual) card.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
         return card;
@@ -148,6 +150,16 @@ public final class CardStackBuilders {
             return;
         }
         tag.putString(key, value);
+    }
+
+    private static String customDisplayName(com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta m) {
+        if (m == null) return "";
+        String front = m.name == null ? "" : m.name.trim();
+        String back = m.backName == null ? "" : m.backName.trim();
+        if (m.doubleFaced && !front.isBlank() && !back.isBlank()) {
+            return front + " // " + back;
+        }
+        return front;
     }
 
     private static String bestImageUrl(Map<String, String> imageUris) {

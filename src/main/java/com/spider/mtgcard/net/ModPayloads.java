@@ -84,6 +84,7 @@ public final class ModPayloads {
         // ---- From old ModNetworking (moved here) ----
         // NOTE: SetFacePayload is expected to be SLOT-based: (slot, face)
         PayloadTypeRegistry.playC2S().register(SetFacePayload.ID, SetFacePayload.CODEC);
+        PayloadTypeRegistry.playC2S().register(SetMenuSlotFacePayload.ID, SetMenuSlotFacePayload.CODEC);
         PayloadTypeRegistry.playC2S().register(XmlArtUploadPayload.ID, XmlArtUploadPayload.CODEC);
         PayloadTypeRegistry.playS2C().register(UnbundleProgressPayload.ID, UnbundleProgressPayload.CODEC);
         PayloadTypeRegistry.playC2S().register(GraveyardActionPayload.ID, GraveyardActionPayload.CODEC);
@@ -179,6 +180,32 @@ public final class ModPayloads {
                 st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
 
                 player.getInventory().setChanged();
+                player.containerMenu.broadcastChanges();
+            });
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(SetMenuSlotFacePayload.ID, (payload, ctx) -> {
+            ctx.server().execute(() -> {
+                var player = ctx.player();
+                if (player == null) return;
+                if (player.containerMenu == null || player.containerMenu.containerId != payload.containerId()) return;
+
+                int slotIndex = payload.slotIndex();
+                if (slotIndex < 0 || slotIndex >= player.containerMenu.slots.size()) return;
+
+                var slot = player.containerMenu.slots.get(slotIndex);
+                if (slot == null || !slot.hasItem()) return;
+
+                ItemStack st = slot.getItem();
+                if (st.isEmpty() || !(st.getItem() instanceof com.spider.mtgcard.item.CardItem)) return;
+
+                int faceCount = getFaceCount(st);
+                if (faceCount <= 1) return;
+
+                int face = Math.max(0, Math.min(payload.face(), faceCount - 1));
+                writeFaceIndex(st, face);
+
+                slot.setChanged();
                 player.containerMenu.broadcastChanges();
             });
         });

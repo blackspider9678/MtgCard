@@ -133,7 +133,7 @@ public final class Custom_Command {
             return 0;
         }
 
-        return reportRemoval(src, "set " + set, store(src).removeByIds(ids, true));
+        return reportRemoval(src, "set " + set, store(src).removeByIds(ids, false));
     }
 
     private static int removeCard(CommandSourceStack src, String rawName) {
@@ -163,7 +163,7 @@ public final class Custom_Command {
                 .filter(id -> id != null && !id.isBlank())
                 .toList();
 
-        return reportRemoval(src, "card " + query.name(), store(src).removeByIds(ids, true));
+        return reportRemoval(src, "card " + query.name(), store(src).removeByIds(ids, false));
     }
 
     private static int reportRemoval(CommandSourceStack src, String label, CustomCardStore.RemoveResult result) {
@@ -181,14 +181,15 @@ public final class Custom_Command {
         CustomCardSync.broadcastFull(src.getServer(), currentStore.all());
         broadcastArtInvalidation(src, result.invalidatedArtKeys());
 
-        src.sendSuccess(() -> Component.literal("Removed custom " + label + "."), false);
+        src.sendSuccess(() -> Component.literal("Removed custom " + label + " from active card pool."), false);
         src.sendSuccess(() -> Component.literal("Card metadata removed: " + result.removed().size()), false);
-        src.sendSuccess(() -> Component.literal("Associated art removed: " + result.artFilesDeleted()
-                + " file(s) from " + result.artKeysRemoved() + " key(s)."), false);
-        if (result.artKeysKept() > 0) {
-            src.sendSuccess(() -> Component.literal("Associated art kept: " + result.artKeysKept() + " shared key(s)."), false);
+        src.sendSuccess(() -> Component.literal("Associated art kept: " + result.artKeysKept() + " key(s)."), false);
+        if (result.artFilesDeleted() > 0 || result.artKeysRemoved() > 0) {
+            src.sendSuccess(() -> Component.literal("Associated art removed: " + result.artFilesDeleted()
+                    + " file(s) from " + result.artKeysRemoved() + " key(s)."), false);
         }
-        src.sendSuccess(() -> Component.literal("Cached texture invalidated: " + result.invalidatedArtKeys().size() + " key(s)."), false);
+        src.sendSuccess(() -> Component.literal("Cached texture invalidated: " + result.invalidatedArtKeys().size()
+                + " key(s); kept art remains available for existing cards."), false);
         src.sendSuccess(() -> Component.literal("Card database synced/reloaded."), false);
         return 1;
     }

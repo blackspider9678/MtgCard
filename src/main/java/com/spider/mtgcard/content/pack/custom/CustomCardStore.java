@@ -182,6 +182,8 @@ public final class CustomCardStore {
                 artKeysRemoved++;
                 invalidated.add(key);
             }
+        } else {
+            artKeysKept = artKeys.size();
         }
 
         boolean saved = saveSnapshot(new ArrayList<>(byId.values()));

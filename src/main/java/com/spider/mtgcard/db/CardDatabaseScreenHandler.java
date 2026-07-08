@@ -468,10 +468,9 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
             ItemStack copy = entry.copy();
             if (copy.is(ModItems.CARD) && (dumpAll || !movedAny)) {
                 ItemStack card = copy.copy();
-                if (!dumpAll) {
-                    card.setCount(1);
-                    copy.shrink(1);
-                }
+                int moveCount = dumpAll ? copy.getCount() : 1;
+                card.setCount(moveCount);
+                copy.shrink(moveCount);
                 clearUid(card);
                 toStore.add(card);
                 movedAny = true;
