@@ -9,6 +9,7 @@ public final class Cockatrice {
         public String name = "", manaCost = "", typeLine = "", rarity = "", set = "", oracleText = "";
         public String power = "", toughness = "", loyalty = "";
         public String backName = "", backTypeLine = "", backOracleText = "", backPower = "", backToughness = "", backLoyalty = "";
+        public String relatedTransform = "";
     }
 
     /** Returns lookup map by lowercased card name. */
@@ -66,6 +67,7 @@ public final class Cockatrice {
                     }
                 }
                 m.loyalty = text(c, "loyalty");
+                m.relatedTransform = related(c, "transform");
 
                 // Normalize defaults so your UI doesn't show blank
                 if (m.rarity.isEmpty()) m.rarity = "common";
@@ -106,6 +108,21 @@ public final class Cockatrice {
         if (nl.getLength() == 0) return "";
         Node n = nl.item(0);
         if (n instanceof Element e && e.hasAttribute(attr)) return e.getAttribute(attr).trim();
+        return "";
+    }
+
+    private static String related(Element parent, String attach) {
+        NodeList nl = parent.getElementsByTagName("related");
+        for (int i = 0; i < nl.getLength(); i++) {
+            Node n = nl.item(i);
+            if (!(n instanceof Element e)) continue;
+            String a = e.getAttribute("attach");
+            if (a == null || !a.trim().equalsIgnoreCase(attach)) continue;
+            String text = e.getTextContent();
+            if (text != null && !text.trim().isEmpty()) {
+                return text.trim();
+            }
+        }
         return "";
     }
 

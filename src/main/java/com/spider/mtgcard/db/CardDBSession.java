@@ -133,6 +133,10 @@ public final class CardDBSession implements CardDBView {
         if (uiFrozen) { needsReproject = true; persist(); return; }
         intakeAll.removeIf(s -> s == null || s.isEmpty());
         this.windowOffset = clampOffset(this.windowOffset);
+        if (projectingSearch) {
+            persist();
+            return;
+        }
         // quiet redraw only
         reprojectQuietly();
         // persist explicit (no window.markDirty side-effects)
@@ -315,13 +319,27 @@ public final class CardDBSession implements CardDBView {
 
     @Override
     public void appendToIntake(ItemStack stack) {
-        if (stack.isEmpty() || !stack.is(ModItems.CARD)) return;
+        if (stack == null) return;
+        appendAllToIntake(java.util.List.of(stack));
+    }
 
-        // Ensure unique identity for reliable remove-by-UID later
-        ensureUid(stack);
+    @Override
+    public void appendAllToIntake(List<ItemStack> stacks) {
+        if (stacks == null || stacks.isEmpty()) return;
 
         boolean anchoredToBottom = (this.windowOffset == getMaxWindowOffset());
-        this.intakeAll.add(stack.copy());
+        int added = 0;
+
+        for (ItemStack stack : stacks) {
+            if (stack == null || stack.isEmpty() || !stack.is(ModItems.CARD)) continue;
+
+            ItemStack copy = stack.copy();
+            ensureUid(copy);
+            this.intakeAll.add(copy);
+            added++;
+        }
+
+        if (added == 0) return;
         if (anchoredToBottom) this.windowOffset = getMaxWindowOffset();
 
         if (!projectingSearch) applyBackingToWindow();

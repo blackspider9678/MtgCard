@@ -29,8 +29,10 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -214,6 +216,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
                 } else if (!xmlImportInProgress) {
                     netPhase = "All queued uploads sent.";
                 }
+                if (createBtn != null) createBtn.active = true;
                 break;
             }
 
@@ -331,6 +334,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
                         applyCockatriceToEntry(e);
                         buildThumbnail(e);
                         entries.add(e);
+                        applyAutoTransformLinks();
 
                         if (selected < 0) {
                             selected = entries.size() - 1;
@@ -347,6 +351,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
                         }
                         applyCockatriceToEntry(existing);
                         buildThumbnail(existing);
+                        applyAutoTransformLinks();
                     }
 
                     rebuildVisibleEntries();
@@ -1197,6 +1202,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
                     return true;
                 }
                 // Normal selection
+                clearEditorFocus();
                 selected = entryIndex;
                 syncEditorFromSelected();
                 return true;
@@ -1263,26 +1269,36 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
             return;
         }
 
-        // ---- RESET cancel state so new drops work ----
+        boolean uploadWasRunning = uploadsRunning || !uploadQueue.isEmpty();
+        boolean manualWasRunning = manualImportRunning || manualInFlight || !manualImageQueue.isEmpty();
+
+        // ---- RESET cancel state so new drops work without cancelling existing queues ----
         cancelRequested = false;
         xmlCancel.set(false);
-        manualUiActive = false;
-        uploadUiActive = false;
 
-        uploadTotalCards = uploadCardsSent = 0;
-        uploadTotalJobs = uploadJobsSent = 0;
-        uploadLine2 = "";
+        if (!uploadWasRunning) {
+            uploadUiActive = false;
+            uploadTotalCards = uploadCardsSent = 0;
+            uploadTotalJobs = uploadJobsSent = 0;
+            uploadLine2 = "";
+        } else {
+            uploadUiActive = true;
+            uploadLine2 = "Additional files queued.";
+        }
 
-        // reset manual pump state too (safe)
-        manualImportRunning = false;
-        manualInFlight = false;
-        manualImportCooldownTicks = 0;
+        if (!manualWasRunning) {
+            manualUiActive = false;
+            manualImportRunning = false;
+            manualInFlight = false;
+            manualImportCooldownTicks = 0;
 
-        // (optional) reset progress counters for this batch
-        manualFound = 0;
-        manualDone = 0;
-        manualFailed = 0;
-        manualPhase = "";
+            manualFound = 0;
+            manualDone = 0;
+            manualFailed = 0;
+            manualPhase = "";
+        } else {
+            manualUiActive = true;
+        }
 
         List<Path> imagePaths = new ArrayList<>();
         List<String> xmlStrings = new ArrayList<>();
@@ -1323,6 +1339,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
         // Apply metadata to existing entries if XML included
         if (metaApplied > 0 && !entries.isEmpty()) {
             applyCockatriceTo(entries);
+            applyAutoTransformLinks();
         }
 
         // Queue manual images to be imported one-by-one
@@ -1430,6 +1447,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
 
                                 buildThumbnail(e);       // ✅ safe now
                                 entries.add(e);
+                                applyAutoTransformLinks();
 
                                 lastStatus = "Imported: " + name;
                             } else {
@@ -1442,6 +1460,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
 
                                 applyCockatriceToEntry(existing);
                                 buildThumbnail(existing); // ✅ safe now
+                                applyAutoTransformLinks();
                                 lastStatus = "Updated: " + name;
                             }
 
@@ -1963,14 +1982,81 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
         if (!m.loyalty.isEmpty())    e.meta.loyalty = m.loyalty;
     }
 
+    private void applyAutoTransformLinks() {
+        if (entries.isEmpty()) return;
+
+        Map<String, Integer> byName = new HashMap<>();
+        for (int i = 0; i < entries.size(); i++) {
+            Entry e = entries.get(i);
+            String name = normalizedCardName(e == null ? "" : e.meta.name);
+            if (!name.isEmpty()) byName.putIfAbsent(name, i);
+        }
+
+        for (int i = 0; i < entries.size(); i++) {
+            Entry e = entries.get(i);
+            if (e == null || e.link == null || e.link.partnerIndex >= 0) continue;
+
+            String ownName = normalizedCardName(e.meta.name);
+            Cockatrice.Meta meta = cockatriceByName.get(ownName);
+
+            String frontMarker = oracleFaceMarker(e.meta.oracleText, "front");
+            if (!frontMarker.isEmpty()) {
+                Integer frontIdx = byName.get(normalizedCardName(frontMarker));
+                if (frontIdx != null && frontIdx != i) {
+                    linkWith(i, frontIdx, false);
+                }
+                continue;
+            }
+
+            String backMarker = oracleFaceMarker(e.meta.oracleText, "back");
+            if (!backMarker.isEmpty()) {
+                Integer backIdx = byName.get(normalizedCardName(backMarker));
+                if (backIdx != null && backIdx != i) {
+                    linkWith(i, backIdx, true);
+                }
+                continue;
+            }
+
+            String related = meta == null ? "" : nz(meta.relatedTransform);
+            if (!related.isBlank()) {
+                Integer otherIdx = byName.get(normalizedCardName(related));
+                if (otherIdx != null && otherIdx != i) {
+                    int frontIdx = Math.min(i, otherIdx);
+                    int backIdx = Math.max(i, otherIdx);
+                    linkWith(frontIdx, backIdx, true);
+                }
+            }
+        }
+
+        updateLinkButtonsVisibility();
+    }
+
+    private static String normalizedCardName(String name) {
+        return nz(name).trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String oracleFaceMarker(String oracle, String face) {
+        if (oracle == null || oracle.isBlank() || face == null || face.isBlank()) return "";
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(
+                "(?im)^\\s*---\\s*\\(" + java.util.regex.Pattern.quote(face) + "\\)\\s*:\\s*(.+?)\\s*$"
+        );
+        java.util.regex.Matcher m = p.matcher(oracle);
+        return m.find() ? m.group(1).trim() : "";
+    }
+
     // ---- Send ----
     private void sendToServer() {
         if (entries.isEmpty()) { toast("Nothing to send."); return; }
-        if (uploadsRunning) { toast("Already uploading..."); return; }
 
+        boolean appending = uploadsRunning || !uploadQueue.isEmpty();
+        int jobsBefore = uploadQueue.size();
         cancelRequested = false;
-        netSent = 0;
-        netPhase = "Queued uploads...";
+        if (!appending) {
+            netSent = 0;
+            netPhase = "Queued uploads...";
+        } else {
+            netPhase = "Appending uploads...";
+        }
 
         final int CREATE_BATCH_SIZE = 75; // try 50–150
         List<CustomCardPackets.BatchEntry> batch = new ArrayList<>(CREATE_BATCH_SIZE);
@@ -2037,9 +2123,9 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
             }
 
             // ✅ Stable custom id + stable art keys
-            String customId = UUID.randomUUID().toString().replace("-", "");
-            String frontKey = customId + "_f0";
-            String backKey  = (df ? customId + "_f1" : "");
+            String customId = stableCustomId(frontEntry);
+            String frontKey = "custom_" + customId + "_f0";
+            String backKey  = (df ? "custom_" + customId + "_f1" : "");
 
             // 1) Upload art first (chunked)
             enqueueArtUpload(frontKey, frontBytes);
@@ -2096,34 +2182,39 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
 
         netQueued = uploadQueue.size();
 
-        // ---- Switch the right-panel progress to UPLOAD mode ----
-        uploadUiActive = true;
-        uploadTotalCards = queuedCards;
-        uploadCardsSent = 0;
-
-        uploadTotalJobs = uploadQueue.size(); // snapshot total jobs at start
-        uploadJobsSent  = 0;
-
-        uploadLine2 = "Please keep screen open";
-
-        // ---- ETA init ----
-        long now = System.currentTimeMillis();
-        uploadStartMs = now;
-        uploadLastSampleMs = now;
-        uploadLastSampleSent = 0;
-        uploadRateEma = 0.0;
-
         if (queuedCards == 0) {
             toast("Nothing to send (no valid front images).");
             return;
         }
 
+        int jobsAdded = Math.max(0, uploadQueue.size() - jobsBefore);
+
+        // ---- Switch the right-panel progress to UPLOAD mode ----
+        uploadUiActive = true;
+        if (appending) {
+            uploadTotalCards += queuedCards;
+            uploadTotalJobs += jobsAdded;
+            uploadLine2 = "Queued " + queuedCards + " more card(s).";
+        } else {
+            uploadTotalCards = queuedCards;
+            uploadCardsSent = 0;
+            uploadTotalJobs = uploadQueue.size(); // snapshot total jobs at start
+            uploadJobsSent  = 0;
+            uploadLine2 = "Please keep screen open";
+
+            long now = System.currentTimeMillis();
+            uploadStartMs = now;
+            uploadLastSampleMs = now;
+            uploadLastSampleSent = 0;
+            uploadRateEma = 0.0;
+        }
+
         if (createBtn != null) createBtn.active = false;
 
-        netPhase = "Uploading " + queuedCards + " card(s)...";
+        netPhase = (appending ? "Appended " : "Uploading ") + queuedCards + " card(s)...";
         startUploadsIfNeeded();
 
-        toast("Queued " + queuedCards + " upload(s). Keep this screen open until done.");
+        toast((appending ? "Appended " : "Queued ") + queuedCards + " upload(s). Keep this screen open until done.");
     }
 
     private void toast(String s) {
@@ -2135,6 +2226,67 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
     private static String stripExt(String lowerName) {
         int dot = lowerName.lastIndexOf('.');
         return dot > 0 ? lowerName.substring(0, dot) : lowerName;
+    }
+
+    private static String stableCustomId(Entry entry) {
+        if (entry == null) return "custom_" + shortHash(UUID.randomUUID().toString());
+
+        String explicit = sanitizeCustomId(entry.meta == null ? "" : entry.meta.id);
+        if (!explicit.isBlank()) return explicit;
+
+        String set = nz(entry.meta == null ? "" : entry.meta.set).trim();
+        String name = nz(entry.meta == null ? "" : entry.meta.name).trim();
+        if (name.isBlank()) {
+            name = stripExt(nz(entry.fileName).toLowerCase(Locale.ROOT));
+        }
+        if (name.isBlank()) {
+            name = "card";
+        }
+        if (set.isBlank()) {
+            set = "cstm";
+        }
+
+        String identity = set.toLowerCase(Locale.ROOT) + ":" + name.toLowerCase(Locale.ROOT);
+        String slug = slugPart(set) + "_" + slugPart(name);
+        if (slug.length() > 48) {
+            slug = slug.substring(0, 48);
+        }
+
+        return sanitizeCustomId(slug + "_" + shortHash(identity));
+    }
+
+    private static String sanitizeCustomId(String raw) {
+        if (raw == null) return "";
+
+        String s = raw.trim().toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9_\\-]+", "_")
+                .replaceAll("_+", "_")
+                .replaceAll("^_+", "")
+                .replaceAll("_+$", "");
+
+        if (s.length() > 64) {
+            s = s.substring(0, 64);
+        }
+        return s;
+    }
+
+    private static String slugPart(String raw) {
+        String s = sanitizeCustomId(raw);
+        return s.isBlank() ? "card" : s;
+    }
+
+    private static String shortHash(String raw) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-1")
+                    .digest(nz(raw).getBytes(StandardCharsets.UTF_8));
+            StringBuilder out = new StringBuilder(10);
+            for (int i = 0; i < 5 && i < digest.length; i++) {
+                out.append(String.format(Locale.ROOT, "%02x", digest[i] & 0xFF));
+            }
+            return out.toString();
+        } catch (Throwable ignored) {
+            return Integer.toHexString(nz(raw).hashCode()).replace("-", "0");
+        }
     }
 
     // === Cockatrice XML -> auto-add images (async, with progress + debug logs) ===
@@ -2246,6 +2398,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
                             this.minecraft.execute(() -> {
                                 buildThumbnail(finalE);
                                 entries.add(finalE);
+                                applyAutoTransformLinks();
 
                                 boolean initSelection = (selected < 0);
                                 if (initSelection) {
@@ -2991,9 +3144,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
         typeF.setValue(nz(m.typeLine));
         setF.setValue(nz(m.set));
 
-        if (!(textF != null && textF.isFocused())) {
-            textF.setText(nz(m.oracleText));
-        }
+        if (textF != null) textF.setText(nz(m.oracleText));
 
         powF.setValue(nz(m.power));
         touF.setValue(nz(m.toughness));
@@ -3002,6 +3153,20 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
         dfcToggleBtn.setMessage(Component.literal(m.doubleFaced ? "Double-Faced" : "Single Face"));
 
         updateLinkButtonsVisibility();
+    }
+
+    private void clearEditorFocus() {
+        if (nameF != null) nameF.setFocused(false);
+        if (manaF != null) manaF.setFocused(false);
+        if (typeF != null) typeF.setFocused(false);
+        if (setF != null) setF.setFocused(false);
+        if (powF != null) powF.setFocused(false);
+        if (touF != null) touF.setFocused(false);
+        if (loyF != null) loyF.setFocused(false);
+        if (textF != null) textF.setFocused(false);
+        if (this.getFocused() != searchBox) {
+            this.setFocused(null);
+        }
     }
 
     @Override

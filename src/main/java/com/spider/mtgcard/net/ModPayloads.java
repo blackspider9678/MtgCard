@@ -20,6 +20,9 @@ import net.minecraft.world.item.component.CustomData;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Single source of truth for payload CODEC registration + server receivers.
@@ -32,6 +35,12 @@ import java.util.Locale;
 public final class ModPayloads {
     private static boolean typesRegistered = false;
     private static boolean serverReceiversRegistered = false;
+    private static final ExecutorService XML_ART_EXECUTOR =
+            Executors.newFixedThreadPool(2, r -> {
+                Thread t = new Thread(r, "mtgcard-xml-art-save");
+                t.setDaemon(true);
+                return t;
+            });
 
     /** CODEC/type registration only (safe to call on both sides). */
     public static void registerTypes() {
@@ -75,6 +84,7 @@ public final class ModPayloads {
         // ---- From old ModNetworking (moved here) ----
         // NOTE: SetFacePayload is expected to be SLOT-based: (slot, face)
         PayloadTypeRegistry.serverboundPlay().register(SetFacePayload.ID, SetFacePayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetMenuSlotFacePayload.ID, SetMenuSlotFacePayload.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(XmlArtUploadPayload.ID, XmlArtUploadPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(UnbundleProgressPayload.ID, UnbundleProgressPayload.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(GraveyardActionPayload.ID, GraveyardActionPayload.CODEC);
@@ -170,6 +180,32 @@ public final class ModPayloads {
                 st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
 
                 player.getInventory().setChanged();
+                player.containerMenu.broadcastChanges();
+            });
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(SetMenuSlotFacePayload.ID, (payload, ctx) -> {
+            ctx.server().execute(() -> {
+                var player = ctx.player();
+                if (player == null) return;
+                if (player.containerMenu == null || player.containerMenu.containerId != payload.containerId()) return;
+
+                int slotIndex = payload.slotIndex();
+                if (slotIndex < 0 || slotIndex >= player.containerMenu.slots.size()) return;
+
+                var slot = player.containerMenu.slots.get(slotIndex);
+                if (slot == null || !slot.hasItem()) return;
+
+                ItemStack st = slot.getItem();
+                if (st.isEmpty() || !(st.getItem() instanceof com.spider.mtgcard.item.CardItem)) return;
+
+                int faceCount = getFaceCount(st);
+                if (faceCount <= 1) return;
+
+                int face = Math.max(0, Math.min(payload.face(), faceCount - 1));
+                writeFaceIndex(st, face);
+
+                slot.setChanged();
                 player.containerMenu.broadcastChanges();
             });
         });
@@ -270,9 +306,13 @@ public final class ModPayloads {
             byte[] imageBytes = payload.imgBytes();
             String fileName = payload.fileName();
             String sourceUrl = payload.sourceUrl();
+            UUID playerId = player.getUUID();
 
             server.execute(() -> {
-                try {
+                Path worldRoot = resolveWorldRoot(server);
+                XML_ART_EXECUTOR.execute(() -> {
+                    Path savedFile = null;
+                    try {
                     ArtImageStorage.StorageDecision decision = ArtImageStorage.normalizeForStorage(imageBytes, fileName);
                     ArtImageStorage.StoredArt art = decision.art();
                     if (art == null) {
@@ -303,7 +343,6 @@ public final class ModPayloads {
                         safe = stem + "_" + hex + ext;
                     }
 
-                    Path worldRoot = resolveWorldRoot(server);
                     Path artDir = worldRoot.resolve("mtgcard").resolve("art");
                     Files.createDirectories(artDir);
 
@@ -316,11 +355,28 @@ public final class ModPayloads {
                         out = artDir.resolve(stem + "_" + counter++ + ext);
                     }
 
-                    Files.write(out, art.bytes());
-                    player.sendSystemMessage(Component.literal("[MTGCard] Saved XML art to world: " + out.getFileName()));
+                    writeBytesAtomically(out, art.bytes());
+                    savedFile = out;
                 } catch (Throwable t) {
-                    player.sendSystemMessage(Component.literal("[MTGCard] Failed to save XML art: " + t.getClass().getSimpleName()));
+                    Mtgcard.LOGGER.warn("[MTGCard] Failed to save XML art {} from {}: {}",
+                            fileName, sourceUrl == null ? "" : sourceUrl, t.toString());
+                    server.execute(() -> {
+                        ServerPlayer current = server.getPlayerList().getPlayer(playerId);
+                        if (current != null) {
+                            current.sendSystemMessage(Component.literal("[MTGCard] Failed to save XML art: " + t.getClass().getSimpleName()));
+                        }
+                    });
+                    return;
                 }
+
+                    Path finalSavedFile = savedFile;
+                    server.execute(() -> {
+                        ServerPlayer current = server.getPlayerList().getPlayer(playerId);
+                        if (current != null && finalSavedFile != null) {
+                            current.sendSystemMessage(Component.literal("[MTGCard] Saved XML art to world: " + finalSavedFile.getFileName()));
+                        }
+                    });
+                });
             });
         });
 
@@ -383,6 +439,20 @@ public final class ModPayloads {
         }
 
         return fileName + safeExt;
+    }
+
+    private static void writeBytesAtomically(Path out, byte[] bytes) throws java.io.IOException {
+        Path parent = out.getParent();
+        if (parent != null) Files.createDirectories(parent);
+
+        String tmpName = out.getFileName().toString() + ".tmp";
+        Path tmp = parent == null ? Path.of(tmpName) : parent.resolve(tmpName);
+        Files.write(tmp, bytes, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+        try {
+            Files.move(tmp, out, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+            Files.move(tmp, out, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     private static net.minecraft.nbt.CompoundTag getMeta(net.minecraft.world.item.ItemStack st) {

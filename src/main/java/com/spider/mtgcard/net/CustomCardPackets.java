@@ -12,6 +12,7 @@ import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 public final class CustomCardPackets {
 
@@ -20,6 +21,7 @@ public final class CustomCardPackets {
     // =========================
     public static final Identifier BATCH_CREATE_ID = Identifier.fromNamespaceAndPath("mtgcard","custom_batch_create");
     public static final Identifier SYNC_FULL_ID    = Identifier.fromNamespaceAndPath("mtgcard","custom_sync_full");
+    public static final Identifier SYNC_FULL_CHUNK_ID = Identifier.fromNamespaceAndPath("mtgcard","custom_sync_full_chunk");
     public static final Identifier SYNC_DELTA_ID   = Identifier.fromNamespaceAndPath("mtgcard","custom_sync_delta");
 
     // =========================
@@ -192,6 +194,28 @@ public final class CustomCardPackets {
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
+    public record CustomSyncFullChunk(UUID syncId, int index, int total, List<WireMeta> entries) implements CustomPacketPayload {
+        public static final Type<CustomSyncFullChunk> ID = new Type<>(SYNC_FULL_CHUNK_ID);
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, CustomSyncFullChunk> CODEC =
+                StreamCodec.ofMember(
+                        (p, buf) -> {
+                            buf.writeUUID(p.syncId());
+                            buf.writeVarInt(p.index());
+                            buf.writeVarInt(p.total());
+                            WIREMETA_LIST_CODEC.encode(buf, p.entries());
+                        },
+                        buf -> new CustomSyncFullChunk(
+                                buf.readUUID(),
+                                buf.readVarInt(),
+                                buf.readVarInt(),
+                                WIREMETA_LIST_CODEC.decode(buf)
+                        )
+                );
+
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
+    }
+
     public record CustomSyncDelta(WireMeta entry) implements CustomPacketPayload {
         public static final Type<CustomSyncDelta> ID = new Type<>(SYNC_DELTA_ID);
 
@@ -214,9 +238,11 @@ public final class CustomCardPackets {
 
         // S2C
         PayloadTypeRegistry.clientboundPlay().register(CustomSyncFull.ID,  CustomSyncFull.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CustomSyncFullChunk.ID, CustomSyncFullChunk.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(CustomSyncDelta.ID, CustomSyncDelta.CODEC);
 
         PayloadTypeRegistry.clientboundPlay().register(CustomArtReady.ID,  CustomArtReady.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CustomArtInvalidate.ID, CustomArtInvalidate.CODEC);
 
         // C2S art upload
         PayloadTypeRegistry.serverboundPlay().register(CustomArtBegin.ID,  CustomArtBegin.CODEC);
@@ -323,6 +349,7 @@ public final class CustomCardPackets {
     }
 
     public static final Identifier ART_READY_ID = Identifier.fromNamespaceAndPath("mtgcard","custom_art_ready");
+    public static final Identifier ART_INVALIDATE_ID = Identifier.fromNamespaceAndPath("mtgcard","custom_art_invalidate");
 
     public record CustomArtReady(String artKey) implements CustomPacketPayload {
         public static final Type<CustomArtReady> ID = new Type<>(ART_READY_ID);
@@ -331,6 +358,22 @@ public final class CustomCardPackets {
                 StreamCodec.composite(
                         ByteBufCodecs.STRING_UTF8, CustomArtReady::artKey,
                         CustomArtReady::new
+                );
+
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
+    }
+
+    private static final StreamCodec<RegistryFriendlyByteBuf, List<String>> STRING_LIST_CODEC =
+            ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.STRING_UTF8);
+
+    public record CustomArtInvalidate(List<String> artKeys) implements CustomPacketPayload {
+        public static final Type<CustomArtInvalidate> ID = new Type<>(ART_INVALIDATE_ID);
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, CustomArtInvalidate> CODEC =
+                StreamCodec.composite(
+                        STRING_LIST_CODEC,
+                        CustomArtInvalidate::artKeys,
+                        CustomArtInvalidate::new
                 );
 
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }

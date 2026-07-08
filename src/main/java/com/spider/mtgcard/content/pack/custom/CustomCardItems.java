@@ -2,6 +2,7 @@
 package com.spider.mtgcard.content.pack.custom;
 
 import com.spider.mtgcard.util.StackData;
+import com.spider.mtgcard.util.CardStackBuilders;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -16,7 +17,8 @@ public final class CustomCardItems {
         // Build mtg_meta
         CompoundTag meta = new CompoundTag();
         meta.putString("id", m.id); // critical: makes artKey = id + "_fX"
-        meta.putString("name", nz(m.name));
+        String displayName = displayName(m);
+        meta.putString("name", displayName);
         meta.putString("mana_cost", nz(m.manaCost));
         meta.putString("type_line", nz(m.typeLine));
         meta.putString("rarity", nz(m.rarity));
@@ -71,11 +73,21 @@ public final class CustomCardItems {
         root.put("mtg_meta", meta);
         root.putBoolean("mtg_foil", foil);
         StackData.writeCustom(stack, root);
+        CardStackBuilders.applyColoredNameIfUnset(stack, displayName, m.rarity);
 
         to.getInventory().add(stack);
     }
 
     private static String nz(String s) { return s == null ? "" : s; }
+
+    private static String displayName(CustomCardStore.CardMeta m) {
+        String front = m == null ? "" : nz(m.name).trim();
+        String back = m == null ? "" : nz(m.backName).trim();
+        if (m != null && m.doubleFaced && !front.isBlank() && !back.isBlank()) {
+            return front + " // " + back;
+        }
+        return front;
+    }
 
     private CustomCardItems() {}
 }

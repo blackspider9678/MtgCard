@@ -74,6 +74,8 @@ public final class Mtgcard implements ModInitializer {
 
         // Ticks / loot / events
         ServerTickEvents.END_LEVEL_TICK.register(LifePlayGroups::tickWorld);
+        ServerTickEvents.END_SERVER_TICK.register(CustomCardServer::tick);
+        ServerTickEvents.END_SERVER_TICK.register(CustomCardSync::tick);
         ServerTickEvents.END_SERVER_TICK.register(ModPayloads::tickUnpackProgressBars);
         MtgLootInject.init();
         ModEvents.register();

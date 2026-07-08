@@ -269,17 +269,7 @@ public final class CardArtManager {
         CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
 
         // world art path
-        String worldKey = "";
-        if (faceIndex <= 0) {
-            worldKey = meta.getString("world_art_front").orElse("");
-            if (worldKey.isBlank()) worldKey = meta.getString("world_art").orElse("");
-        } else {
-            worldKey = meta.getString("world_art_back").orElse("");
-            if (worldKey.isBlank()) {
-                worldKey = meta.getString("world_art_front").orElse("");
-                if (worldKey.isBlank()) worldKey = meta.getString("world_art").orElse("");
-            }
-        }
+        String worldKey = extractWorldArtKey(meta, faceIndex);
 
         if (worldKey != null && !worldKey.isBlank()) {
             return getOrRequestWorld(worldKey.trim());
@@ -329,6 +319,56 @@ public final class CardArtManager {
         // IMPORTANT: queue instead of sending immediately
         enqueueRequest(artKey, "", artKey + ".webp");
         return null;
+    }
+
+    private static String extractWorldArtKey(CompoundTag meta, int faceIndex) {
+        String worldKey = "";
+        if (faceIndex <= 0) {
+            worldKey = meta.getString("world_art_front").orElse("");
+            if (worldKey.isBlank()) worldKey = meta.getString("world_art").orElse("");
+            if (worldKey.isBlank()) worldKey = extractFaceWorldArt(meta, 0);
+            return worldKey;
+        }
+
+        worldKey = meta.getString("world_art_back").orElse("");
+        if (worldKey.isBlank()) worldKey = extractFaceWorldArt(meta, faceIndex);
+        if (worldKey.isBlank()) {
+            worldKey = meta.getString("world_art_front").orElse("");
+            if (worldKey.isBlank()) worldKey = meta.getString("world_art").orElse("");
+            if (worldKey.isBlank()) worldKey = extractFaceWorldArt(meta, 0);
+        }
+        return worldKey;
+    }
+
+    private static String extractFaceWorldArt(CompoundTag meta, int faceIndex) {
+        Optional<ListTag> facesOpt = meta.getList("card_faces");
+        if (facesOpt.isEmpty() || facesOpt.get().isEmpty()) return "";
+
+        int idx = Math.max(0, Math.min(faceIndex, facesOpt.get().size() - 1));
+        Optional<CompoundTag> face = facesOpt.get().getCompound(idx);
+        return face.flatMap(f -> f.getString("world_art")).orElse("");
+    }
+
+    public static void refreshWorldArt(String artKey) {
+        if (artKey == null || artKey.isBlank()) return;
+
+        invalidateArtKey(artKey);
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc != null && isIntegrated(mc)) {
+            tryLoadNow(artKey);
+            return;
+        }
+
+        deleteCachedFiles(artKey);
+        enqueueRequest(artKey, "", artKey + ".webp");
+    }
+
+    public static void forgetWorldArt(String artKey) {
+        if (artKey == null || artKey.isBlank()) return;
+
+        invalidateArtKey(artKey);
+        deleteCachedFiles(artKey);
     }
 
     public static void clearMemoryTextures() {
@@ -403,6 +443,7 @@ public final class CardArtManager {
 
             Files.createDirectories(file.getParent());
             Files.write(file, imgBytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            com.spider.mtgcard.util.ArtImageStorage.deleteSiblingFormats(cacheDir(), artKey, ext);
 
             DISK_INDEX.put(artKey, fileName);
             saveIndexAsync();
@@ -570,6 +611,7 @@ public final class CardArtManager {
 
             TextureRef old = TEX.remove(artKey);
             if (old != null) {
+                try { Minecraft.getInstance().getTextureManager().release(old.id()); } catch (Throwable ignored) {}
                 try { old.tex().close(); } catch (Throwable ignored) {}
             }
 
@@ -606,12 +648,32 @@ public final class CardArtManager {
         // Remove any cached texture so next request actually reloads
         TextureRef old = TEX.remove(artKey);
         if (old != null) {
+            try { Minecraft.getInstance().getTextureManager().release(old.id()); } catch (Throwable ignored) {}
             try { old.tex().close(); } catch (Throwable ignored) {}
         }
 
         // If DISK_INDEX had a stale mapping, drop it so resolveCachedFile re-discovers
         DISK_INDEX.remove(artKey);
         saveIndexAsync();
+    }
+
+    private static int deleteCachedFiles(String artKey) {
+        int deleted = 0;
+        try {
+            Path dir = cacheDir();
+            for (String candidate : artKeyCandidates(artKey)) {
+                for (String ext : new String[]{"webp", "png", "jpg", "jpeg"}) {
+                    Path file = dir.resolve(candidate + "." + ext);
+                    if (Files.deleteIfExists(file)) {
+                        deleted++;
+                    }
+                }
+                DISK_INDEX.remove(candidate);
+            }
+            saveIndexAsync();
+        } catch (Throwable ignored) {
+        }
+        return deleted;
     }
 
     public static void tryLoadNow(String artKey) {

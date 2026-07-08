@@ -4,6 +4,8 @@ package com.spider.mtgcard.client.gui;
 import com.spider.mtgcard.cardstore.CardStorePackets;
 import com.spider.mtgcard.cardstore.CardStoreScreenHandler;
 import com.spider.mtgcard.client.compat.LegacyContainerScreen;
+import com.spider.mtgcard.client.input.GuiCardFaceFlipHandler;
+import com.spider.mtgcard.client.input.GuiCardFaceFlipper;
 import com.spider.mtgcard.client.java.CardArtManager;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.renderer.RenderPipelines;
@@ -30,7 +32,7 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandler> {
+public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandler> implements GuiCardFaceFlipHandler {
 
     // --- LifeBlock-ish tinting (lighter so world shows through) ---
     // --- Blue-gray "glass" theme (ARGB) ---
@@ -123,6 +125,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     private String lastPrintsQuery = "";
     private Button prevPageBtn;
     private Button nextPageBtn;
+    private Button flipPreviewBtn;
 
     // --- left-panel column layout ---
     private static final int PREVIEW_COL_W = 150; // width of preview column inside left panel
@@ -674,6 +677,11 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
                 b -> toggleSortMenu()
         ).bounds(sortX, sortY, sortW, sortButtonH()).build());
 
+        flipPreviewBtn = this.addRenderableWidget(Button.builder(
+                Component.literal("Flip Card"),
+                b -> flipPreviewFace()
+        ).bounds(sortX, sortY + sortButtonH() + ui(4), sortW, sortButtonH()).build());
+
         // Right panel fields (above inventory area)
         int fieldX = rightX + rightPad;
         int fieldY = rightY + rightPad;
@@ -882,6 +890,10 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         boolean cartTab = (tab == Tab.CART);
 
         if (sortBtn != null) sortBtn.visible = (tab == Tab.STORE);
+        if (flipPreviewBtn != null) {
+            flipPreviewBtn.visible = store;
+            flipPreviewBtn.active = store && GuiCardFaceFlipper.isDoubleFaced(preview);
+        }
         if (tab != Tab.STORE) closeSortMenu();
 
         if (searchField != null) searchField.setVisible(store);
@@ -1032,6 +1044,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
                 selectedPriceItems = e.priceItems;
                 previewFace = 0;
                 previewTex = null;
+                updateWidgetVisibility();
 
                 return true;
             }
@@ -1053,6 +1066,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
                 selectedPriceItems = line.priceItems;
                 previewFace = 0;
                 previewTex = null;
+                updateWidgetVisibility();
 
                 return true;
             }
@@ -1204,6 +1218,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             resolvedSet = sel.set;
             resolvedCn = sel.cn;
             if (addToCartBtn != null) addToCartBtn.active = true;
+            updateWidgetVisibility();
         }
 
         // keep sort behavior: either:
@@ -1383,7 +1398,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
         // If STORE tab, reserve space for sort button at top
         if (tab == Tab.STORE) {
-            int sortReserve = sortButtonH() + ui(4);
+            int sortReserve = sortButtonH() * 2 + ui(8);
             py += sortReserve;
             boxH -= sortReserve;
         }
@@ -1498,6 +1513,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             preview = ItemStack.EMPTY;
             previewTex = null;
         }
+        updateWidgetVisibility();
     }
 
     @Override
@@ -1747,6 +1763,19 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         if (!(curRow.size() == 1 && curRow.get(0).isBlank())) rows.add(curRow);
 
         return rows;
+    }
+
+    private boolean flipPreviewFace() {
+        if (!GuiCardFaceFlipper.isDoubleFaced(preview)) return false;
+        int faces = Math.max(1, GuiCardFaceFlipper.getFaceCount(preview));
+        previewFace = (previewFace + 1) % faces;
+        previewTex = null;
+        return true;
+    }
+
+    @Override
+    public boolean mtgcard$flipHoveredCardFace(net.minecraft.client.Minecraft client) {
+        return flipPreviewFace();
     }
 
 

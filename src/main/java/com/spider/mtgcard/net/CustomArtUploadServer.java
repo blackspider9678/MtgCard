@@ -14,6 +14,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public final class CustomArtUploadServer {
 
@@ -21,6 +23,12 @@ public final class CustomArtUploadServer {
     private static final int MAX_CHUNK_BYTES = 256 * 1024;
     private static final int MAX_ACTIVE_PER_PLAYER = 2;
     private static final long TIMEOUT_MS = 30_000;
+    private static final ExecutorService ART_WRITE_EXECUTOR =
+            Executors.newFixedThreadPool(2, r -> {
+                Thread t = new Thread(r, "mtgcard-custom-art-save");
+                t.setDaemon(true);
+                return t;
+            });
 
     private static final class Upload {
         final UUID playerId;
@@ -127,38 +135,62 @@ public final class CustomArtUploadServer {
             return;
         }
 
-        byte[] all = new byte[total];
-        int offset = 0;
-        for (byte[] chunk : upload.chunks) {
-            System.arraycopy(chunk, 0, all, offset, chunk.length);
-            offset += chunk.length;
-        }
+        ACTIVE.remove(payload.uploadId());
 
-        try {
-            String playerName = player.getName().getString();
-            ArtImageStorage.StorageDecision decision = ArtImageStorage.normalizeForStorage(all, upload.ext);
-            ArtImageStorage.StoredArt art = decision.art();
-            if (art == null) {
-                Mtgcard.LOGGER.warn("[MTGCard] Custom art {} from player {} could not be stored: {}",
-                        upload.artKey, playerName, decision.note());
-                return;
+        byte[][] chunks = upload.chunks;
+        String artKey = upload.artKey;
+        String ext = upload.ext;
+        UUID playerId = player.getUUID();
+        String playerName = player.getName().getString();
+        Path dir = server.getWorldPath(LevelResource.ROOT).resolve("mtgcard").resolve("art");
+        final int totalBytes = total;
+
+        ART_WRITE_EXECUTOR.execute(() -> {
+            long started = System.nanoTime();
+            try {
+                byte[] all = new byte[totalBytes];
+                int offset = 0;
+                for (byte[] chunk : chunks) {
+                    System.arraycopy(chunk, 0, all, offset, chunk.length);
+                    offset += chunk.length;
+                }
+
+                ArtImageStorage.StorageDecision decision = ArtImageStorage.normalizeForStorage(all, ext);
+                ArtImageStorage.StoredArt art = decision.art();
+                if (art == null) {
+                    Mtgcard.LOGGER.warn("[MTGCard] Custom art {} from player {} could not be stored: {}",
+                            artKey, playerName, decision.note());
+                    return;
+                }
+
+                if (decision.fellBackFromWebp()) {
+                    Mtgcard.LOGGER.warn("[MTGCard] Custom art {} from player {} fell back to .{} (source .{}): {}",
+                            artKey, playerName, art.ext(), decision.sourceExt(), decision.note());
+                } else {
+                    Mtgcard.LOGGER.info("[MTGCard] Custom art {} from player {} stored as .{}",
+                            artKey, playerName, art.ext());
+                }
+
+                ArtImageStorage.write(dir, artKey, art);
+                long elapsedMs = (System.nanoTime() - started) / 1_000_000L;
+                Mtgcard.LOGGER.info("[MTGCard] Custom art {} saved for {} in {} ms", artKey, playerName, elapsedMs);
+
+                server.execute(() -> {
+                    for (ServerPlayer current : server.getPlayerList().getPlayers()) {
+                        ServerPlayNetworking.send(current, new CustomCardPackets.CustomArtReady(artKey));
+                    }
+                });
+            } catch (Throwable t) {
+                Mtgcard.LOGGER.warn("[MTGCard] Failed to save custom art {} from {}: {}",
+                        artKey, playerName, t.toString());
+                server.execute(() -> {
+                    ServerPlayer current = server.getPlayerList().getPlayer(playerId);
+                    if (current != null) {
+                        current.sendSystemMessage(Component.literal("[MTGCard] Failed to save custom art: " + artKey));
+                    }
+                });
             }
-
-            if (decision.fellBackFromWebp()) {
-                Mtgcard.LOGGER.warn("[MTGCard] Custom art {} from player {} fell back to .{} (source .{}): {}",
-                        upload.artKey, playerName, art.ext(), decision.sourceExt(), decision.note());
-            } else {
-                Mtgcard.LOGGER.info("[MTGCard] Custom art {} from player {} stored as .{}",
-                        upload.artKey, playerName, art.ext());
-            }
-
-            Path dir = server.getWorldPath(LevelResource.ROOT).resolve("mtgcard").resolve("art");
-            ArtImageStorage.write(dir, upload.artKey, art);
-            ServerPlayNetworking.send(player, new CustomCardPackets.CustomArtReady(upload.artKey));
-        } catch (Exception ignored) {
-        } finally {
-            ACTIVE.remove(payload.uploadId());
-        }
+        });
     }
 
     private static void cleanupOld() {

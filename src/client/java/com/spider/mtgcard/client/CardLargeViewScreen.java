@@ -1,6 +1,7 @@
 package com.spider.mtgcard.client;
 
 import com.spider.mtgcard.client.compat.LegacyScreen;
+import com.spider.mtgcard.client.input.GuiCardFaceFlipHandler;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.net.payload.SetCounterMetaPayload;
@@ -36,7 +37,7 @@ import org.lwjgl.glfw.GLFW;
 import java.util.*;
 
 @Environment(EnvType.CLIENT)
-public class CardLargeViewScreen extends LegacyScreen {
+public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlipHandler {
 
     private final ItemStack stack; // copy so we don't mutate held item client-side
     private int faceIndex;
@@ -1282,6 +1283,13 @@ public class CardLargeViewScreen extends LegacyScreen {
 
         flipFromFace = faceIndex;
         flipToFace = next;
+    }
+
+    @Override
+    public boolean mtgcard$flipHoveredCardFace(Minecraft client) {
+        if (!isDoubleFaced()) return false;
+        startFlip(faceIndex ^ 1);
+        return true;
     }
 
     private void rotateRight() {

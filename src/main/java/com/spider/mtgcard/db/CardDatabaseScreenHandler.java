@@ -14,7 +14,9 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.*;
 import net.minecraft.world.inventory.SimpleContainerData;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemStackTemplate;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.BundleContents;
 
 
 public class CardDatabaseScreenHandler extends AbstractContainerMenu {
@@ -30,6 +32,12 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     public static final int SCROLL_BOTTOM   = +3;
 
     public static final int SET_OFFSET_BASE = 10_000;
+    public static final int DB_INTERACT_BASE = 1_000;
+    private static final int DB_INTERACT_STRIDE = 8;
+    public static final int DB_INTERACT_LEFT = 0;
+    public static final int DB_INTERACT_RIGHT = 1;
+    public static final int DB_INTERACT_SHIFT_LEFT = 2;
+    public static final int DB_INTERACT_SHIFT_RIGHT = 3;
 
     private static final int DBX_ROWS = com.spider.mtgcard.deckbox.DeckboxBlockEntity.DECKBOX_ROWS;
     private static final int DBX_COLS = com.spider.mtgcard.deckbox.DeckboxBlockEntity.DECKBOX_COLS;
@@ -348,13 +356,33 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     }
 
     private void handleWindowPickup(int slotIndex, int button, Player player, CardDBSession sess) {
+        handleTerminalGridAction(slotIndex, button == 1 ? DB_INTERACT_RIGHT : DB_INTERACT_LEFT, player, sess);
+    }
+
+    private void handleTerminalGridAction(int slotIndex, int action, Player player, CardDBSession sess) {
+        if (slotIndex < 0 || slotIndex >= WINDOW_SLOTS || player == null || sess == null) {
+            return;
+        }
+
         ItemStack carried = this.getCarried();
         if (!carried.isEmpty()) {
+            if (carried.is(Items.BUNDLE)) {
+                if (action == DB_INTERACT_RIGHT || action == DB_INTERACT_SHIFT_RIGHT) {
+                    if (dumpCardsFromCarriedBundle(sess, carried, action == DB_INTERACT_SHIFT_RIGHT)) {
+                        this.setCarried(carried);
+                        syncAfterWindowMutation(sess);
+                    }
+                }
+                return;
+            }
+
             if (!carried.is(ModItems.CARD)) {
                 return;
             }
 
-            int moveCount = (button == 1) ? 1 : carried.getCount();
+            int moveCount = (action == DB_INTERACT_RIGHT || action == DB_INTERACT_SHIFT_RIGHT)
+                    ? 1
+                    : carried.getCount();
             if (moveCount <= 0) {
                 return;
             }
@@ -381,16 +409,21 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
             return;
         }
 
-        int moveCount = (button == 1)
-                ? Math.max(1, (clicked.getCount() + 1) / 2)
-                : clicked.getCount();
+        int moveCount = switch (action) {
+            case DB_INTERACT_RIGHT, DB_INTERACT_SHIFT_RIGHT -> 1;
+            default -> clicked.getCount();
+        };
 
         ItemStack extracted = takeFromDatabase(sess, uid, moveCount);
         if (extracted.isEmpty()) {
             return;
         }
 
-        this.setCarried(extracted);
+        if (action == DB_INTERACT_SHIFT_LEFT || action == DB_INTERACT_SHIFT_RIGHT) {
+            giveDbCardToDestination(player, extracted);
+        } else {
+            this.setCarried(extracted);
+        }
         syncAfterWindowMutation(sess);
     }
 
@@ -414,6 +447,94 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         }
 
         stack.set(DataComponents.CUSTOM_DATA, CustomData.of(nbt));
+    }
+
+    private boolean dumpCardsFromCarriedBundle(CardDBSession sess, ItemStack bundle, boolean dumpAll) {
+        if (sess == null || bundle == null || bundle.isEmpty() || !bundle.is(Items.BUNDLE)) {
+            return false;
+        }
+
+        java.util.List<ItemStack> contents = readBundleContents(bundle);
+        if (contents.isEmpty()) {
+            return false;
+        }
+
+        java.util.ArrayList<ItemStack> toStore = new java.util.ArrayList<>();
+        java.util.ArrayList<ItemStack> remaining = new java.util.ArrayList<>();
+        boolean movedAny = false;
+
+        for (ItemStack entry : contents) {
+            if (entry == null || entry.isEmpty()) continue;
+
+            ItemStack copy = entry.copy();
+            if (copy.is(ModItems.CARD) && (dumpAll || !movedAny)) {
+                ItemStack card = copy.copy();
+                int moveCount = dumpAll ? copy.getCount() : 1;
+                card.setCount(moveCount);
+                copy.shrink(moveCount);
+                clearUid(card);
+                toStore.add(card);
+                movedAny = true;
+
+                if (!copy.isEmpty()) {
+                    remaining.add(copy);
+                }
+                continue;
+            }
+
+            remaining.add(copy);
+        }
+
+        if (toStore.isEmpty()) {
+            return false;
+        }
+
+        sess.appendAllToIntake(toStore);
+        writeBundleContents(bundle, remaining);
+        return true;
+    }
+
+    private static java.util.List<ItemStack> readBundleContents(ItemStack bundle) {
+        if (bundle == null || bundle.isEmpty() || !bundle.is(Items.BUNDLE)) {
+            return java.util.List.of();
+        }
+
+        BundleContents contents = bundle.getOrDefault(DataComponents.BUNDLE_CONTENTS, BundleContents.EMPTY);
+        java.util.ArrayList<ItemStack> out = new java.util.ArrayList<>();
+        try {
+            java.lang.reflect.Method itemsMethod = BundleContents.class.getMethod("items");
+            Object value = itemsMethod.invoke(contents);
+            if (value instanceof Iterable<?> iterable) {
+                for (Object obj : iterable) {
+                    if (obj instanceof ItemStack stack && !stack.isEmpty()) {
+                        out.add(stack.copy());
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
+    private static void writeBundleContents(ItemStack bundle, java.util.List<ItemStack> contents) {
+        if (bundle == null || bundle.isEmpty() || !bundle.is(Items.BUNDLE)) {
+            return;
+        }
+
+        java.util.ArrayList<ItemStackTemplate> templates = new java.util.ArrayList<>();
+        if (contents != null) {
+            for (ItemStack stack : contents) {
+                if (stack != null && !stack.isEmpty()) {
+                    templates.add(ItemStackTemplate.fromNonEmptyStack(stack.copy()));
+                }
+            }
+        }
+
+        if (templates.isEmpty()) {
+            bundle.set(DataComponents.BUNDLE_CONTENTS, BundleContents.EMPTY);
+        } else {
+            bundle.set(DataComponents.BUNDLE_CONTENTS, new BundleContents(templates));
+        }
     }
 
     private ItemStack takeFromDatabase(CardDBSession sess, String uid, int amount) {
@@ -450,7 +571,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     }
 
     private void syncAfterWindowMutation(CardDBSession sess) {
-        if (sess.isProjectingSearch()) {
+        if (isProjectionActive()) {
             this.reprojectingNow = true;
             try {
                 reprojectCurrentPage();
@@ -595,7 +716,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
                         if (!uid.isEmpty() && view instanceof CardDBSession s) {
                             s.removeFromIntakeByUid(uid);
                             s.compactIntakeAndReprojectSamePage();
-                            if (s.isProjectingSearch()) {
+                            if (isProjectionActive()) {
                                 reprojectingNow = true;
                                 try {
                                     reprojectCurrentPage();
@@ -762,6 +883,16 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     @Override
     public boolean clickMenuButton(Player player, int id) {
         if (view == null || player.level().isClientSide()) return false;
+
+        if (id >= DB_INTERACT_BASE && id < DB_INTERACT_BASE + WINDOW_SLOTS * DB_INTERACT_STRIDE) {
+            int encoded = id - DB_INTERACT_BASE;
+            int slot = encoded / DB_INTERACT_STRIDE;
+            int action = encoded % DB_INTERACT_STRIDE;
+            if (view instanceof CardDBSession sess) {
+                handleTerminalGridAction(slot, action, player, sess);
+            }
+            return true;
+        }
 
         if (id >= TAB_BASE && id < TAB_BASE + 1000) {
             int tab = id - TAB_BASE;
@@ -959,7 +1090,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
                 if (uid != null && !uid.isBlank() && sess != null) {
                     sess.removeFromIntakeByUid(uid);
                     sess.compactIntakeAndReprojectSamePage();
-                    if (sess.isProjectingSearch()) {
+                    if (isProjectionActive()) {
                         reprojectingNow = true;
                         try {
                             reprojectCurrentPage();
@@ -989,7 +1120,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
             if (sess != null) {
                 sess.compactIntakeAndReprojectSamePage();
-                if (sess.isProjectingSearch()) {
+                if (isProjectionActive()) {
                     reprojectingNow = true;
                     try {
                         reprojectCurrentPage();
@@ -1018,6 +1149,9 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         if (!player.level().isClientSide()) {
             if (view instanceof CardDBSession s) {
                 s.compactIntakeAndReprojectSamePage();
+                if (isProjectionActive()) {
+                    reprojectCurrentPage();
+                }
             }
             broadcastChanges();
             if (view != null) syncPropsFromView();
@@ -1127,17 +1261,21 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         if (view == null) return;
         if (playerInvRef == null) return;
 
+        java.util.ArrayList<ItemStack> toStore = new java.util.ArrayList<>();
         for (int i = 0; i < 36; i++) {
             ItemStack st = playerInvRef.getItem(i);
             if (st == null || st.isEmpty()) continue;
             if (!st.is(ModItems.CARD)) continue;
 
-            view.appendToIntake(st.copy());
+            toStore.add(st.copy());
             playerInvRef.setItem(i, ItemStack.EMPTY);
         }
 
+        if (toStore.isEmpty()) return;
+
+        view.appendAllToIntake(toStore);
         playerInvRef.setChanged();
-        if (view.isProjectingSearch()) {
+        if (isProjectionActive()) {
             reprojectCurrentPage();
             return;
         }

@@ -1,25 +1,22 @@
-// com/spider/mtgcard/command/Custom_Command.java
 package com.spider.mtgcard.command;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.reflect.TypeToken;
-import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.spider.mtgcard.config.ImportPerms;
+import com.spider.mtgcard.content.pack.custom.CustomCardStore;
+import com.spider.mtgcard.net.CustomCardPackets;
+import com.spider.mtgcard.net.CustomCardSync;
 import com.spider.mtgcard.net.CustomImportPackets;
+import com.spider.mtgcard.net.WorldState;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.commands.CommandSourceStack;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.level.storage.LevelResource;
+import net.minecraft.server.level.ServerPlayer;
 
-import java.io.IOException;
-import java.lang.reflect.Type;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 import static net.minecraft.commands.Commands.argument;
@@ -27,15 +24,12 @@ import static net.minecraft.commands.Commands.literal;
 
 public final class Custom_Command {
 
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final Type LIST_TYPE = new TypeToken<List<CustomCardRow>>(){}.getType();
-
     public static LiteralArgumentBuilder<CommandSourceStack> node() {
         return literal("custom")
                 .then(literal("import")
                         .requires(src -> {
-                            var p = src.getPlayer();
-                            return p != null && ImportPerms.canImport(p);
+                            var player = src.getPlayer();
+                            return player != null && ImportPerms.canImport(player);
                         })
                         .executes(ctx -> openImport(ctx.getSource())))
                 .then(literal("sets").executes(ctx -> listSets(ctx.getSource())))
@@ -55,248 +49,194 @@ public final class Custom_Command {
     }
 
     private static int openImport(CommandSourceStack src) {
-        ServerPlayer p;
-        try { p = src.getPlayer(); } catch (Exception e) { p = null; }
-        if (p == null) {
-            src.sendSuccess(() -> Component.literal("§cNo player context."), false);
+        ServerPlayer player;
+        try {
+            player = src.getPlayer();
+        } catch (Exception e) {
+            player = null;
+        }
+
+        if (player == null) {
+            src.sendFailure(Component.literal("No player context."));
             return 0;
         }
-        if (!ImportPerms.canImport(p) || !CustomImportPackets.openImportGui(p)) {
+        if (!ImportPerms.canImport(player) || !CustomImportPackets.openImportGui(player)) {
             src.sendFailure(Component.literal("You do not have permission to import custom cards."));
             return 0;
         }
-        src.sendSuccess(() -> Component.literal("§aOpening Custom Import…"), false);
+
+        src.sendSuccess(() -> Component.literal("Opening Custom Import."), false);
         return 1;
     }
 
     private static int listSets(CommandSourceStack src) {
-        List<CustomCardRow> rows = load(src);
-        if (rows == null) return 0;
-
-        Set<String> sets = rows.stream()
-                .map(r -> r.set == null ? "" : r.set.trim())
-                .filter(s -> !s.isEmpty())
+        Set<String> sets = store(src).all().stream()
+                .map(meta -> meta == null ? "" : safe(meta.set).trim())
+                .filter(set -> !set.isEmpty())
                 .collect(Collectors.toCollection(TreeSet::new));
 
-        src.sendSuccess(() -> Component.literal("§aCustom sets (Found §e" + sets.size() + "§a):"), false);
+        src.sendSuccess(() -> Component.literal("Custom sets found: " + sets.size()), false);
         if (sets.isEmpty()) {
-            src.sendSuccess(() -> Component.literal("§7- (none)"), false);
+            src.sendSuccess(() -> Component.literal("- (none)"), false);
             return 1;
         }
-        for (String s : sets) {
-            src.sendSuccess(() -> Component.literal("§7- §f" + s), false);
+
+        for (String set : sets) {
+            src.sendSuccess(() -> Component.literal("- " + set), false);
         }
         return 1;
     }
 
     private static int showCard(CommandSourceStack src, String rawName) {
-        List<CustomCardRow> rows = load(src);
-        if (rows == null) return 0;
-
-        String name = rawName.trim();
-        String setFilter = null;
-
-        // Optional bracket filter: "Card Name [SET]"
-        int lb = name.lastIndexOf('[');
-        int rb = name.lastIndexOf(']');
-        if (lb >= 0 && rb > lb) {
-            setFilter = name.substring(lb + 1, rb).trim();
-            name = name.substring(0, lb).trim();
-        }
-
-        String nameLower = name.toLowerCase(Locale.ROOT);
-        String setLower = setFilter == null ? null : setFilter.toLowerCase(Locale.ROOT);
-
-        List<CustomCardRow> matches = rows.stream()
-                .filter(r -> r.name != null && r.name.trim().toLowerCase(Locale.ROOT).equals(nameLower))
-                .filter(r -> setLower == null || (r.set != null && r.set.trim().toLowerCase(Locale.ROOT).equals(setLower)))
-                .toList();
+        NameQuery query = parseNameQuery(rawName);
+        List<CustomCardStore.CardMeta> matches = store(src).findByName(query.name(), query.setFilter());
 
         if (matches.isEmpty()) {
-            src.sendSuccess(() -> Component.literal("§cNo custom card found named: §e" + rawName), false);
+            src.sendSuccess(() -> Component.literal("No custom card found named: " + rawName), false);
             return 0;
         }
 
         if (matches.size() > 1) {
-            final String displayName = name; // <- capture final for lambdas
-            src.sendSuccess(() -> Component.literal("§eMultiple custom cards named §f" + displayName + "§e found:"), false);
-
-            for (CustomCardRow r : matches) {
-                src.sendSuccess(() -> Component.literal("§7- §f" + r.name + " §7(SET=" + safe(r.set) + ")"), false);
+            src.sendSuccess(() -> Component.literal("Multiple custom cards named " + query.name() + " found:"), false);
+            for (CustomCardStore.CardMeta meta : matches) {
+                src.sendSuccess(() -> Component.literal("- " + safe(meta.name) + " (SET=" + safe(meta.set) + ", ID=" + safe(meta.id) + ")"), false);
             }
-
-            final String firstSet = safe(matches.get(0).set);
-            src.sendSuccess(() -> Component.literal(
-                    "§7Tip: use §e\"Name [SET]\"§7 e.g. §e/mtg custom card \"" + displayName + " [" + firstSet + "]\""
-            ), false);
+            src.sendSuccess(() -> Component.literal("Tip: use \"Name [SET]\" to select a set."), false);
             return 1;
         }
 
-        CustomCardRow c = matches.get(0);
-
-        // Minimal details (expand as your schema supports)
-        src.sendSuccess(() -> Component.literal("§aCustom Card Details:"), false);
-        src.sendSuccess(() -> Component.literal("§7Name: §f" + safe(c.name)), false);
-        src.sendSuccess(() -> Component.literal("§7Set: §f" + safe(c.set)), false);
-        if (c.rarity != null) src.sendSuccess(() -> Component.literal("§7Rarity: §f" + c.rarity), false);
-        if (c.manaCost != null) src.sendSuccess(() -> Component.literal("§7Mana: §f" + c.manaCost), false);
-        if (c.typeLine != null) src.sendSuccess(() -> Component.literal("§7Type: §f" + c.typeLine), false);
-        if (c.oracleText != null) src.sendSuccess(() -> Component.literal("§7Text: §f" + c.oracleText), false);
-        if (c.power != null || c.toughness != null) src.sendSuccess(() -> Component.literal("§7P/T: §f" + safe(c.power) + "/" + safe(c.toughness)), false);
-        if (c.loyalty != null) src.sendSuccess(() -> Component.literal("§7Loyalty: §f" + c.loyalty), false);
-
+        CustomCardStore.CardMeta card = matches.get(0);
+        src.sendSuccess(() -> Component.literal("Custom Card Details:"), false);
+        src.sendSuccess(() -> Component.literal("Name: " + safe(card.name)), false);
+        src.sendSuccess(() -> Component.literal("ID: " + safe(card.id)), false);
+        src.sendSuccess(() -> Component.literal("Set: " + safe(card.set)), false);
+        src.sendSuccess(() -> Component.literal("Rarity: " + safe(card.rarity)), false);
+        src.sendSuccess(() -> Component.literal("Mana: " + safe(card.manaCost)), false);
+        src.sendSuccess(() -> Component.literal("Type: " + safe(card.typeLine)), false);
+        src.sendSuccess(() -> Component.literal("Text: " + safe(card.oracleText)), false);
+        if (card.doubleFaced) {
+            src.sendSuccess(() -> Component.literal("Back face: " + safe(card.backName)), false);
+        }
         return 1;
     }
 
     private static int removeSet(CommandSourceStack src, String set) {
-        List<CustomCardRow> rows = load(src);
-        if (rows == null) return 0;
-
-        String needle = set.trim().toLowerCase(Locale.ROOT);
-        int before = rows.size();
-
-        List<CustomCardRow> kept = rows.stream()
-                .filter(r -> r.set == null || !r.set.trim().toLowerCase(Locale.ROOT).equals(needle))
+        String needle = safe(set).trim().toLowerCase(Locale.ROOT);
+        List<String> ids = store(src).all().stream()
+                .filter(meta -> meta != null && meta.id != null && !meta.id.isBlank())
+                .filter(meta -> safe(meta.set).trim().toLowerCase(Locale.ROOT).equals(needle))
+                .map(meta -> meta.id)
                 .toList();
 
-        int removed = before - kept.size();
-        if (removed == 0) {
-            src.sendSuccess(() -> Component.literal("§cSet not found: §e" + set), false);
+        if (ids.isEmpty()) {
+            src.sendSuccess(() -> Component.literal("Set not found: " + set), false);
             return 0;
         }
 
-        if (!saveWithBackup(src, kept)) return 0;
-        src.sendSuccess(() -> Component.literal("§aRemoved set §e" + set + "§a (deleted §e" + removed + "§a card(s))."), false);
-        return 1;
+        return reportRemoval(src, "set " + set, store(src).removeByIds(ids, false));
     }
 
     private static int removeCard(CommandSourceStack src, String rawName) {
-        List<CustomCardRow> rows = load(src);
-        if (rows == null) return 0;
+        NameQuery query = parseNameQuery(rawName);
+        List<CustomCardStore.CardMeta> matches = store(src).findByName(query.name(), query.setFilter());
 
-        String name = rawName.trim();
+        if (matches.isEmpty()) {
+            src.sendSuccess(() -> Component.literal("No custom card found named: " + rawName), false);
+            return 0;
+        }
+
+        Set<String> sets = matches.stream()
+                .map(meta -> safe(meta.set).trim().toLowerCase(Locale.ROOT))
+                .collect(Collectors.toCollection(TreeSet::new));
+
+        if (matches.size() > 1 && query.setFilter() == null && sets.size() > 1) {
+            src.sendSuccess(() -> Component.literal("Multiple matches for " + query.name() + ". Nothing removed."), false);
+            for (CustomCardStore.CardMeta meta : matches) {
+                src.sendSuccess(() -> Component.literal("- " + safe(meta.name) + " (SET=" + safe(meta.set) + ", ID=" + safe(meta.id) + ")"), false);
+            }
+            src.sendSuccess(() -> Component.literal("Tip: use \"Name [SET]\" to select a set."), false);
+            return 0;
+        }
+
+        List<String> ids = matches.stream()
+                .map(meta -> meta.id)
+                .filter(id -> id != null && !id.isBlank())
+                .toList();
+
+        return reportRemoval(src, "card " + query.name(), store(src).removeByIds(ids, false));
+    }
+
+    private static int reportRemoval(CommandSourceStack src, String label, CustomCardStore.RemoveResult result) {
+        if (result == null || result.removed().isEmpty()) {
+            src.sendSuccess(() -> Component.literal("Nothing removed."), false);
+            return 0;
+        }
+
+        if (!result.saved()) {
+            src.sendFailure(Component.literal("Card metadata was removed in memory, but saving cards.json failed. Check server logs."));
+            return 0;
+        }
+
+        CustomCardStore currentStore = store(src);
+        CustomCardSync.broadcastFull(src.getServer(), currentStore.all());
+        broadcastArtInvalidation(src, result.invalidatedArtKeys());
+
+        src.sendSuccess(() -> Component.literal("Removed custom " + label + " from active card pool."), false);
+        src.sendSuccess(() -> Component.literal("Card metadata removed: " + result.removed().size()), false);
+        src.sendSuccess(() -> Component.literal("Associated art kept: " + result.artKeysKept() + " key(s)."), false);
+        if (result.artFilesDeleted() > 0 || result.artKeysRemoved() > 0) {
+            src.sendSuccess(() -> Component.literal("Associated art removed: " + result.artFilesDeleted()
+                    + " file(s) from " + result.artKeysRemoved() + " key(s)."), false);
+        }
+        src.sendSuccess(() -> Component.literal("Cached texture invalidated: " + result.invalidatedArtKeys().size()
+                + " key(s); kept art remains available for existing cards."), false);
+        src.sendSuccess(() -> Component.literal("Card database synced/reloaded."), false);
+        return 1;
+    }
+
+    private static void broadcastArtInvalidation(CommandSourceStack src, List<String> artKeys) {
+        if (artKeys == null || artKeys.isEmpty()) return;
+
+        CustomCardPackets.CustomArtInvalidate payload = new CustomCardPackets.CustomArtInvalidate(List.copyOf(artKeys));
+        for (ServerPlayer player : src.getServer().getPlayerList().getPlayers()) {
+            ServerPlayNetworking.send(player, payload);
+        }
+    }
+
+    private static CustomCardStore store(CommandSourceStack src) {
+        return WorldState.get(src.getServer()).customCards();
+    }
+
+    private static NameQuery parseNameQuery(String rawName) {
+        String name = safe(rawName).trim();
         String setFilter = null;
 
         int lb = name.lastIndexOf('[');
         int rb = name.lastIndexOf(']');
         if (lb >= 0 && rb > lb) {
             setFilter = name.substring(lb + 1, rb).trim();
+            if (setFilter.isBlank()) setFilter = null;
             name = name.substring(0, lb).trim();
         }
 
-        String nameLower = name.toLowerCase(Locale.ROOT);
-        String setLower = setFilter == null ? null : setFilter.toLowerCase(Locale.ROOT);
-
-        List<CustomCardRow> matches = rows.stream()
-                .filter(r -> r.name != null && r.name.trim().toLowerCase(Locale.ROOT).equals(nameLower))
-                .filter(r -> setLower == null || (r.set != null && r.set.trim().toLowerCase(Locale.ROOT).equals(setLower)))
-                .toList();
-
-        if (matches.isEmpty()) {
-            src.sendSuccess(() -> Component.literal("§cNo custom card found named: §e" + rawName), false);
-            return 0;
-        }
-
-        if (matches.size() > 1) {
-            final String displayName = name; // <- capture final for lambdas
-            src.sendSuccess(() -> Component.literal("§cMultiple matches for §e" + displayName + "§c. Nothing removed."), false);
-
-            for (CustomCardRow r : matches) {
-                src.sendSuccess(() -> Component.literal("§7- §f" + r.name + " §7(SET=" + safe(r.set) + ")"), false);
-            }
-
-            final String firstSet = safe(matches.get(0).set);
-            src.sendSuccess(() -> Component.literal(
-                    "§7Tip: use §e\"Name [SET]\"§7 e.g. §e/mtg custom remove card \"" + displayName + " [" + firstSet + "]\""
-            ), false);
-            return 0;
-        }
-
-        CustomCardRow target = matches.get(0);
-
-        List<CustomCardRow> kept = rows.stream()
-                .filter(r -> r != target)
-                .toList();
-
-        if (!saveWithBackup(src, kept)) return 0;
-
-        src.sendSuccess(() -> Component.literal("§aRemoved custom card: §f" + safe(target.name) + " §7(SET=" + safe(target.set) + ")"), false);
-        return 1;
-    }
-
-    private static List<CustomCardRow> load(CommandSourceStack src) {
-        Path path = cardsJson(src);
-        if (!Files.exists(path)) {
-            src.sendSuccess(() -> Component.literal("§7No custom cards file found: §e" + path), false);
-            src.sendSuccess(() -> Component.literal("§7(Found 0 custom sets / cards)"), false);
-            return new ArrayList<>();
-        }
-        try {
-            String json = Files.readString(path, StandardCharsets.UTF_8);
-            List<CustomCardRow> rows = GSON.fromJson(json, LIST_TYPE);
-            return rows != null ? new ArrayList<>(rows) : new ArrayList<>();
-        } catch (Exception e) {
-            src.sendSuccess(() -> Component.literal("§cFailed to read cards.json: §7" + e.getMessage()), false);
-            return null;
-        }
-    }
-
-    private static boolean saveWithBackup(CommandSourceStack src, List<CustomCardRow> rows) {
-        Path path = cardsJson(src);
-        try {
-            Files.createDirectories(path.getParent());
-
-            // backup
-            if (Files.exists(path)) {
-                String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
-                Path bak = path.getParent().resolve("cards.json.bak-" + ts);
-                Files.copy(path, bak, StandardCopyOption.REPLACE_EXISTING);
-            }
-
-            // atomic write
-            Path tmp = path.getParent().resolve("cards.json.tmp");
-            Files.writeString(tmp, GSON.toJson(rows), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-            Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-
-            return true;
-        } catch (IOException e) {
-            src.sendSuccess(() -> Component.literal("§cFailed to write cards.json: §7" + e.getMessage()), false);
-            return false;
-        }
-    }
-
-    private static Path cardsJson(CommandSourceStack src) {
-        // <world>/mtgcard/custom/cards.json
-        return src.getServer().getWorldPath(LevelResource.ROOT)
-                .resolve("mtgcard")
-                .resolve("custom")
-                .resolve("cards.json");
+        return new NameQuery(name, setFilter);
     }
 
     private static boolean isOp(CommandSourceStack src) {
-        ServerPlayer p;
-        try { p = src.getPlayer(); } catch (Exception e) { return false; }
-        return p != null && com.spider.mtgcard.config.Perms.isOp(p);
+        ServerPlayer player;
+        try {
+            player = src.getPlayer();
+        } catch (Exception e) {
+            return false;
+        }
+        return player != null && com.spider.mtgcard.config.Perms.isOp(player);
     }
 
-    private static String safe(String s) { return s == null ? "" : s; }
-
-    /**
-     * Minimal schema adapter. Add fields to match your real JSON as needed.
-     */
-    private static final class CustomCardRow {
-        String name;
-        String set;
-
-        // Optional fields (match your importer fields if present in JSON)
-        String rarity;
-        String manaCost;
-        String typeLine;
-        String oracleText;
-        String power;
-        String toughness;
-        String loyalty;
+    private static String safe(String value) {
+        return value == null ? "" : value;
     }
+
+    private record NameQuery(String name, String setFilter) {}
 
     private Custom_Command() {}
 }

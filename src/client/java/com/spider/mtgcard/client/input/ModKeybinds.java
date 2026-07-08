@@ -100,8 +100,12 @@ public final class ModKeybinds {
         while (FLIP_CARD_FACE.consumeClick()) {
             if (client.player == null) continue;
 
-            // Optional: don't flip while a GUI is open
-            if (client.screen != null) continue;
+            if (client.screen != null) {
+                if (GuiCardFaceFlipper.tryFlip(client)) {
+                    continue;
+                }
+                continue;
+            }
 
             // Prefer main hand card, else offhand card
             var main = client.player.getMainHandItem();

@@ -3,6 +3,8 @@ package com.spider.mtgcard.client.gui;
 
 import com.spider.mtgcard.client.compat.LegacyContainerScreen;
 import com.spider.mtgcard.client.compat.MtgGuiScaleHelper;
+import com.spider.mtgcard.client.input.GuiCardFaceFlipHandler;
+import com.spider.mtgcard.client.input.GuiCardFaceFlipper;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.db.search.CardMeta;
 import com.spider.mtgcard.deckbox.DeckboxBlockEntity;
@@ -39,7 +41,7 @@ import static com.spider.mtgcard.deckcontrol.DeckControlScreenHandler.GUI_W;
  * Put in:
  *   src/client/java/com/spider/mtgcard/client/gui/DeckControlScreen.java
  */
-public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHandler> {
+public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHandler> implements GuiCardFaceFlipHandler {
 
     // --- layout constants ---
     private static final int PAD = 8;
@@ -171,6 +173,8 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
     private ItemStack lastHoverStack = ItemStack.EMPTY;
     private int lastHoverFace = 0;
     private CardArtManager.TextureRef lastTexRef = null;
+    private int lastMouseX = 0;
+    private int lastMouseY = 0;
 
     // animation
     private long animStartMs = 0L;
@@ -410,6 +414,8 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
 
     @Override
     public void render(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
+        lastMouseX = mouseX;
+        lastMouseY = mouseY;
         this.renderBackground(ctx, mouseX, mouseY, delta);
 
         // keep hover/selection updated even while overlay is open
@@ -796,6 +802,11 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
             // also allow hover over the big chosen hit preview (uses same box size as you draw)
             // (optional – if you want it, say so and I’ll wire exact coords too)
         }
+        if (overlay == OverlayMode.REVEAL_N && hoverTopCols > 0) {
+            ItemStack st = hoverRowDirect(mouseX, mouseY, hoverTopX, hoverTopY, hoverTopCols, overlayCards);
+            if (!st.isEmpty()) return st;
+        }
+
         // 3) SCRY/SURVEIL overlay: your cached rows (ONLY when overlay is open)
         if (overlay == OverlayMode.SCRY || overlay == OverlayMode.SURVEIL) {
 
@@ -1270,6 +1281,20 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
         CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
         CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
         return meta.getInt("mtg_face").orElse(0);
+    }
+
+    @Override
+    public boolean mtgcard$flipHoveredCardFace(net.minecraft.client.Minecraft client) {
+        if (overlay == OverlayMode.NONE) return false;
+
+        ItemStack st = getHoveredCardForPreview(lastMouseX, lastMouseY);
+        if (!GuiCardFaceFlipper.isDoubleFaced(st)) return false;
+
+        int next = (GuiCardFaceFlipper.readFaceIndex(st) + 1) % Math.max(1, GuiCardFaceFlipper.getFaceCount(st));
+        GuiCardFaceFlipper.writeFaceIndex(st, next);
+        lastTexRef = null;
+        lastHoverFace = next;
+        return true;
     }
 
     private void drawCardArtFit(GuiGraphics ctx, ItemStack st, int x, int y, int w, int h) {
