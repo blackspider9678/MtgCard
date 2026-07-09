@@ -52,15 +52,16 @@ public final class NeoForgeClientPayloadHandlers {
             case "deckbox_tab_names" -> deckboxTabNames((DeckboxTabNamesPayload) payload);
             case "deck_export_request" -> deckExport((DeckPayloads.DeckExportRequestS2C) payload);
             case "deck_list_request" -> deckList();
-            case "card_store_search" -> invokeOnCurrentScreen("onSearchResult", CardStorePackets.SearchS2C.class, payload);
-            case "card_store_prints_start" -> invokeOnCurrentScreen("onPrintsStart", CardStorePackets.SearchPrintsStartS2C.class, payload);
-            case "card_store_prints_add" -> invokeOnCurrentScreen("onPrintsAdd", CardStorePackets.SearchPrintsAddS2C.class, payload);
-            case "card_store_prints_done" -> invokeOnCurrentScreen("onPrintsDone", CardStorePackets.SearchPrintsDoneS2C.class, payload);
-            case "card_store_import_deck" -> invokeOnCurrentScreen("onImportDeckResult", CardStorePackets.ImportDeckS2C.class, payload);
+            case "card_store_search_result" -> invokeOnCurrentScreen("onSearchResult", CardStorePackets.SearchS2C.class, payload);
+            case "card_store_search_prints_start" -> invokeOnCurrentScreen("onPrintsStart", CardStorePackets.SearchPrintsStartS2C.class, payload);
+            case "card_store_search_prints_add" -> invokeOnCurrentScreen("onPrintsAdd", CardStorePackets.SearchPrintsAddS2C.class, payload);
+            case "card_store_search_prints_done" -> invokeOnCurrentScreen("onPrintsDone", CardStorePackets.SearchPrintsDoneS2C.class, payload);
+            case "cardstore_import_deck_result" -> invokeOnCurrentScreen("onImportDeckResult", CardStorePackets.ImportDeckS2C.class, payload);
             case "custom_sync_full" -> customSyncFull((CustomCardPackets.CustomSyncFull) payload);
             case "custom_sync_full_chunk" -> customSyncFullChunk((CustomCardPackets.CustomSyncFullChunk) payload);
             case "custom_sync_delta" -> customSyncDelta((CustomCardPackets.CustomSyncDelta) payload);
             case "custom_art_ready" -> customArtReady((CustomCardPackets.CustomArtReady) payload);
+            case "custom_art_invalidate" -> customArtInvalidate((CustomCardPackets.CustomArtInvalidate) payload);
             default -> {
             }
         }
@@ -265,6 +266,18 @@ public final class NeoForgeClientPayloadHandlers {
                 new Class<?>[] { String.class },
                 key
         );
+    }
+
+    private static void customArtInvalidate(CustomCardPackets.CustomArtInvalidate payload) {
+        if (payload == null || payload.artKeys() == null) return;
+        for (String key : payload.artKeys()) {
+            invokeStaticIfPresent(
+                    "com.spider.mtgcard.client.java.CardArtManager",
+                    "forgetWorldArt",
+                    new Class<?>[] { String.class },
+                    key
+            );
+        }
     }
 
     private static List<ClientCardIndex.WireMeta> toClientList(List<CustomCardPackets.WireMeta> entries) {

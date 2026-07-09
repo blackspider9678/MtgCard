@@ -1,30 +1,26 @@
 package com.spider.mtgcard.neoforge;
 
-import com.spider.mtgcard.ModEntities;
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.command.MtgRootCommand;
 import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.content.pack.NeoForgePackServerEvents;
-import com.spider.mtgcard.data.ModDataComponents;
 import com.spider.mtgcard.guidebook.GuideBook;
-import com.spider.mtgcard.item.ModItemGroup;
-import com.spider.mtgcard.item.ModItems;
 import com.spider.mtgcard.life.LifePlayGroups;
+import com.spider.mtgcard.loot.NeoForgeMtgLootInject;
 import com.spider.mtgcard.net.CustomCardServer;
 import com.spider.mtgcard.net.CustomCardSync;
 import com.spider.mtgcard.net.ModPayloads;
-import com.spider.mtgcard.registry.ModBlockEntities;
-import com.spider.mtgcard.registry.ModBlocks;
-import com.spider.mtgcard.registry.ModParticles;
-import com.spider.mtgcard.screen.ModScreenHandlers;
 import com.spider.mtgcard.util.ArtImageStorage;
 import com.spider.mtgcard.util.ModDispenserBehaviors;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.event.tick.LevelTickEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
@@ -34,23 +30,17 @@ public final class MtgcardNeoForge {
         Mtgcard.LOGGER.info("[MtgcardNeoForge] bootstrap");
         ArtImageStorage.ensureWebpCodecsRegistered();
         MtgcardConfig.load();
-        ModDataComponents.register(modBus);
-        ModBlocks.register(modBus);
-        ModItems.register(modBus);
-        ModBlockEntities.register(modBus);
-        ModEntities.register(modBus);
-        ModScreenHandlers.register(modBus);
-        ModParticles.register(modBus);
-        ModItemGroup.register(modBus);
-        modBus.addListener(ModPayloads::registerPayloads);
-        ModDispenserBehaviors.init();
-        GuideBook.init();
+        NeoForgeRegistries.register(modBus);
+        modBus.addListener(MtgcardNeoForge::onCommonSetup);
+        modBus.addListener(MtgcardNeoForge::registerPayloads);
+        CustomCardSync.initServerHooks(null);
 
         NeoForge.EVENT_BUS.addListener(MtgRootCommand::register);
         NeoForge.EVENT_BUS.addListener(MtgcardNeoForge::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(MtgcardNeoForge::onPlayerLoggedOut);
         NeoForge.EVENT_BUS.addListener(MtgcardNeoForge::onServerTick);
         NeoForge.EVENT_BUS.addListener(MtgcardNeoForge::onLevelTick);
+        NeoForge.EVENT_BUS.addListener(NeoForgeMtgLootInject::onLootTableLoad);
 
         if (FMLEnvironment.getDist() == Dist.CLIENT) {
             com.spider.mtgcard.client.MtgcardNeoForgeClient.register(modBus);
@@ -61,6 +51,27 @@ public final class MtgcardNeoForge {
         ModPayloads.tickUnpackProgressBars(event.getServer());
         CustomCardServer.tick(event.getServer());
         CustomCardSync.tick(event.getServer());
+    }
+
+    private static void onCommonSetup(FMLCommonSetupEvent event) {
+        event.enqueueWork(() -> {
+            ModDispenserBehaviors.init();
+            GuideBook.init();
+        });
+    }
+
+    private static void registerPayloads(RegisterPayloadHandlersEvent event) {
+        PayloadTypeRegistry.reset();
+
+        ModPayloads.registerServerReceivers();
+        com.spider.mtgcard.net.ArtServerPackets.registerServerReceiver();
+        com.spider.mtgcard.net.CardDisplayServerNetworking.registerReceivers();
+        com.spider.mtgcard.net.DBPackets.registerTypes();
+        com.spider.mtgcard.net.DBPackets.registerServerReceivers();
+        com.spider.mtgcard.net.GuideBookPackets.init();
+        com.spider.mtgcard.life.LifePointPackets.registerCommon();
+
+        PayloadTypeRegistry.apply(event);
     }
 
     private static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {

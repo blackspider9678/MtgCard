@@ -6,6 +6,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload.Type;
 import net.minecraft.resources.Identifier;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +29,8 @@ public final class CustomCardPackets {
             Identifier.fromNamespaceAndPath("mtgcard", "custom_art_finish");
     public static final Identifier ART_READY_ID =
             Identifier.fromNamespaceAndPath("mtgcard", "custom_art_ready");
+    public static final Identifier ART_INVALIDATE_ID =
+            Identifier.fromNamespaceAndPath("mtgcard", "custom_art_invalidate");
 
     public record BatchEntry(
             String id,
@@ -118,6 +121,9 @@ public final class CustomCardPackets {
 
     private static final StreamCodec<RegistryFriendlyByteBuf, List<WireMeta>> WIRE_META_LIST_CODEC =
             ByteBufCodecs.collection(ArrayList::new, wireMetaCodec());
+
+    private static final StreamCodec<RegistryFriendlyByteBuf, List<String>> STRING_LIST_CODEC =
+            ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.STRING_UTF8);
 
     public record CustomBatchCreate(List<BatchEntry> entries) implements CustomPacketPayload {
         public static final Type<CustomBatchCreate> ID = new Type<>(BATCH_CREATE_ID);
@@ -250,6 +256,30 @@ public final class CustomCardPackets {
         public Type<? extends CustomPacketPayload> type() {
             return ID;
         }
+    }
+
+    public record CustomArtInvalidate(List<String> artKeys) implements CustomPacketPayload {
+        public static final Type<CustomArtInvalidate> ID = new Type<>(ART_INVALIDATE_ID);
+        public static final StreamCodec<RegistryFriendlyByteBuf, CustomArtInvalidate> CODEC =
+                StreamCodec.composite(STRING_LIST_CODEC, CustomArtInvalidate::artKeys, CustomArtInvalidate::new);
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return ID;
+        }
+    }
+
+    public static void registerTypes() {
+        PayloadTypeRegistry.serverboundPlay().register(CustomBatchCreate.ID, CustomBatchCreate.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CustomArtBegin.ID, CustomArtBegin.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CustomArtChunk.ID, CustomArtChunk.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CustomArtFinish.ID, CustomArtFinish.CODEC);
+
+        PayloadTypeRegistry.clientboundPlay().register(CustomSyncFull.ID, CustomSyncFull.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CustomSyncFullChunk.ID, CustomSyncFullChunk.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CustomSyncDelta.ID, CustomSyncDelta.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CustomArtReady.ID, CustomArtReady.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CustomArtInvalidate.ID, CustomArtInvalidate.CODEC);
     }
 
     private CustomCardPackets() {}

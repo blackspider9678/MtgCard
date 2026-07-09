@@ -4,6 +4,7 @@ import com.spider.mtgcard.ModEntities;
 import com.spider.mtgcard.client.deckcontrol.DeckControlEntityRenderer;
 import com.spider.mtgcard.client.display.CardDisplayEntityRenderer;
 import com.spider.mtgcard.client.displayblock.DisplayBlockEntityRenderer;
+import com.spider.mtgcard.client.compat.GuiGraphics;
 import com.spider.mtgcard.client.gui.CardDatabaseScreen;
 import com.spider.mtgcard.client.gui.CardStoreScreen;
 import com.spider.mtgcard.client.gui.DeckControlScreen;
@@ -21,19 +22,23 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
+import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
+import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.common.NeoForge;
 
 public final class MtgcardNeoForgeClient {
+    private static final CardPeekHud CARD_PEEK_HUD = new CardPeekHud();
+
     private MtgcardNeoForgeClient() {}
 
     public static void register(IEventBus modBus) {
         modBus.addListener(MtgcardNeoForgeClient::onClientSetup);
-        modBus.addListener(ModKeybinds::register);
+        modBus.addListener(MtgcardNeoForgeClient::registerKeyMappings);
         modBus.addListener(MtgcardNeoForgeClient::registerMenuScreens);
         modBus.addListener(MtgcardNeoForgeClient::registerRenderers);
         NeoForge.EVENT_BUS.addListener(MtgcardNeoForgeClient::onClientTick);
-        NeoForge.EVENT_BUS.addListener(CardPeekHud::render);
+        NeoForge.EVENT_BUS.addListener(MtgcardNeoForgeClient::renderCardPeekHud);
     }
 
     private static void onClientSetup(FMLClientSetupEvent event) {
@@ -44,19 +49,29 @@ public final class MtgcardNeoForgeClient {
     }
 
     private static void registerMenuScreens(RegisterMenuScreensEvent event) {
-        event.register(ModScreenHandlers.DECKBOX_HOLDER.get(), DeckboxScreen::new);
-        event.register(ModScreenHandlers.CARD_DB_HOLDER.get(), CardDatabaseScreen::new);
-        event.register(ModScreenHandlers.DECKCONTROL_HOLDER.get(), DeckControlScreen::new);
-        event.register(ModScreenHandlers.GRAVEYARD_HOLDER.get(), GraveyardScreen::new);
-        event.register(ModScreenHandlers.CARD_STORE_HOLDER.get(), CardStoreScreen::new);
+        event.register(ModScreenHandlers.DECKBOX, DeckboxScreen::new);
+        event.register(ModScreenHandlers.CARD_DB, CardDatabaseScreen::new);
+        event.register(ModScreenHandlers.DECKCONTROL, DeckControlScreen::new);
+        event.register(ModScreenHandlers.GRAVEYARD, GraveyardScreen::new);
+        event.register(ModScreenHandlers.CARD_STORE, CardStoreScreen::new);
     }
 
     private static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
-        event.registerEntityRenderer(ModEntities.CARD_DISPLAY_HOLDER.get(), CardDisplayEntityRenderer::new);
-        event.registerBlockEntityRenderer(ModBlockEntities.DISPLAY_BLOCK_HOLDER.get(), DisplayBlockEntityRenderer::new);
-        event.registerBlockEntityRenderer(ModBlockEntities.CARD_DB_HOLDER.get(), CardDatabaseBlockEntityRenderer::new);
-        event.registerBlockEntityRenderer(ModBlockEntities.DECK_CONTROL_HOLDER.get(), DeckControlEntityRenderer::new);
-        event.registerBlockEntityRenderer(ModBlockEntities.LIFE_POINT_HOLDER.get(), LifePointFrontTextRenderer::new);
+        event.registerEntityRenderer(ModEntities.CARD_DISPLAY, CardDisplayEntityRenderer::new);
+        event.registerBlockEntityRenderer(ModBlockEntities.DISPLAY_BLOCK, DisplayBlockEntityRenderer::new);
+        event.registerBlockEntityRenderer(ModBlockEntities.CARD_DB, CardDatabaseBlockEntityRenderer::new);
+        event.registerBlockEntityRenderer(ModBlockEntities.DECK_CONTROL, DeckControlEntityRenderer::new);
+        event.registerBlockEntityRenderer(ModBlockEntities.LIFE_POINT, LifePointFrontTextRenderer::new);
+    }
+
+    private static void registerKeyMappings(RegisterKeyMappingsEvent event) {
+        ModKeybinds.createMappings();
+        event.register(ModKeybinds.TOGGLE_CARD_PEEK);
+        event.register(ModKeybinds.FLIP_CARD_FACE);
+    }
+
+    private static void renderCardPeekHud(RenderGuiEvent.Post event) {
+        CARD_PEEK_HUD.onHudRender(new GuiGraphics(event.getGuiGraphics()), event.getPartialTick());
     }
 
     private static void onClientTick(ClientTickEvent.Post event) {

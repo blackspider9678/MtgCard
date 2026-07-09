@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " S ",
+    "ICI",
+    "SNS"
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "C": "minecraft:comparator",
+    "S": "minecraft:polished_sulfur",
+    "N": "minecraft:netherrack"
+  },
+  "result": {
+    "id": "mtgcard:deck_control_polished_sulfur",
+    "count": 1
+  }
+}

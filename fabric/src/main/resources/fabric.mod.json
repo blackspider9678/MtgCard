@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "mtgcard",
+  "version": "${version}",
+  "name": "MtgCard",
+  "description": "satisfactory oreposits in the world of minecraft",
+  "authors": [],
+  "contact": {},
+  "license": "All-Rights-Reserved",
+  "icon": "assets/mtgcard/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "client": [
+      "com.spider.mtgcard.client.MtgcardClient"
+    ],
+    "jei_mod_plugin": [
+      "com.spider.mtgcard.client.compat.jei.MtgcardJeiPlugin"
+    ],
+    "main": [
+      "com.spider.mtgcard.fabric.MtgcardFabric"
+    ]
+  },
+  "mixins": [
+    "mtgcard.mixins.json",
+    {
+      "config": "mtgcard.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "${fabric_api_version_range}",
+    "minecraft": "${minecraft_version_range}"
+  }
+}

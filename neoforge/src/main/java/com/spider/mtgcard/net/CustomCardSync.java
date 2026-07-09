@@ -11,6 +11,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -21,7 +22,6 @@ public final class CustomCardSync {
     private static final int FULL_SYNC_CHUNK_SIZE = 128;
     private static final int FULL_SYNC_CHUNKS_PER_TICK = 2;
 
-    private static final ConcurrentHashMap<MinecraftServer, CustomCardStore> STORES = new ConcurrentHashMap<>();
     private static final Map<UUID, FullSyncJob> FULL_SYNC_JOBS = new ConcurrentHashMap<>();
     private static volatile Function<MinecraftServer, CustomCardStore> storeGetter = CustomCardSync::getStore;
 
@@ -44,7 +44,7 @@ public final class CustomCardSync {
     }
 
     public static CustomCardStore getStore(MinecraftServer server) {
-        return STORES.computeIfAbsent(server, CustomCardStore::new);
+        return WorldState.get(server).customCards();
     }
 
     public static void sendFullTo(ServerPlayer player) {
@@ -92,6 +92,15 @@ public final class CustomCardSync {
         CustomSyncDelta payload = new CustomSyncDelta(toWire(meta));
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             PacketDistributor.sendToPlayer(player, payload);
+        }
+    }
+
+    public static void broadcastFull(MinecraftServer server, Collection<CardMeta> metas) {
+        if (server == null) return;
+
+        Collection<CardMeta> snapshot = metas == null ? List.of() : metas;
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            enqueueFullSync(player, snapshot);
         }
     }
 

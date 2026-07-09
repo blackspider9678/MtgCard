@@ -1,6 +1,8 @@
 package com.spider.mtgcard.deckcontrol;
 
 import com.spider.mtgcard.registry.ModRegistry;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -367,6 +369,27 @@ public final class DeckControlPackets {
             out.add(copy);
         }
         return out;
+    }
+
+    public static void registerTypes() {
+        PayloadTypeRegistry.serverboundPlay().register(ActionC2S.ID, ActionC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CascadeStartC2S.ID, CascadeStartC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CascadeResolveC2S.ID, CascadeResolveC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ResolveOrderedC2S.ID, ResolveOrderedC2S.CODEC);
+
+        PayloadTypeRegistry.clientboundPlay().register(OverlayS2C.ID, OverlayS2C.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(CascadeS2C.ID, CascadeS2C.CODEC);
+    }
+
+    public static void registerReceivers() {
+        ServerPlayNetworking.registerGlobalReceiver(ActionC2S.ID, (payload, context) ->
+                handleAction(payload, context.neoForgeContext()));
+        ServerPlayNetworking.registerGlobalReceiver(CascadeStartC2S.ID, (payload, context) ->
+                handleCascadeStart(payload, context.neoForgeContext()));
+        ServerPlayNetworking.registerGlobalReceiver(CascadeResolveC2S.ID, (payload, context) ->
+                handleCascadeResolve(payload, context.neoForgeContext()));
+        ServerPlayNetworking.registerGlobalReceiver(ResolveOrderedC2S.ID, (payload, context) ->
+                handleResolveOrdered(payload, context.neoForgeContext()));
     }
 
     private DeckControlPackets() {}

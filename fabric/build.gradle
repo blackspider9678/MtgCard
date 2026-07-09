@@ -20,13 +20,13 @@ loom {
 
 sourceSets {
     main {
-        java.srcDirs = ['src/main/java']
-        resources.srcDirs = ['src/main/resources']
+        java.srcDirs = ['src/main/java', '../common/src/main/java']
+        resources.srcDirs = ['src/main/resources', '../common/src/main/resources']
         output.resourcesDir = file("$buildDir/classes/java/main")
     }
     client {
-        java.srcDirs = ['src/client/java']
-        resources.srcDirs = ['src/client/resources']
+        java.srcDirs = ['src/client/java', '../common/src/client/java']
+        resources.srcDirs = ['src/client/resources', '../common/src/client/resources']
         output.resourcesDir = file("$buildDir/classes/java/client")
     }
 }
@@ -39,7 +39,10 @@ dependencies {
     minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
     implementation "net.fabricmc:fabric-loader:${rootProject.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${rootProject.fabric_api_version}"
-    compileOnly "mezz.jei:jei-${rootProject.jei_minecraft_version}-fabric-api:${rootProject.jei_version}"
+    clientCompileOnly "mezz.jei:jei-${rootProject.jei_minecraft_version}-common-api:${rootProject.jei_version}"
+    clientCompileOnly("mezz.jei:jei-${rootProject.jei_minecraft_version}-fabric-api:${rootProject.jei_version}") {
+        transitive = false
+    }
 
     include("org.sejda.imageio:webp-imageio:0.1.6")
     include("com.electronwill.night-config:core:3.6.7")
