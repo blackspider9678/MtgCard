@@ -7,6 +7,7 @@ import org.w3c.dom.*;
 public final class Cockatrice {
     public static final class Meta {
         public String name = "", manaCost = "", typeLine = "", rarity = "", set = "", oracleText = "";
+        public String collectorNumber = "", imageFileName = "";
         public String power = "", toughness = "", loyalty = "";
         public String backName = "", backTypeLine = "", backOracleText = "", backPower = "", backToughness = "", backLoyalty = "";
         public String relatedTransform = "";
@@ -15,6 +16,17 @@ public final class Cockatrice {
     /** Returns lookup map by lowercased card name. */
     public static Map<String, Meta> parse(String xml) {
         Map<String, Meta> map = new HashMap<>();
+        for (Meta m : parseCards(xml)) {
+            if (!m.name.isEmpty()) {
+                map.put(m.name.toLowerCase(Locale.ROOT), m);
+            }
+        }
+        return map;
+    }
+
+    /** Returns cards in XML order, preserving duplicate names. */
+    public static List<Meta> parseCards(String xml) {
+        List<Meta> out = new ArrayList<>();
         try {
             var db = DocumentBuilderFactory.newInstance();
             db.setNamespaceAware(false);
@@ -31,6 +43,7 @@ public final class Cockatrice {
                 // Name + oracle
                 m.name       = text(c, "name");
                 m.oracleText = text(c, "text");
+                m.imageFileName = text(c, "image");
 
                 // props (Cockatrice often stores these under <prop> but getElementsByTagName finds them anyway)
                 m.manaCost   = text(c, "manacost");
@@ -46,12 +59,16 @@ public final class Cockatrice {
 
                     String rar = setEl.getAttribute("rarity");
                     if (rar != null && !rar.trim().isEmpty()) m.rarity = rar.trim();
+
+                    String collector = setEl.getAttribute("collectorNumber");
+                    if (collector != null && !collector.trim().isEmpty()) m.collectorNumber = collector.trim();
                 }
 
                 // Fallbacks (in case of other Cockatrice variants)
                 if (m.rarity.isEmpty()) m.rarity = text(c, "rarity");
                 if (m.rarity.isEmpty()) m.rarity = text(c, "set", "rarity");
                 if (m.rarity.isEmpty()) m.rarity = attr(c, "set", "rarity");
+                if (m.collectorNumber.isEmpty()) m.collectorNumber = text(c, "collectorNumber");
 
                 // Some people export <set name="JAZZ"/> style; keep as backup
                 if (m.set.isEmpty()) m.set = attr(c, "set", "name");
@@ -74,11 +91,11 @@ public final class Cockatrice {
                 if (m.set.isEmpty()) m.set = "CSTM";
 
                 if (!m.name.isEmpty()) {
-                    map.put(m.name.toLowerCase(Locale.ROOT), m);
+                    out.add(m);
                 }
             }
         } catch (Exception ignored) {}
-        return map;
+        return out;
     }
 
     private static Element first(Element parent, String tag) {
