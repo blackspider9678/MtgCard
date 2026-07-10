@@ -31,6 +31,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class CardStorePackets {
+    private static final int COLLECTOR_NUMBER_MAX_LENGTH = 64;
 
     // ---------- C2S: Confirm purchase ----------
     public record ConfirmPurchaseC2S(BlockPos pos, int lineCount, List<Line> lines) implements CustomPacketPayload {
@@ -44,7 +45,7 @@ public final class CardStorePackets {
                             buf.writeVarInt(p.lines().size());
                             for (Line l : p.lines()) {
                                 buf.writeUtf(l.setCode());
-                                buf.writeUtf(l.collectorNumber(), 32);
+                                buf.writeUtf(l.collectorNumber(), COLLECTOR_NUMBER_MAX_LENGTH);
                                 buf.writeVarInt(l.qty());
                             }
                         },
@@ -54,7 +55,7 @@ public final class CardStorePackets {
                             var lines = new ArrayList<Line>(n);
                             for (int i = 0; i < n; i++) {
                                 String set = buf.readUtf();
-                                String cn  = buf.readUtf(32);
+                                String cn  = buf.readUtf(COLLECTOR_NUMBER_MAX_LENGTH);
                                 int qty    = buf.readVarInt();
                                 lines.add(new Line(set, cn, qty));
                             }
@@ -278,13 +279,13 @@ public final class CardStorePackets {
                     StreamCodec.of(
                             (buf, e) -> {
                                 buf.writeUtf(e.setCode());
-                                buf.writeUtf(e.collectorNumber(), 32);
+                                buf.writeUtf(e.collectorNumber(), COLLECTOR_NUMBER_MAX_LENGTH);
                                 ItemStack.STREAM_CODEC.encode(buf, e.stack());
                                 buf.writeVarLong(e.priceItems());
                             },
                             (buf) -> {
                                 String set = buf.readUtf();
-                                String cn  = buf.readUtf(32);
+                                String cn  = buf.readUtf(COLLECTOR_NUMBER_MAX_LENGTH);
                                 ItemStack st = ItemStack.STREAM_CODEC.decode(buf);
                                 long price = buf.readVarLong();
                                 return new Entry(set, cn, st, price);
@@ -371,7 +372,7 @@ public final class CardStorePackets {
                             buf.writeVarInt(p.entries().size());
                             for (Entry e : p.entries()) {
                                 buf.writeUtf(e.set());
-                                buf.writeUtf(e.cn(), 32);
+                                buf.writeUtf(e.cn(), COLLECTOR_NUMBER_MAX_LENGTH);
                                 buf.writeVarInt(e.qty());
                                 ItemStack.STREAM_CODEC.encode(buf, e.stack());
                                 buf.writeVarLong(e.priceItems());
@@ -386,7 +387,7 @@ public final class CardStorePackets {
                             var entries = new ArrayList<Entry>(n);
                             for (int i = 0; i < n; i++) {
                                 String set = buf.readUtf();
-                                String cn  = buf.readUtf(32);
+                                String cn  = buf.readUtf(COLLECTOR_NUMBER_MAX_LENGTH);
                                 int qty    = buf.readVarInt();
                                 ItemStack st = ItemStack.STREAM_CODEC.decode(buf);
                                 long price = buf.readVarLong();

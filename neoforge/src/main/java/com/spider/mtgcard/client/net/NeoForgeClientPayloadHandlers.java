@@ -216,7 +216,7 @@ public final class NeoForgeClientPayloadHandlers {
 
         try {
             Method method = screen.getClass().getMethod("applyDeckboxTabNames", int.class, List.class);
-            method.invoke(screen, payload.syncId(), payload.entries());
+            method.invoke(screen, payload.syncId(), payload.tabNames());
         } catch (ReflectiveOperationException ignored) {
         }
     }

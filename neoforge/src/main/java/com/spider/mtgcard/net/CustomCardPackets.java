@@ -7,6 +7,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload.Type;
 import net.minecraft.resources.Identifier;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -280,6 +281,24 @@ public final class CustomCardPackets {
         PayloadTypeRegistry.clientboundPlay().register(CustomSyncDelta.ID, CustomSyncDelta.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(CustomArtReady.ID, CustomArtReady.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(CustomArtInvalidate.ID, CustomArtInvalidate.CODEC);
+    }
+
+    public static void registerServerReceiver() {
+        ServerPlayNetworking.registerGlobalReceiver(CustomBatchCreate.ID, (payload, ctx) ->
+                ctx.server().execute(() -> CustomCardServer.handleBatch(payload, ctx.player()))
+        );
+
+        ServerPlayNetworking.registerGlobalReceiver(CustomArtBegin.ID, (payload, ctx) ->
+                ctx.server().execute(() -> CustomArtUploadServer.handleBegin(payload, ctx.player()))
+        );
+
+        ServerPlayNetworking.registerGlobalReceiver(CustomArtChunk.ID, (payload, ctx) ->
+                ctx.server().execute(() -> CustomArtUploadServer.handleChunk(payload, ctx.player()))
+        );
+
+        ServerPlayNetworking.registerGlobalReceiver(CustomArtFinish.ID, (payload, ctx) ->
+                ctx.server().execute(() -> CustomArtUploadServer.handleFinish(payload, ctx.player(), ctx.server()))
+        );
     }
 
     private CustomCardPackets() {}

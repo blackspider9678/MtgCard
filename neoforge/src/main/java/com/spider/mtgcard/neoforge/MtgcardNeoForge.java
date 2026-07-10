@@ -66,6 +66,7 @@ public final class MtgcardNeoForge {
         ModPayloads.registerServerReceivers();
         com.spider.mtgcard.net.ArtServerPackets.registerServerReceiver();
         com.spider.mtgcard.net.CardDisplayServerNetworking.registerReceivers();
+        com.spider.mtgcard.net.CustomCardPackets.registerServerReceiver();
         com.spider.mtgcard.net.DBPackets.registerTypes();
         com.spider.mtgcard.net.DBPackets.registerServerReceivers();
         com.spider.mtgcard.net.GuideBookPackets.init();
