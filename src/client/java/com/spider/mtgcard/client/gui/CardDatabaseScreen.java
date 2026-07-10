@@ -18,8 +18,10 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
+import yalter.mousetweaks.api.MouseTweaksDisableWheelTweak;
 
 
+@MouseTweaksDisableWheelTweak
 public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreenHandler> {
 
     private static final Identifier DB_BG  = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/card_database.png");
@@ -81,7 +83,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
     private boolean suppressSearchListener = false;
 
 
-    private java.util.List<com.spider.mtgcard.net.payload.DeckboxTabNamesPayload.Entry> tabNames = java.util.List.of();
+    private java.util.List<String> tabNames = java.util.List.of();
     private java.util.List<Button> tabButtons = new java.util.ArrayList<>();
 
     // Sort dropdown
@@ -101,7 +103,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
 
     private record SortOpt(String label, String key) {}
 
-    public void applyDeckboxTabNames(int syncId, java.util.List<com.spider.mtgcard.net.payload.DeckboxTabNamesPayload.Entry> entries) {
+    public void applyDeckboxTabNames(int syncId, java.util.List<String> entries) {
         if (this.menu == null) return;
         if (syncId != this.menu.containerId) return; // make sure itâ€™s for this screen
         this.tabNames = (entries == null) ? java.util.List.of() : java.util.List.copyOf(entries);
@@ -359,30 +361,21 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
     @Override
     public boolean mouseScrolled(double mx, double my, double hx, double vy) {
         if (vy == 0) return false;
-        if (isOverDbGrid(mx, my)) {
-            int id = (vy < 0) ? CardDatabaseScreenHandler.SCROLL_ROW_DOWN
-                    : CardDatabaseScreenHandler.SCROLL_ROW_UP;
-            if (this.minecraft != null && this.minecraft.gameMode != null) {
-                this.minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId, id);
-                return true;
-            }
-        }
-
+        boolean overDbGrid = isOverDbGrid(mx, my);
         var scrollbar = intakeScrollbar();
         boolean overScrollbar =
                 scrollbar != null &&
                 (MtgGuiChrome.ptInExpanded(scrollbar.thumb(), mx, my, 1, 0)
                         || MtgGuiChrome.ptInExpanded(scrollbar.track(), mx, my, 1, 0));
 
-        if (!isOverLeftDbPanel(mx, my) && !overScrollbar) return false;
+        if (!overDbGrid && !isOverLeftDbPanel(mx, my) && !overScrollbar) return false;
 
         int id = (vy < 0) ? CardDatabaseScreenHandler.SCROLL_ROW_DOWN
                 : CardDatabaseScreenHandler.SCROLL_ROW_UP;
         if (this.minecraft != null && this.minecraft.gameMode != null) {
             this.minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId, id);
-            return true;
         }
-        return false;
+        return true;
     }
 
     @Override
@@ -801,15 +794,17 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
             // ButtonWidget has isMouseOver(double,double) in modern mappings
             if (!b.isMouseOver(mouseX, mouseY)) continue;
 
-            if (i >= tabNames.size()) return;
-            var e = tabNames.get(i);
+            int nameIndex = i * 2;
+            if (nameIndex >= tabNames.size()) return;
 
             java.util.List<Component> lines = new java.util.ArrayList<>();
-            if (e.commander() != null && !e.commander().isBlank()) {
-                lines.add(Component.literal("Commander: ").append(Component.literal(e.commander())));
+            String commander = tabNames.get(nameIndex);
+            String partner = nameIndex + 1 < tabNames.size() ? tabNames.get(nameIndex + 1) : "";
+            if (commander != null && !commander.isBlank()) {
+                lines.add(Component.literal("Commander: ").append(Component.literal(commander)));
             }
-            if (e.partner() != null && !e.partner().isBlank()) {
-                lines.add(Component.literal("Partner: ").append(Component.literal(e.partner())));
+            if (partner != null && !partner.isBlank()) {
+                lines.add(Component.literal("Partner: ").append(Component.literal(partner)));
             }
             if (lines.isEmpty()) lines.add(Component.literal("Empty"));
 

@@ -25,7 +25,7 @@ public final class DBClientPackets {
                     ctx.client().execute(() -> {
                         var screen = ctx.client().screen;
                         if (screen instanceof com.spider.mtgcard.client.gui.CardDatabaseScreen db) {
-                            db.applyDeckboxTabNames(payload.syncId(), payload.entries());
+                            db.applyDeckboxTabNames(payload.syncId(), payload.tabNames());
                         }
                     });
                 }

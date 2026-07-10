@@ -51,6 +51,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
     // ---- Data model ----
     public static final class Entry {
         public String fileName;
+        public String sourceFileName;
         public byte[] imgFront;
         public byte[] imgBack;
         public Meta meta = new Meta();
@@ -71,6 +72,38 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
 
         // ✅ add this
         public volatile boolean previewBuilding = false;
+    }
+
+    private static final class XmlSource {
+        final String xml;
+        final Path baseDir;
+
+        XmlSource(String xml, Path baseDir) {
+            this.xml = xml;
+            this.baseDir = baseDir;
+        }
+    }
+
+    private static final class ImageMetaMatch {
+        final Cockatrice.Meta meta;
+        final String method;
+
+        ImageMetaMatch(Cockatrice.Meta meta, String method) {
+            this.meta = meta;
+            this.method = method;
+        }
+    }
+
+    private static final class LocalImageMatch {
+        final Path path;
+        final String sourceFileName;
+        final String method;
+
+        LocalImageMatch(Path path, String sourceFileName, String method) {
+            this.path = path;
+            this.sourceFileName = sourceFileName;
+            this.method = method;
+        }
     }
 
     // ---- Manual image import pacing (UI queue) ----
@@ -318,6 +351,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
                     if (existing == null) {
                         Entry e = new Entry();
                         e.fileName = finalBase + finalExt;
+                        e.sourceFileName = name;
 
                         if (finalIsBack) {
                             // If only a back was dropped first, treat it as front for now.
@@ -341,6 +375,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
                             syncEditorFromSelected();
                         }
                     } else {
+                        existing.sourceFileName = name;
                         // attach as back if possible
                         if (finalIsBack) {
                             existing.imgBack = finalBytes;
@@ -656,6 +691,8 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
         public String typeLine = "";
         public String rarity = "common";
         public String set = "CSTM";
+        public String collectorNumber = "";
+        public String imageFileName = "";
         public String oracleText = "";
         public String power = "";
         public String toughness = "";
@@ -691,6 +728,10 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
 
     // Metadata cache from Cockatrice XMLs
     private final Map<String, Cockatrice.Meta> cockatriceByName = new HashMap<>();
+    private final Map<String, ImageMetaMatch> cockatriceByImageField = new HashMap<>();
+    private final Map<String, ImageMetaMatch> cockatriceByCollectorImage = new HashMap<>();
+    private final Map<String, ImageMetaMatch> cockatriceByLegacyImage = new HashMap<>();
+    private final Map<String, ImageMetaMatch> cockatriceByDuplicateImage = new HashMap<>();
 
     // Right panel geometry
     private int panelX, panelW;
@@ -1301,7 +1342,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
         }
 
         List<Path> imagePaths = new ArrayList<>();
-        List<String> xmlStrings = new ArrayList<>();
+        List<XmlSource> xmlSources = new ArrayList<>();
         int metaApplied = 0;
         int errors = 0;
 
@@ -1315,10 +1356,9 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
                     imagePaths.add(p);
                 } else if (lower.endsWith(".xml")) {
                     var xml = Files.readString(p);
-                    var parsed = Cockatrice.parse(xml);
-                    cockatriceByName.putAll(parsed);
+                    registerCockatriceMetas(Cockatrice.parseCards(xml));
                     metaApplied++;
-                    xmlStrings.add(xml);
+                    xmlSources.add(new XmlSource(xml, p.getParent()));
                 }
             } catch (Throwable ex) {
                 errors++;
@@ -1327,9 +1367,10 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
         }
 
         // Start XML imports (these will stream in one-by-one already)
-        for (String xml : xmlStrings) {
+        List<Path> droppedImagesSnapshot = List.copyOf(imagePaths);
+        for (XmlSource source : xmlSources) {
             try {
-                importCockatriceXmlWithImagesAsync(xml);
+                importCockatriceXmlWithImagesAsync(source.xml, source.baseDir, droppedImagesSnapshot);
             } catch (Throwable t) {
                 errors++;
                 toast("XML import failed (" + t.getClass().getSimpleName() + ")");
@@ -1429,6 +1470,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
                             if (existing == null) {
                                 Entry e = new Entry();
                                 e.fileName = finalBase + finalExt;
+                                e.sourceFileName = name;
 
                                 // store dropped face
                                 if (finalIsBack) {
@@ -1451,6 +1493,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
 
                                 lastStatus = "Imported: " + name;
                             } else {
+                                existing.sourceFileName = name;
                                 if (finalIsBack) {
                                     existing.imgBack = finalBytes;
                                     existing.meta.doubleFaced = true;
@@ -1959,27 +2002,165 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
                 .reduce((a,b2) -> a + " " + b2).orElse(b);
     }
 
+    private void registerCockatriceMetas(List<Cockatrice.Meta> metas) {
+        if (metas == null || metas.isEmpty()) return;
+
+        Map<String, Integer> duplicateCounts = new HashMap<>();
+        for (Cockatrice.Meta meta : metas) {
+            if (meta == null || nz(meta.name).isBlank()) continue;
+
+            String name = nz(meta.name).trim();
+            cockatriceByName.put(name.toLowerCase(Locale.ROOT), meta);
+
+            if (!nz(meta.imageFileName).isBlank()) {
+                registerImageMeta(cockatriceByImageField, meta.imageFileName, meta, "image field");
+            }
+
+            String collectorFile = collectorImageFileName(name, meta.collectorNumber, meta.set);
+            if (!collectorFile.isBlank()) {
+                registerImageMeta(cockatriceByCollectorImage, collectorFile, meta, "collector number");
+                String safeCollectorFile = collectorImageFileName(cockatriceImageSafeName(name), meta.collectorNumber, meta.set);
+                if (!safeCollectorFile.equals(collectorFile)) {
+                    registerImageMeta(cockatriceByCollectorImage, safeCollectorFile, meta, "collector number");
+                }
+            }
+
+            String nameKey = normalizedCardName(name);
+            int count = duplicateCounts.merge(nameKey, 1, Integer::sum);
+            String legacyFile = count == 1 ? name + ".jpg" : name + "_" + count + ".jpg";
+            String safeName = cockatriceImageSafeName(name);
+            String safeLegacyFile = count == 1 ? safeName + ".jpg" : safeName + "_" + count + ".jpg";
+            Map<String, ImageMetaMatch> target = count == 1 ? cockatriceByLegacyImage : cockatriceByDuplicateImage;
+            String method = count == 1 ? "legacy name" : "duplicate fallback";
+            registerImageMeta(target, legacyFile, meta, method);
+            if (!safeLegacyFile.equals(legacyFile)) {
+                registerImageMeta(target, safeLegacyFile, meta, method);
+            }
+        }
+    }
+
+    private static void registerImageMeta(Map<String, ImageMetaMatch> target, String fileName,
+                                          Cockatrice.Meta meta, String method) {
+        if (target == null || meta == null || nz(fileName).isBlank()) return;
+        ImageMetaMatch match = new ImageMetaMatch(meta, method);
+        for (String key : imageLookupKeys(fileName)) {
+            if (!key.isBlank()) target.put(key, match);
+        }
+    }
+
+    private ImageMetaMatch findCockatriceMetaForSourceImageFile(String fileName) {
+        for (String key : imageLookupKeys(fileName)) {
+            ImageMetaMatch match = cockatriceByImageField.get(key);
+            if (match != null) return match;
+            match = cockatriceByCollectorImage.get(key);
+            if (match != null) return match;
+            match = cockatriceByLegacyImage.get(key);
+            if (match != null) return match;
+            match = cockatriceByDuplicateImage.get(key);
+            if (match != null) return match;
+        }
+        return null;
+    }
+
+    private static List<String> imageLookupKeys(String raw) {
+        String normalized = nz(raw).trim().replace('\\', '/');
+        if (normalized.isBlank()) return List.of();
+
+        ArrayList<String> keys = new ArrayList<>(3);
+        addImageLookupKey(keys, normalized);
+        int slash = normalized.lastIndexOf('/');
+        String base = slash >= 0 ? normalized.substring(slash + 1) : normalized;
+        addImageLookupKey(keys, base);
+        addImageLookupKey(keys, stripExt(base));
+        return keys;
+    }
+
+    private static void addImageLookupKey(List<String> keys, String raw) {
+        String key = nz(raw).trim().toLowerCase(Locale.ROOT);
+        if (!key.isBlank() && !keys.contains(key)) keys.add(key);
+    }
+
+    private static String collectorImageFileName(String name, String collectorNumber, String setCode) {
+        String n = nz(name).trim();
+        String collector = nz(collectorNumber).trim();
+        String set = nz(setCode).trim();
+        if (n.isBlank() || collector.isBlank() || set.isBlank()) return "";
+        return n + "_" + collector + "_" + set + ".jpg";
+    }
+
+    private static String cockatriceImageSafeName(String name) {
+        return nz(name)
+                .replace("\u2019", "'")
+                .replace(":", "")
+                .replace(";", "")
+                .replace("\n", "")
+                .replace(".", "")
+                .replace("\"", "")
+                .trim();
+    }
+
+    private static void applyCockatriceMeta(Entry e, Cockatrice.Meta m) {
+        if (e == null || m == null) return;
+        if (!m.name.isEmpty())            e.meta.name = m.name;
+        if (!m.manaCost.isEmpty())        e.meta.manaCost = m.manaCost;
+        if (!m.typeLine.isEmpty())        e.meta.typeLine = m.typeLine;
+        if (!m.rarity.isEmpty())          e.meta.rarity = m.rarity;
+        if (!m.set.isEmpty())             e.meta.set = m.set;
+        if (!m.collectorNumber.isEmpty()) e.meta.collectorNumber = m.collectorNumber;
+        if (!m.imageFileName.isEmpty())   e.meta.imageFileName = m.imageFileName;
+        if (!m.oracleText.isEmpty())      e.meta.oracleText = m.oracleText;
+        if (!m.power.isEmpty())           e.meta.power = m.power;
+        if (!m.toughness.isEmpty())       e.meta.toughness = m.toughness;
+        if (!m.loyalty.isEmpty())         e.meta.loyalty = m.loyalty;
+    }
+
+    private static void copyEntryMeta(Entry target, Entry source) {
+        if (target == null || source == null || source.meta == null) return;
+        target.meta.name = nz(source.meta.name);
+        target.meta.manaCost = nz(source.meta.manaCost);
+        target.meta.typeLine = nz(source.meta.typeLine);
+        target.meta.rarity = nz(source.meta.rarity);
+        target.meta.set = nz(source.meta.set);
+        target.meta.collectorNumber = nz(source.meta.collectorNumber);
+        target.meta.imageFileName = nz(source.meta.imageFileName);
+        target.meta.oracleText = nz(source.meta.oracleText);
+        target.meta.power = nz(source.meta.power);
+        target.meta.toughness = nz(source.meta.toughness);
+        target.meta.loyalty = nz(source.meta.loyalty);
+        target.meta.doubleFaced = source.meta.doubleFaced;
+        target.meta.backName = nz(source.meta.backName);
+        target.meta.backTypeLine = nz(source.meta.backTypeLine);
+        target.meta.backOracleText = nz(source.meta.backOracleText);
+        target.meta.backPower = nz(source.meta.backPower);
+        target.meta.backToughness = nz(source.meta.backToughness);
+        target.meta.backLoyalty = nz(source.meta.backLoyalty);
+    }
+
+    private static void logImageLookup(String method, String cardName, String fileName) {
+        System.out.println("[MTGCard/XML] Image lookup " + method + " for \"" + nz(cardName) + "\": " + nz(fileName));
+    }
+
     private void applyCockatriceTo(List<Entry> list) {
         for (var e : list) applyCockatriceToEntry(e);
         syncEditorFromSelected();
     }
     private void applyCockatriceToEntry(Entry e) {
         if (e == null) return;
+        ImageMetaMatch imageMatch = findCockatriceMetaForSourceImageFile(!nz(e.sourceFileName).isBlank() ? e.sourceFileName : e.fileName);
+        if (imageMatch != null) {
+            applyCockatriceMeta(e, imageMatch.meta);
+            logImageLookup(imageMatch.method, e.meta.name, !nz(e.sourceFileName).isBlank() ? e.sourceFileName : e.fileName);
+            return;
+        }
+
         String guess = e.meta.name.isEmpty()
                 ? prettyBaseName(e.fileName.replace(".webp",""))
                 : e.meta.name;
         var m = cockatriceByName.get(guess.toLowerCase(Locale.ROOT));
         if (m == null) return;
 
-        if (!m.name.isEmpty())       e.meta.name = m.name;
-        if (!m.manaCost.isEmpty())   e.meta.manaCost = m.manaCost;
-        if (!m.typeLine.isEmpty())   e.meta.typeLine = m.typeLine;
-        if (!m.rarity.isEmpty())     e.meta.rarity = m.rarity;
-        if (!m.set.isEmpty())        e.meta.set = m.set;
-        if (!m.oracleText.isEmpty()) e.meta.oracleText = m.oracleText;
-        if (!m.power.isEmpty())      e.meta.power = m.power;
-        if (!m.toughness.isEmpty())  e.meta.toughness = m.toughness;
-        if (!m.loyalty.isEmpty())    e.meta.loyalty = m.loyalty;
+        applyCockatriceMeta(e, m);
+        logImageLookup("legacy name", e.meta.name, e.fileName);
     }
 
     private void applyAutoTransformLinks() {
@@ -2236,6 +2417,8 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
 
         String set = nz(entry.meta == null ? "" : entry.meta.set).trim();
         String name = nz(entry.meta == null ? "" : entry.meta.name).trim();
+        String collector = nz(entry.meta == null ? "" : entry.meta.collectorNumber).trim();
+        String imageFile = nz(entry.meta == null ? "" : entry.meta.imageFileName).trim();
         if (name.isBlank()) {
             name = stripExt(nz(entry.fileName).toLowerCase(Locale.ROOT));
         }
@@ -2248,6 +2431,12 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
 
         String identity = set.toLowerCase(Locale.ROOT) + ":" + name.toLowerCase(Locale.ROOT);
         String slug = slugPart(set) + "_" + slugPart(name);
+        if (!collector.isBlank()) {
+            identity += ":" + collector.toLowerCase(Locale.ROOT);
+            slug += "_" + slugPart(collector);
+        } else if (!imageFile.isBlank()) {
+            identity += ":" + imageFile.toLowerCase(Locale.ROOT);
+        }
         if (slug.length() > 48) {
             slug = slug.substring(0, 48);
         }
@@ -2290,7 +2479,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
     }
 
     // === Cockatrice XML -> auto-add images (async, with progress + debug logs) ===
-    private void importCockatriceXmlWithImagesAsync(String xml) {
+    private void importCockatriceXmlWithImagesAsync(String xml, Path xmlBaseDir, List<Path> droppedImagePaths) {
         xmlImportInProgress = true;
         xmlImportFound = 0; xmlImportDone = 0; xmlImportFailed = 0;
         xmlImportPhase = "Scanning XML...";
@@ -2309,14 +2498,47 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
 
                 final java.util.regex.Pattern URL_RE = java.util.regex.Pattern.compile("(https?://[^\\s\"<>]+)", java.util.regex.Pattern.CASE_INSENSITIVE);
 
-                class Job { String name; String url; }
+                class Job {
+                    Cockatrice.Meta meta;
+                    String name;
+                    String url;
+                    Path localPath;
+                    String sourceFileName;
+                    String lookupMethod;
+                }
                 List<Job> jobs = new ArrayList<>();
+                List<Cockatrice.Meta> metas = Cockatrice.parseCards(xml);
+                Map<String, Path> droppedByName = indexDroppedImages(droppedImagePaths);
+                Set<String> usedLocalImages = new HashSet<>();
+                Map<String, Integer> duplicateCounts = new HashMap<>();
 
                 for (int i = 0; i < cards.getLength(); i++) {
                     var cardElem = (org.w3c.dom.Element) cards.item(i);
-                    String cardName = "";
-                    var nameNodes = cardElem.getElementsByTagName("name");
-                    if (nameNodes.getLength() > 0) cardName = nameNodes.item(0).getTextContent().trim();
+                    Cockatrice.Meta meta = i < metas.size() ? metas.get(i) : null;
+                    String cardName = meta == null ? "" : nz(meta.name).trim();
+                    if (cardName.isEmpty()) {
+                        var nameNodes = cardElem.getElementsByTagName("name");
+                        if (nameNodes.getLength() > 0) cardName = nameNodes.item(0).getTextContent().trim();
+                    }
+
+                    int duplicateIndex = 1;
+                    String duplicateKey = normalizedCardName(cardName);
+                    if (!duplicateKey.isBlank()) {
+                        duplicateIndex = duplicateCounts.merge(duplicateKey, 1, Integer::sum);
+                    }
+
+                    LocalImageMatch local = resolveLocalImageForMeta(meta, xmlBaseDir, droppedByName, usedLocalImages, duplicateIndex);
+                    if (local != null) {
+                        Job j = new Job();
+                        j.meta = meta;
+                        j.name = cardName;
+                        j.localPath = local.path;
+                        j.sourceFileName = local.sourceFileName;
+                        j.lookupMethod = local.method;
+                        jobs.add(j);
+                        logImageLookup(local.method, cardName, local.sourceFileName);
+                        continue;
+                    }
 
                     String cardXml;
                     {
@@ -2337,7 +2559,13 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
                             synchronized (importedPicUrls) {
                                 if (!importedPicUrls.add(u)) { System.out.println("[MTGCard/XML] Skip duplicate URL: " + u); continue; }
                             }
-                            Job j = new Job(); j.name = cardName; j.url = u; jobs.add(j);
+                            Job j = new Job();
+                            j.meta = meta;
+                            j.name = cardName;
+                            j.url = u;
+                            j.sourceFileName = (cardName == null || cardName.isEmpty() ? "card" : cardName) + inferLowerExtFromUrl(u);
+                            j.lookupMethod = "image URL";
+                            jobs.add(j);
                             System.out.println("[MTGCard/XML] Found image URL for \"" + cardName + "\": " + u);
                             break;
                         }
@@ -2345,7 +2573,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
                 }
 
                 xmlImportFound = jobs.size();
-                xmlImportPhase = jobs.isEmpty() ? "No image URLs found" : "Downloading...";
+                xmlImportPhase = jobs.isEmpty() ? "No local images or image URLs found" : "Importing...";
                 if (jobs.isEmpty()) return;
 
                 var http = java.net.http.HttpClient.newBuilder().followRedirects(java.net.http.HttpClient.Redirect.NORMAL)
@@ -2357,47 +2585,63 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
                         break;
                     }
                     try {
-                        System.out.println("[MTGCard/XML] Downloading: " + job.url);
-                        var req = java.net.http.HttpRequest.newBuilder(java.net.URI.create(job.url))
-                                .timeout(java.time.Duration.ofSeconds(15)).header("User-Agent", "mtgcard-mod/1.0").GET().build();
-                        var resp = http.send(req, java.net.http.HttpResponse.BodyHandlers.ofByteArray());
-                        if (resp.statusCode() / 100 != 2) { xmlImportFailed++; xmlImportPhase = "HTTP " + resp.statusCode(); continue; }
+                        byte[] raw;
+                        String lowerHint;
+                        String source;
+                        if (job.localPath != null) {
+                            System.out.println("[MTGCard/XML] Loading local image (" + job.lookupMethod + "): " + job.localPath);
+                            raw = Files.readAllBytes(job.localPath);
+                            lowerHint = job.localPath.getFileName().toString().toLowerCase(Locale.ROOT);
+                            source = job.localPath.toUri().toString();
+                        } else {
+                            System.out.println("[MTGCard/XML] Downloading: " + job.url);
+                            var req = java.net.http.HttpRequest.newBuilder(java.net.URI.create(job.url))
+                                    .timeout(java.time.Duration.ofSeconds(15)).header("User-Agent", "mtgcard-mod/1.0").GET().build();
+                            var resp = http.send(req, java.net.http.HttpResponse.BodyHandlers.ofByteArray());
+                            if (resp.statusCode() / 100 != 2) { xmlImportFailed++; xmlImportPhase = "HTTP " + resp.statusCode(); continue; }
+                            raw = resp.body();
+                            lowerHint = inferLowerExtFromUrl(job.url);
+                            source = job.url == null ? "" : job.url;
+                        }
 
-                        byte[] raw = resp.body();
-                        EncodedImage enc = preferWebpElsePng(raw, inferLowerExtFromUrl(job.url));
+                        EncodedImage enc = preferWebpElsePng(raw, lowerHint);
 
-                        String fileName = (job.name == null || job.name.isEmpty() ? "card" : job.name) + enc.ext;
+                        String sourceFileName = fileNameOnly(!nz(job.sourceFileName).isBlank()
+                                ? job.sourceFileName
+                                : ((job.name == null || job.name.isEmpty() ? "card" : job.name) + lowerHint));
+                        String fileName = stripExt(sourceFileName) + enc.ext;
 
                         ClientPlayNetworking.send(new com.spider.mtgcard.net.payload.XmlArtUploadPayload(
                                 fileName,
-                                job.url == null ? "" : job.url,
+                                source,
                                 enc.bytes
                         ));
 
                         Entry e = new Entry();
                         e.fileName = fileName;
+                        e.sourceFileName = sourceFileName;
                         e.imgFront = enc.bytes;
 
-                        if (job.name != null && !job.name.isEmpty()) {
-                            var meta = cockatriceByName.get(job.name.toLowerCase(Locale.ROOT));
-                            if (meta != null) {
-                                e.meta.name       = meta.name;
-                                e.meta.manaCost   = meta.manaCost;
-                                e.meta.typeLine   = meta.typeLine;
-                                e.meta.rarity     = meta.rarity.isEmpty() ? "common" : meta.rarity;
-                                e.meta.set        = meta.set.isEmpty() ? "CSTM" : meta.set;
-                                e.meta.oracleText = meta.oracleText;
-                                e.meta.power      = meta.power;
-                                e.meta.toughness  = meta.toughness;
-                                e.meta.loyalty    = meta.loyalty;
-                            } else e.meta.name = job.name;
+                        if (job.meta != null) {
+                            applyCockatriceMeta(e, job.meta);
+                        } else if (job.name != null && !job.name.isEmpty()) {
+                            e.meta.name = job.name;
                         }
 
                         Entry finalE = e;
                         if (this.minecraft != null) {
                             this.minecraft.execute(() -> {
-                                buildThumbnail(finalE);
-                                entries.add(finalE);
+                                String base = stripExt(finalE.fileName.toLowerCase(Locale.ROOT));
+                                Entry existing = findEntryByBase(base);
+                                if (existing == null) {
+                                    buildThumbnail(finalE);
+                                    entries.add(finalE);
+                                } else {
+                                    existing.imgFront = finalE.imgFront;
+                                    existing.sourceFileName = finalE.sourceFileName;
+                                    copyEntryMeta(existing, finalE);
+                                    buildThumbnail(existing);
+                                }
                                 applyAutoTransformLinks();
 
                                 boolean initSelection = (selected < 0);
@@ -2410,12 +2654,12 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
                         }
 
                         xmlImportDone++;
-                        xmlImportPhase = "Downloaded " + xmlImportDone + "/" + xmlImportFound;
+                        xmlImportPhase = "Imported " + xmlImportDone + "/" + xmlImportFound;
                         System.out.println("[MTGCard/XML] Added \"" + e.meta.name + "\" to grid.");
                     } catch (Throwable t) {
                         xmlImportFailed++;
                         xmlImportPhase = "Failed " + xmlImportFailed;
-                        System.out.println("[MTGCard/XML] Failed: " + job.url + " (" + t + ")");
+                        System.out.println("[MTGCard/XML] Failed: " + (job.localPath != null ? job.localPath : job.url) + " (" + t + ")");
                         t.printStackTrace();
                     }
                 }
@@ -2435,6 +2679,131 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
                 }
             });
         });
+    }
+
+    private static Map<String, Path> indexDroppedImages(List<Path> paths) {
+        Map<String, Path> out = new HashMap<>();
+        if (paths == null) return out;
+        for (Path path : paths) {
+            if (path == null || path.getFileName() == null) continue;
+            String name = path.getFileName().toString();
+            String key = name.toLowerCase(Locale.ROOT);
+            out.putIfAbsent(key, path);
+        }
+        return out;
+    }
+
+    private LocalImageMatch resolveLocalImageForMeta(Cockatrice.Meta meta,
+                                                     Path xmlBaseDir,
+                                                     Map<String, Path> droppedByName,
+                                                     Set<String> usedLocalImages,
+                                                     int duplicateIndex) {
+        if (meta == null || nz(meta.name).isBlank()) return null;
+
+        String name = nz(meta.name).trim();
+        LocalImageMatch match = tryResolveLocalImage(meta.imageFileName, "image field", meta, xmlBaseDir, droppedByName, usedLocalImages);
+        if (match != null) return match;
+
+        String collectorCandidate = collectorImageFileName(name, meta.collectorNumber, meta.set);
+        match = tryResolveLocalImage(collectorCandidate, "collector number", meta, xmlBaseDir, droppedByName, usedLocalImages);
+        if (match != null) return match;
+
+        String safeName = cockatriceImageSafeName(name);
+        String safeCollectorCandidate = collectorImageFileName(safeName, meta.collectorNumber, meta.set);
+        if (!safeCollectorCandidate.equals(collectorCandidate)) {
+            match = tryResolveLocalImage(safeCollectorCandidate, "collector number", meta, xmlBaseDir, droppedByName, usedLocalImages);
+            if (match != null) return match;
+        }
+
+        match = tryResolveLocalImage(name + ".jpg", "legacy name", meta, xmlBaseDir, droppedByName, usedLocalImages);
+        if (match != null) return match;
+
+        if (!safeName.equals(name)) {
+            match = tryResolveLocalImage(safeName + ".jpg", "legacy name", meta, xmlBaseDir, droppedByName, usedLocalImages);
+            if (match != null) return match;
+        }
+
+        int start = Math.max(2, duplicateIndex);
+        for (int i = start; i < start + 100; i++) {
+            match = tryResolveLocalImage(name + "_" + i + ".jpg", "duplicate fallback", meta, xmlBaseDir, droppedByName, usedLocalImages);
+            if (match != null) return match;
+            if (!safeName.equals(name)) {
+                match = tryResolveLocalImage(safeName + "_" + i + ".jpg", "duplicate fallback", meta, xmlBaseDir, droppedByName, usedLocalImages);
+                if (match != null) return match;
+            }
+        }
+
+        return null;
+    }
+
+    private static LocalImageMatch tryResolveLocalImage(String sourceFileName,
+                                                        String method,
+                                                        Cockatrice.Meta meta,
+                                                        Path xmlBaseDir,
+                                                        Map<String, Path> droppedByName,
+                                                        Set<String> usedLocalImages) {
+        if (nz(sourceFileName).isBlank()) return null;
+        Path path = resolveLocalImagePath(sourceFileName, nz(meta == null ? "" : meta.set), xmlBaseDir, droppedByName);
+        if (path == null) return null;
+        String key = localPathKey(path);
+        if (!usedLocalImages.add(key)) return null;
+        return new LocalImageMatch(path, fileNameOnly(sourceFileName), method);
+    }
+
+    private static Path resolveLocalImagePath(String sourceFileName,
+                                              String setCode,
+                                              Path xmlBaseDir,
+                                              Map<String, Path> droppedByName) {
+        String fileName = fileNameOnly(sourceFileName);
+        if (!fileName.isBlank() && droppedByName != null) {
+            Path dropped = droppedByName.get(fileName.toLowerCase(Locale.ROOT));
+            if (dropped != null && Files.isRegularFile(dropped)) return dropped;
+        }
+
+        if (xmlBaseDir == null) return null;
+
+        Path direct = existingFile(xmlBaseDir.resolve(sourceFileName));
+        if (direct != null) return direct;
+
+        String set = nz(setCode).trim();
+        if (!set.isBlank()) {
+            Path setDir = xmlBaseDir.resolve(set);
+            Path inSetDir = existingFile(setDir.resolve(fileName));
+            if (inSetDir != null) return inSetDir;
+        }
+
+        return null;
+    }
+
+    private static Path existingFile(Path path) {
+        if (path == null) return null;
+        if (Files.isRegularFile(path)) return path;
+
+        Path parent = path.getParent();
+        Path fileName = path.getFileName();
+        if (parent == null || fileName == null || !Files.isDirectory(parent)) return null;
+
+        try (var children = Files.newDirectoryStream(parent)) {
+            String wanted = fileName.toString();
+            for (Path child : children) {
+                Path childName = child.getFileName();
+                if (childName != null && childName.toString().equalsIgnoreCase(wanted) && Files.isRegularFile(child)) {
+                    return child;
+                }
+            }
+        } catch (IOException ignored) {}
+        return null;
+    }
+
+    private static String localPathKey(Path path) {
+        if (path == null) return "";
+        return path.toAbsolutePath().normalize().toString().toLowerCase(Locale.ROOT);
+    }
+
+    private static String fileNameOnly(String sourceFileName) {
+        String normalized = nz(sourceFileName).trim().replace('\\', '/');
+        int slash = normalized.lastIndexOf('/');
+        return slash >= 0 ? normalized.substring(slash + 1) : normalized;
     }
 
     private static String inferLowerExtFromUrl(String url) {

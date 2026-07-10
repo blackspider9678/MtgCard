@@ -93,7 +93,6 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     private boolean uiFrozen = false;
     private boolean needsReproject = false;
     private boolean reprojectingNow = false;
-    private boolean suppressWindowOnTake = false;
 
     private java.util.List<String> tabCommander = java.util.List.of();
     private java.util.List<String> tabPartner = java.util.List.of();
@@ -261,23 +260,25 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     private void sendTabNamesToClient(ServerPlayer sp) {
         if (deckboxPositions.isEmpty()) return;
 
-        java.util.ArrayList<com.spider.mtgcard.net.payload.DeckboxTabNamesPayload.Entry> entries =
-                new java.util.ArrayList<>(deckboxPositions.size());
+        java.util.ArrayList<String> tabNames =
+                new java.util.ArrayList<>(deckboxPositions.size() * 2);
 
         for (var p : deckboxPositions) {
             var be = sp.level().getBlockEntity(p);
             if (be instanceof com.spider.mtgcard.deckbox.DeckboxBlockEntity dbe) {
                 String cmd = safeCommanderNameFromDeckbox(dbe, com.spider.mtgcard.deckbox.DeckboxBlockEntity.SECOND_SIDE_SLOT);
                 String par = safeCommanderNameFromDeckbox(dbe, com.spider.mtgcard.deckbox.DeckboxBlockEntity.THIRD_SIDE_SLOT);
-                entries.add(new com.spider.mtgcard.net.payload.DeckboxTabNamesPayload.Entry(cmd, par));
+                tabNames.add(cmd);
+                tabNames.add(par);
             } else {
-                entries.add(new com.spider.mtgcard.net.payload.DeckboxTabNamesPayload.Entry("", ""));
+                tabNames.add("");
+                tabNames.add("");
             }
         }
 
         net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(
                 sp,
-                new com.spider.mtgcard.net.payload.DeckboxTabNamesPayload(this.containerId, entries)
+                new com.spider.mtgcard.net.payload.DeckboxTabNamesPayload(this.containerId, tabNames)
         );
     }
 
@@ -296,26 +297,8 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     @Override
     public void clicked(int slotIndex, int button, ContainerInput action, Player player) {
         if (isWindowSlot(slotIndex)) {
-            if (player.level().isClientSide()) {
-                return;
-            }
-
-            if (!(this.view instanceof CardDBSession sess)) {
-                return;
-            }
-
-            if (action == ContainerInput.QUICK_MOVE) {
-                handleWindowQuickMove(slotIndex, player, sess);
-                return;
-            }
-
-            if (action == ContainerInput.PICKUP) {
-                handleWindowPickup(slotIndex, button, player, sess);
-                return;
-            }
-
-            // Treat the visible DB window as a specialized view-only area:
-            // only normal pickup and shift-move are supported.
+            // The visible DB window is a search/result display. Mutating it is only
+            // allowed through DB_INTERACT button ids sent by CardDatabaseScreen.
             return;
         }
 
@@ -324,39 +307,6 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
     private boolean isWindowSlot(int slotIndex) {
         return slotIndex >= 0 && slotIndex < WINDOW_SLOTS;
-    }
-
-    private void handleWindowQuickMove(int slotIndex, Player player, CardDBSession sess) {
-        Slot slot = (slotIndex < this.slots.size()) ? this.slots.get(slotIndex) : null;
-        if (slot == null || !slot.hasItem()) {
-            return;
-        }
-
-        ItemStack clicked = slot.getItem().copy();
-        String uid = readUid(clicked);
-
-        this.suppressWindowOnTake = true;
-        sess.setUiFrozen(true);
-        try {
-            slot.set(ItemStack.EMPTY);
-            slot.setChanged();
-
-            giveDbCardToDestination(player, clicked);
-
-            if (uid != null && !uid.isBlank()) {
-                sess.removeFromIntakeByUid(uid);
-            }
-
-            sess.compactIntakeAndReprojectSamePage();
-            syncAfterWindowMutation(sess);
-        } finally {
-            sess.setUiFrozen(false);
-            this.suppressWindowOnTake = false;
-        }
-    }
-
-    private void handleWindowPickup(int slotIndex, int button, Player player, CardDBSession sess) {
-        handleTerminalGridAction(slotIndex, button == 1 ? DB_INTERACT_RIGHT : DB_INTERACT_LEFT, player, sess);
     }
 
     private void handleTerminalGridAction(int slotIndex, int action, Player player, CardDBSession sess) {
@@ -720,41 +670,31 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
                     }
 
                     @Override
+                    public boolean mayPickup(Player player) {
+                        return false;
+                    }
+
+                    @Override
+                    public boolean allowModification(Player player) {
+                        return false;
+                    }
+
+                    @Override
+                    public boolean isFake() {
+                        return true;
+                    }
+
+                    @Override
                     public void onQuickCraft(ItemStack newStack, ItemStack original) {
                     }
 
                     @Override
                     public void onTake(Player player, ItemStack taken) {
-                        if (player.level().isClientSide()) return;
-                        if (suppressWindowOnTake) return;
-
-                        String uid = readUid(taken);
-                        if (!uid.isEmpty() && view instanceof CardDBSession s) {
-                            s.removeFromIntakeByUid(uid);
-                            s.compactIntakeAndReprojectSamePage();
-                            if (isProjectionActive()) {
-                                reprojectingNow = true;
-                                try {
-                                    reprojectCurrentPage();
-                                } finally {
-                                    reprojectingNow = false;
-                                }
-                            }
-                        }
                     }
 
                     @Override
                     public ItemStack remove(int amount) {
-                        ItemStack cur = this.getItem();
-                        if (cur.isEmpty()) return ItemStack.EMPTY;
-
-                        int n = Math.min(amount, cur.getCount());
-                        ItemStack out = cur.copy();
-                        out.setCount(n);
-
-                        this.set(ItemStack.EMPTY);
-                        this.setChanged();
-                        return out;
+                        return ItemStack.EMPTY;
                     }
                 });
             }
@@ -1091,38 +1031,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         CardDBSession sess = (view instanceof CardDBSession) ? (CardDBSession) view : null;
 
         if (slotIndex < beEnd) {
-            String uid = readUid(stackInSlot);
-            suppressWindowOnTake = true;
-            if (sess != null) sess.setUiFrozen(true);
-
-            try {
-                ItemStack toGive = stackInSlot.copy();
-                stackInSlot.setCount(0);
-                slot.set(ItemStack.EMPTY);
-                slot.setChanged();
-
-                giveDbCardToDestination(player, toGive);
-
-                if (uid != null && !uid.isBlank() && sess != null) {
-                    sess.removeFromIntakeByUid(uid);
-                    sess.compactIntakeAndReprojectSamePage();
-                    if (isProjectionActive()) {
-                        reprojectingNow = true;
-                        try {
-                            reprojectCurrentPage();
-                        } finally {
-                            reprojectingNow = false;
-                        }
-                    }
-                }
-
-                broadcastChanges();
-                if (view != null) syncPropsFromView();
-            } finally {
-                if (sess != null) sess.setUiFrozen(false);
-                suppressWindowOnTake = false;
-            }
-            return original;
+            return empty;
         }
 
         if (!stackInSlot.is(ModItems.CARD)) return empty;
