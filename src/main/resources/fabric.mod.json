@@ -20,6 +20,9 @@
       "com.spider.mtgcard.Mtgcard"
     ]
   },
+  "mixins": [
+    "mtgcard.mousetweaks.mixins.json"
+  ],
   "depends": {
     "fabricloader": ">=${loader_version}",
     "fabric-api": ">=${fabric_version}",

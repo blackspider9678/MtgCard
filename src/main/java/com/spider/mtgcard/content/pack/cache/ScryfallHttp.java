@@ -14,7 +14,10 @@ final class ScryfallHttp {
     private static final Logger LOGGER = LoggerFactory.getLogger("MtgCard/Scryfall");
     private static final long REQUEST_TIMEOUT_SECONDS = 20L;
     private static final long CONNECT_TIMEOUT_SECONDS = 10L;
-    private static final long MAX_RETRY_BACKOFF_MS = 5_000L;
+    private static final long REQUEST_SPACING_MS = 250L;
+    private static final long MAX_TRANSIENT_RETRY_BACKOFF_MS = 5_000L;
+    private static final long MIN_RATE_LIMIT_BACKOFF_MS = 60_000L;
+    private static final long MAX_RATE_LIMIT_BACKOFF_MS = 300_000L;
     private static final int MAX_ATTEMPTS = 2;
 
     private static final HttpClient CLIENT = HttpClient.newBuilder()
@@ -34,8 +37,7 @@ final class ScryfallHttp {
                 long now = System.currentTimeMillis();
                 sleep = nextAllowedAtMs - now;
                 if (sleep <= 0) {
-                    // spacing to avoid bursts (tune 150-500ms)
-                    nextAllowedAtMs = now + 250L;
+                    nextAllowedAtMs = now + REQUEST_SPACING_MS;
                     return;
                 }
             }
@@ -101,7 +103,7 @@ final class ScryfallHttp {
 
             // Rate limit: honor Retry-After and push GLOBAL backoff
             if (code == 429) {
-                long waitMs = clampBackoff(parseRetryAfterMs(resp));
+                long waitMs = clampRateLimitBackoff(parseRetryAfterMs(resp));
                 LOGGER.warn("Scryfall 429 retry in {}ms (attempt {}): {}", waitMs, attempts, url);
                 backoff(waitMs);
                 if (attempts < MAX_ATTEMPTS) continue;
@@ -109,7 +111,7 @@ final class ScryfallHttp {
 
             // Transient server errors
             if (code >= 500 && code <= 599 && attempts < MAX_ATTEMPTS) {
-                long waitMs = clampBackoff(750L * attempts);
+                long waitMs = clampTransientBackoff(750L * attempts);
                 LOGGER.warn("Scryfall {} retry in {}ms (attempt {}): {}", code, waitMs, attempts, url);
                 backoff(waitMs);
                 continue;
@@ -128,29 +130,33 @@ final class ScryfallHttp {
     private static long parseRetryAfterMs(HttpResponse<?> resp) {
         try {
             var h = resp.headers().firstValue("Retry-After");
-            if (h.isEmpty()) return MAX_RETRY_BACKOFF_MS;
+            if (h.isEmpty()) return MIN_RATE_LIMIT_BACKOFF_MS;
             String v = h.get().trim();
 
             // seconds
             if (v.matches("^\\d+$")) {
                 long seconds = Long.parseLong(v);
-                return Math.max(250L, seconds * 1000L);
+                return Math.max(MIN_RATE_LIMIT_BACKOFF_MS, seconds * 1000L);
             }
 
             // HTTP-date
             try {
                 ZonedDateTime dt = ZonedDateTime.parse(v, DateTimeFormatter.RFC_1123_DATE_TIME);
                 long ms = dt.toInstant().toEpochMilli() - System.currentTimeMillis();
-                return Math.max(250L, ms);
+                return Math.max(MIN_RATE_LIMIT_BACKOFF_MS, ms);
             } catch (Throwable ignored) {
                 // fall through
             }
         } catch (Throwable ignored) {}
-        return MAX_RETRY_BACKOFF_MS;
+        return MIN_RATE_LIMIT_BACKOFF_MS;
     }
 
-    private static long clampBackoff(long ms) {
-        return Math.max(250L, Math.min(MAX_RETRY_BACKOFF_MS, ms));
+    private static long clampTransientBackoff(long ms) {
+        return Math.max(250L, Math.min(MAX_TRANSIENT_RETRY_BACKOFF_MS, ms));
+    }
+
+    private static long clampRateLimitBackoff(long ms) {
+        return Math.max(MIN_RATE_LIMIT_BACKOFF_MS, Math.min(MAX_RATE_LIMIT_BACKOFF_MS, ms));
     }
 
     private static void sleep(long ms) {

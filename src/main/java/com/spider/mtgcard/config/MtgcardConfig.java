@@ -43,6 +43,9 @@ public final class MtgcardConfig {
     public double chance_custom_token_or_art = 0.02;
     public boolean Pack_Debug = false;
 
+    // Card Database
+    public boolean Card_Database_Debug = false;
+
     // Price display
     public String Price_Item = "minecraft:diamond";
     public String Price_Basis = "USD";
@@ -123,9 +126,23 @@ public final class MtgcardConfig {
             cfg.chance_custom_token_or_art = file.getOrElse("pack.custom_chances.token_or_art", cfg.chance_custom_token_or_art);
             cfg.Pack_Debug = file.getOrElse("pack.debug", cfg.Pack_Debug);
 
+            // --- card database ---
+            boolean needsSave = false;
+            if (file.contains("card_database.debug")) {
+                cfg.Card_Database_Debug = file.getOrElse("card_database.debug", cfg.Card_Database_Debug);
+            } else {
+                file.set("card_database.debug", cfg.Card_Database_Debug);
+                needsSave = true;
+            }
+
             // --- price ---
             cfg.Price_Item = file.getOrElse("price.item", cfg.Price_Item);
             cfg.Price_Basis = file.getOrElse("price.basis", cfg.Price_Basis);
+
+            if (needsSave) {
+                addComments(file);
+                file.save();
+            }
 
             return cfg;
         } catch (Throwable e) {
@@ -159,6 +176,8 @@ public final class MtgcardConfig {
                 file.set("pack.custom_chances.basic_land", cfg.chance_custom_basic_land);
                 file.set("pack.custom_chances.token_or_art", cfg.chance_custom_token_or_art);
                 file.set("pack.debug", cfg.Pack_Debug);
+
+                file.set("card_database.debug", cfg.Card_Database_Debug);
 
                 file.set("price.item", cfg.Price_Item);
                 file.set("price.basis", cfg.Price_Basis);
@@ -203,6 +222,11 @@ public final class MtgcardConfig {
         file.setComment("pack.custom_chances.basic_land", "Chance for a custom basic land.");
         file.setComment("pack.custom_chances.token_or_art", "Chance for a custom token/art slot.");
         file.setComment("pack.debug", "Enable verbose booster pack debug logging on the server.");
+
+        file.setComment("card_database",
+                "Card Database settings.\n" +
+                        "debug: enables verbose Card Database bundle/input compatibility logs.");
+        file.setComment("card_database.debug", "Enable verbose Card Database debug logging on the client and server.");
 
         file.setComment("price",
                 "Price display settings (Large View panel).\n" +
@@ -273,6 +297,11 @@ public final class MtgcardConfig {
     public static boolean packDebugEnabled() {
         MtgcardConfig cfg = get();
         return cfg != null && cfg.Pack_Debug;
+    }
+
+    public static boolean cardDatabaseDebugEnabled() {
+        MtgcardConfig cfg = get();
+        return cfg != null && cfg.Card_Database_Debug;
     }
 
     private MtgcardConfig() {}

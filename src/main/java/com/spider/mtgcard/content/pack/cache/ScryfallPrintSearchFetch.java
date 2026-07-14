@@ -71,7 +71,13 @@ public final class ScryfallPrintSearchFetch {
                 + "&unique=prints";
 
         return ScryfallService.supplyAsync(() -> {
-            String body = ScryfallHttp.get(url);
+            String body;
+            try {
+                body = ScryfallHttp.get(url);
+            } catch (Exception e) {
+                if (isNoCardsSearch(e)) return new Page(List.of(), 0, false);
+                throw e;
+            }
             JsonObject root = JsonParser.parseString(body).getAsJsonObject();
             int total = root.has("total_cards") ? root.get("total_cards").getAsInt() : 0;
             boolean hasMore = root.has("has_more") && root.get("has_more").getAsBoolean();
@@ -89,6 +95,16 @@ public final class ScryfallPrintSearchFetch {
             }
             return new Page(out, total, hasMore);
         });
+    }
+
+    private static boolean isNoCardsSearch(Throwable t) {
+        for (Throwable cur = t; cur != null; cur = cur.getCause()) {
+            String msg = cur.getMessage();
+            if (msg != null && msg.contains("Scryfall 404") && msg.contains("0 cards matched")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String applyPreferredLang(String q) {

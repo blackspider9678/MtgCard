@@ -100,6 +100,12 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     private String activeDir = "asc";
     private boolean sortPinned = false;
 
+    private static final int QUICK_MOVE_FLUSH_SIZE = 64;
+    private static final long QUICK_MOVE_FLUSH_DELAY_NANOS = 50_000_000L;
+    private final java.util.ArrayList<ItemStack> pendingQuickMoveInsertions = new java.util.ArrayList<>();
+    private long pendingQuickMoveStartedAtNanos = 0L;
+    private boolean flushingQuickMoveInsertions = false;
+
     public int getClientRouteMode() { return props.get(PROP_ROUTE_MODE); }
     public int getLastSearchTotal() { return props.get(PROP_SEARCH_TOTAL); }
     public int getClientIntakeCount() { return props.get(PROP_INTAKE_COUNT); }
@@ -294,8 +300,64 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     }
 
     @Override
+    public void broadcastChanges() {
+        flushPendingQuickMoveInsertions(false);
+        super.broadcastChanges();
+    }
+
+    private void queueQuickMoveInsertion(ItemStack stack) {
+        if (stack == null || stack.isEmpty() || !stack.is(ModItems.CARD)) return;
+
+        ItemStack copy = stack.copy();
+        clearUid(copy);
+        pendingQuickMoveInsertions.add(copy);
+        if (pendingQuickMoveStartedAtNanos == 0L) {
+            pendingQuickMoveStartedAtNanos = System.nanoTime();
+        }
+    }
+
+    private void flushPendingQuickMoveInsertions(boolean force) {
+        if (flushingQuickMoveInsertions || view == null || pendingQuickMoveInsertions.isEmpty()) {
+            return;
+        }
+
+        if (!force && pendingQuickMoveInsertions.size() < QUICK_MOVE_FLUSH_SIZE) {
+            long startedAt = pendingQuickMoveStartedAtNanos;
+            if (startedAt == 0L || System.nanoTime() - startedAt < QUICK_MOVE_FLUSH_DELAY_NANOS) {
+                return;
+            }
+        }
+
+        java.util.ArrayList<ItemStack> batch = new java.util.ArrayList<>(pendingQuickMoveInsertions);
+        pendingQuickMoveInsertions.clear();
+        pendingQuickMoveStartedAtNanos = 0L;
+
+        flushingQuickMoveInsertions = true;
+        try {
+            view.appendAllToIntake(batch);
+            if (isProjectionActive()) {
+                reprojectingNow = true;
+                try {
+                    reprojectCurrentPage();
+                } finally {
+                    reprojectingNow = false;
+                }
+            } else {
+                props.set(PROP_SEARCH_TOTAL, -1);
+                syncPropsFromView();
+            }
+        } finally {
+            flushingQuickMoveInsertions = false;
+        }
+    }
+
+    @Override
     public void clicked(int slotIndex, int button, ClickType action, Player player) {
         if (isWindowSlot(slotIndex)) {
+            if (CardDatabaseDebug.enabled()) {
+                CardDatabaseDebug.log("[CardDBDebug] server swallowed vanilla DB window click slot={} button={} action={} carried={}",
+                        slotIndex, button, action, debugStack(this.getCarried()));
+            }
             // The visible DB window is a search/result display, not a vanilla inventory.
             // Intentional actions arrive through DB_INTERACT button ids from the screen.
             return;
@@ -308,24 +370,81 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         return slotIndex >= 0 && slotIndex < WINDOW_SLOTS;
     }
 
+    public void handleClientGridAction(int containerId, int slotIndex, int action, Player player) {
+        if (CardDatabaseDebug.enabled()) {
+            CardDatabaseDebug.log("[CardDBDebug] server handleClientGridAction requested container={} actualContainer={} slot={} action={} player={} clientSide={} view={} carried={}",
+                    containerId,
+                    this.containerId,
+                    slotIndex,
+                    action,
+                    player == null ? "null" : player.getName().getString(),
+                    player != null && player.level().isClientSide(),
+                    view == null ? "null" : view.getClass().getName(),
+                    debugStack(this.getCarried()));
+        }
+        if (player == null || player.level().isClientSide()) {
+            CardDatabaseDebug.log("[CardDBDebug] server rejected grid action: player missing or client-side");
+            return;
+        }
+        if (containerId != this.containerId) {
+            CardDatabaseDebug.log("[CardDBDebug] server rejected grid action: container mismatch requested={} actual={}", containerId, this.containerId);
+            return;
+        }
+        if (slotIndex < 0 || slotIndex >= WINDOW_SLOTS) {
+            CardDatabaseDebug.log("[CardDBDebug] server rejected grid action: invalid DB slot {}", slotIndex);
+            return;
+        }
+        if (action < 0 || action >= DB_INTERACT_STRIDE) {
+            CardDatabaseDebug.log("[CardDBDebug] server rejected grid action: invalid action {}", action);
+            return;
+        }
+        if (!(view instanceof CardDBSession sess)) {
+            CardDatabaseDebug.log("[CardDBDebug] server rejected grid action: view is not CardDBSession");
+            return;
+        }
+
+        flushPendingQuickMoveInsertions(true);
+        handleTerminalGridAction(slotIndex, action, player, sess);
+    }
+
     private void handleTerminalGridAction(int slotIndex, int action, Player player, CardDBSession sess) {
         if (slotIndex < 0 || slotIndex >= WINDOW_SLOTS || player == null || sess == null) {
+            CardDatabaseDebug.log("[CardDBDebug] server terminal action rejected early slot={} action={} playerNull={} sessNull={}",
+                    slotIndex, action, player == null, sess == null);
             return;
         }
 
         ItemStack carried = this.getCarried();
+        if (CardDatabaseDebug.enabled()) {
+            CardDatabaseDebug.log("[CardDBDebug] server terminal action slot={} action={} carried={} storedCardsBefore={}",
+                    slotIndex, action, debugStack(carried), countStoredCardItems(sess));
+        }
         if (!carried.isEmpty()) {
             if (carried.is(Items.BUNDLE)) {
                 if (action == DB_INTERACT_RIGHT || action == DB_INTERACT_SHIFT_RIGHT) {
+                    CardDatabaseDebug.log("[CardDBDebug] server bundle action started dumpAll={} bundle={}",
+                            action == DB_INTERACT_SHIFT_RIGHT, debugStack(carried));
                     if (dumpCardsFromCarriedBundle(sess, carried, action == DB_INTERACT_SHIFT_RIGHT)) {
                         this.setCarried(carried);
                         syncAfterWindowMutation(sess);
+                        if (CardDatabaseDebug.enabled()) {
+                            CardDatabaseDebug.log("[CardDBDebug] server bundle action moved cards bundleAfter={} storedCardsAfter={}",
+                                    debugStack(carried), countStoredCardItems(sess));
+                        }
+                    } else {
+                        if (CardDatabaseDebug.enabled()) {
+                            CardDatabaseDebug.log("[CardDBDebug] server bundle action moved no cards bundleAfter={} storedCardsAfter={}",
+                                    debugStack(carried), countStoredCardItems(sess));
+                        }
                     }
+                } else {
+                    CardDatabaseDebug.log("[CardDBDebug] server bundle carried but action {} is not right-click insert", action);
                 }
                 return;
             }
 
             if (!carried.is(ModItems.CARD)) {
+                CardDatabaseDebug.log("[CardDBDebug] server carried stack is not bundle/card: {}", debugStack(carried));
                 return;
             }
 
@@ -333,6 +452,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
                     ? 1
                     : carried.getCount();
             if (moveCount <= 0) {
+                CardDatabaseDebug.log("[CardDBDebug] server carried card move count was <= 0 action={} carried={}", action, debugStack(carried));
                 return;
             }
 
@@ -344,17 +464,23 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
             carried.shrink(toStore.getCount());
             this.setCarried(carried.isEmpty() ? ItemStack.EMPTY : carried);
             syncAfterWindowMutation(sess);
+            if (CardDatabaseDebug.enabled()) {
+                CardDatabaseDebug.log("[CardDBDebug] server inserted carried card count={} carriedAfter={} storedCardsAfter={}",
+                        toStore.getCount(), debugStack(this.getCarried()), countStoredCardItems(sess));
+            }
             return;
         }
 
         Slot slot = (slotIndex < this.slots.size()) ? this.slots.get(slotIndex) : null;
         if (slot == null || !slot.hasItem()) {
+            CardDatabaseDebug.log("[CardDBDebug] server DB slot empty/missing slot={} slotObjectNull={}", slotIndex, slot == null);
             return;
         }
 
         ItemStack clicked = slot.getItem().copy();
         String uid = readUid(clicked);
         if (uid == null || uid.isBlank()) {
+            CardDatabaseDebug.log("[CardDBDebug] server DB extraction ignored because clicked stack has no uid: {}", debugStack(clicked));
             return;
         }
 
@@ -365,6 +491,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
         ItemStack extracted = takeFromDatabase(sess, uid, moveCount);
         if (extracted.isEmpty()) {
+            CardDatabaseDebug.log("[CardDBDebug] server DB extraction failed uid={} moveCount={}", uid, moveCount);
             return;
         }
 
@@ -374,6 +501,10 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
             this.setCarried(extracted);
         }
         syncAfterWindowMutation(sess);
+        if (CardDatabaseDebug.enabled()) {
+            CardDatabaseDebug.log("[CardDBDebug] server extracted DB card uid={} count={} carriedNow={} storedCardsAfter={}",
+                    uid, extracted.getCount(), debugStack(this.getCarried()), countStoredCardItems(sess));
+        }
     }
 
     private static String readUid(ItemStack st) {
@@ -400,47 +531,101 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
     private boolean dumpCardsFromCarriedBundle(CardDBSession sess, ItemStack bundle, boolean dumpAll) {
         if (sess == null || bundle == null || bundle.isEmpty() || !bundle.is(Items.BUNDLE)) {
+            CardDatabaseDebug.log("[CardDBDebug] server dump bundle rejected sessNull={} bundle={}", sess == null, debugStack(bundle));
             return false;
         }
 
         java.util.List<ItemStack> contents = readBundleContents(bundle);
+        CardDatabaseDebug.log("[CardDBDebug] server dump bundle contents entries={} dumpAll={} bundle={}",
+                contents.size(), dumpAll, debugStack(bundle));
         if (contents.isEmpty()) {
             return false;
         }
 
-        java.util.ArrayList<ItemStack> toStore = new java.util.ArrayList<>();
         java.util.ArrayList<ItemStack> remaining = new java.util.ArrayList<>();
         boolean movedAny = false;
 
+        int entryIndex = 0;
         for (ItemStack entry : contents) {
+            int currentIndex = entryIndex++;
             if (entry == null || entry.isEmpty()) continue;
 
-            ItemStack copy = entry.copy();
-            if (copy.is(ModItems.CARD) && (dumpAll || !movedAny)) {
-                ItemStack card = copy.copy();
-                int moveCount = dumpAll ? copy.getCount() : 1;
-                card.setCount(moveCount);
-                copy.shrink(moveCount);
-                clearUid(card);
-                toStore.add(card);
-                movedAny = true;
-
-                if (!copy.isEmpty()) {
-                    remaining.add(copy);
+            ItemStack remainder = entry.copy();
+            CardDatabaseDebug.log("[CardDBDebug] server bundle entry index={} stack={} isCard={} movedAnyBefore={}",
+                    currentIndex, debugStack(remainder), remainder.is(ModItems.CARD), movedAny);
+            if (remainder.is(ModItems.CARD)) {
+                int requestedMoves = dumpAll ? remainder.getCount() : (movedAny ? 0 : 1);
+                CardDatabaseDebug.log("[CardDBDebug] server bundle card entry index={} requestedMoves={}", currentIndex, requestedMoves);
+                for (int i = 0; i < requestedMoves && !remainder.isEmpty(); i++) {
+                    if (!insertOneBundleCardIntoDatabase(sess, remainder)) {
+                        CardDatabaseDebug.log("[CardDBDebug] server bundle card insert failed index={} attempt={} remainder={}",
+                                currentIndex, i, debugStack(remainder));
+                        break;
+                    }
+                    remainder.shrink(1);
+                    movedAny = true;
+                    CardDatabaseDebug.log("[CardDBDebug] server bundle card insert accepted index={} attempt={} remainderAfter={}",
+                            currentIndex, i, debugStack(remainder));
                 }
-                continue;
             }
 
-            remaining.add(copy);
+            if (!remainder.isEmpty()) {
+                remaining.add(remainder);
+            }
         }
 
-        if (toStore.isEmpty()) {
+        if (!movedAny) {
+            CardDatabaseDebug.log("[CardDBDebug] server dump bundle completed with no accepted cards");
             return false;
         }
 
-        sess.appendAllToIntake(toStore);
         writeBundleContents(bundle, remaining);
+        CardDatabaseDebug.log("[CardDBDebug] server dump bundle wrote remainingEntries={} bundleAfter={}",
+                remaining.size(), debugStack(bundle));
         return true;
+    }
+
+    private boolean insertOneBundleCardIntoDatabase(CardDBSession sess, ItemStack source) {
+        if (sess == null || source == null || source.isEmpty() || !source.is(ModItems.CARD)) {
+            CardDatabaseDebug.log("[CardDBDebug] server insertOne rejected sessNull={} source={}", sess == null, debugStack(source));
+            return false;
+        }
+
+        ItemStack toStore = source.copy();
+        toStore.setCount(1);
+        clearUid(toStore);
+
+        long before = countStoredCardItems(sess);
+        sess.appendToIntake(toStore);
+        long after = countStoredCardItems(sess);
+        boolean accepted = after >= before + 1;
+        CardDatabaseDebug.log("[CardDBDebug] server insertOne result accepted={} before={} after={} source={} stored={}",
+                accepted, before, after, debugStack(source), debugStack(toStore));
+        return accepted;
+    }
+
+    private static long countStoredCardItems(CardDBSession sess) {
+        if (sess == null) return 0L;
+
+        long count = 0L;
+        for (ItemStack stack : sess.getIntakeAll()) {
+            if (stack != null && !stack.isEmpty() && stack.is(ModItems.CARD)) {
+                count += stack.getCount();
+            }
+        }
+        return count;
+    }
+
+    private static String debugStack(ItemStack stack) {
+        if (stack == null) return "null";
+        if (stack.isEmpty()) return "EMPTY";
+        String name;
+        try {
+            name = stack.getHoverName().getString();
+        } catch (Throwable ignored) {
+            name = "";
+        }
+        return stack.getCount() + "x " + stack.getItem() + (name.isBlank() ? "" : " (" + name + ")");
     }
 
     private static java.util.List<ItemStack> readBundleContents(ItemStack bundle) {
@@ -450,17 +635,10 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
         BundleContents contents = bundle.getOrDefault(DataComponents.BUNDLE_CONTENTS, BundleContents.EMPTY);
         java.util.ArrayList<ItemStack> out = new java.util.ArrayList<>();
-        try {
-            java.lang.reflect.Method itemsMethod = BundleContents.class.getMethod("items");
-            Object value = itemsMethod.invoke(contents);
-            if (value instanceof Iterable<?> iterable) {
-                for (Object obj : iterable) {
-                    if (obj instanceof ItemStack stack && !stack.isEmpty()) {
-                        out.add(stack.copy());
-                    }
-                }
+        for (ItemStack stack : contents.items()) {
+            if (stack != null && !stack.isEmpty()) {
+                out.add(stack.copy());
             }
-        } catch (Throwable ignored) {
         }
         return out;
     }
@@ -520,6 +698,10 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     }
 
     private void syncAfterWindowMutation(CardDBSession sess) {
+        if (CardDatabaseDebug.enabled()) {
+            CardDatabaseDebug.log("[CardDBDebug] server syncAfterWindowMutation projectionActive={} storedCards={}",
+                    isProjectionActive(), countStoredCardItems(sess));
+        }
         if (isProjectionActive()) {
             this.reprojectingNow = true;
             try {
@@ -799,6 +981,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
     public void applySearch(String q, String order, String dir) {
         if (this.view == null) return;
+        flushPendingQuickMoveInsertions(true);
 
         setActiveQuery(q);
         this.activeOrder = normalizeSortKey(order);
@@ -822,14 +1005,13 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     @Override
     public boolean clickMenuButton(Player player, int id) {
         if (view == null || player.level().isClientSide()) return false;
+        flushPendingQuickMoveInsertions(true);
 
         if (id >= DB_INTERACT_BASE && id < DB_INTERACT_BASE + WINDOW_SLOTS * DB_INTERACT_STRIDE) {
             int encoded = id - DB_INTERACT_BASE;
             int slot = encoded / DB_INTERACT_STRIDE;
             int action = encoded % DB_INTERACT_STRIDE;
-            if (view instanceof CardDBSession sess) {
-                handleTerminalGridAction(slot, action, player, sess);
-            }
+            handleClientGridAction(this.containerId, slot, action, player);
             return true;
         }
 
@@ -910,6 +1092,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
             String q,
             com.spider.mtgcard.db.search.PageCursor cursor
     ) {
+        flushPendingQuickMoveInsertions(true);
         var res = new com.spider.mtgcard.db.search.SearchResults();
         if (view == null) {
             res.total = 0;
@@ -1011,58 +1194,17 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
         final int beEnd = WINDOW_SLOTS;
 
-        CardDBSession sess = (view instanceof CardDBSession) ? (CardDBSession) view : null;
-
         if (slotIndex < beEnd) return empty;
 
         if (!stackInSlot.is(ModItems.CARD)) return empty;
+        if (view == null) return empty;
 
-        if (!player.level().isClientSide() && view != null) {
-            view.appendToIntake(stackInSlot);
-            stackInSlot.setCount(0);
-
-            if (stackInSlot.isEmpty()) slot.set(ItemStack.EMPTY);
-            else slot.setChanged();
-
-            if (sess != null) {
-                sess.compactIntakeAndReprojectSamePage();
-                if (isProjectionActive()) {
-                    reprojectingNow = true;
-                    try {
-                        reprojectCurrentPage();
-                    } finally {
-                        reprojectingNow = false;
-                    }
-                }
-            }
-
-            broadcastChanges();
-            syncPropsFromView();
-            return original;
-        }
-
-        boolean placed = this.moveItemStackTo(stackInSlot, 0, beEnd, false);
-        if (!placed && view != null && !player.level().isClientSide()) {
-            view.appendToIntake(stackInSlot);
-            stackInSlot.setCount(0);
-            placed = true;
-        }
-        if (!placed) return empty;
-
+        queueQuickMoveInsertion(stackInSlot);
+        stackInSlot.setCount(0);
         if (stackInSlot.isEmpty()) slot.set(ItemStack.EMPTY);
         else slot.setChanged();
 
-        if (!player.level().isClientSide()) {
-            if (view instanceof CardDBSession s) {
-                s.compactIntakeAndReprojectSamePage();
-                if (isProjectionActive()) {
-                    reprojectCurrentPage();
-                }
-            }
-            broadcastChanges();
-            if (view != null) syncPropsFromView();
-        }
-
+        flushPendingQuickMoveInsertions(false);
         return original;
     }
 
@@ -1076,6 +1218,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     public void removed(Player player) {
         super.removed(player);
         if (player.level().isClientSide()) return;
+        flushPendingQuickMoveInsertions(true);
 
         if (this.view instanceof CardDBSession session && player instanceof ServerPlayer sp) {
             var sw = sp.level();
@@ -1173,7 +1316,9 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
             if (st == null || st.isEmpty()) continue;
             if (!st.is(ModItems.CARD)) continue;
 
-            toStore.add(st.copy());
+            ItemStack copy = st.copy();
+            clearUid(copy);
+            toStore.add(copy);
             playerInvRef.setItem(i, ItemStack.EMPTY);
         }
 

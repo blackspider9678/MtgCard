@@ -4,6 +4,7 @@ import com.spider.mtgcard.client.compat.LegacyContainerScreen;
 import com.spider.mtgcard.client.compat.MtgGuiScaleHelper;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.client.net.DBClientPackets;
+import com.spider.mtgcard.db.CardDatabaseDebug;
 import com.spider.mtgcard.db.CardDatabaseScreenHandler;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.RenderPipelines;
@@ -18,10 +19,7 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
-import yalter.mousetweaks.api.MouseTweaksDisableWheelTweak;
 
-
-@MouseTweaksDisableWheelTweak
 public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreenHandler> {
 
     private static final Identifier DB_BG  = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/card_database.png");
@@ -348,8 +346,29 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         if (this.minecraft == null || this.minecraft.gameMode == null) return false;
 
         int id = CardDatabaseScreenHandler.DB_INTERACT_BASE + slot * 8 + action;
-        this.minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId, id);
+        boolean sentCustomPacket = DBClientPackets.sendGridAction(this.menu.containerId, slot, action);
+        if (CardDatabaseDebug.enabled()) {
+            CardDatabaseDebug.log("[CardDBDebug] client sendDbGridAction container={} slot={} action={} id={} customPacket={} carried={}",
+                    this.menu.containerId, slot, action, id, sentCustomPacket, debugStack(this.menu.getCarried()));
+        }
+        if (!sentCustomPacket) {
+            this.minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId, id);
+            CardDatabaseDebug.log("[CardDBDebug] client sent fallback handleInventoryButtonClick container={} id={}",
+                    this.menu.containerId, id);
+        }
         return true;
+    }
+
+    private static String debugStack(ItemStack stack) {
+        if (stack == null) return "null";
+        if (stack.isEmpty()) return "EMPTY";
+        String name;
+        try {
+            name = stack.getHoverName().getString();
+        } catch (Throwable ignored) {
+            name = "";
+        }
+        return stack.getCount() + "x " + stack.getItem() + (name.isBlank() ? "" : " (" + name + ")");
     }
 
     private boolean shiftDown() {
@@ -397,6 +416,19 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         double mouseX = click.x();
         double mouseY = click.y();
         int button = click.button();
+
+        if (CardDatabaseDebug.enabled() && (button == 0 || button == 1)) {
+            CardDatabaseDebug.log("[CardDBDebug] client mouseClicked button={} simulated={} x={} y={} gridSlot={} overGrid={} overLeftPanel={} shift={} carried={}",
+                    button,
+                    isSimulated,
+                    Math.round(mouseX),
+                    Math.round(mouseY),
+                    dbGridSlotAt(mouseX, mouseY),
+                    isOverDbGrid(mouseX, mouseY),
+                    isOverLeftDbPanel(mouseX, mouseY),
+                    shiftDown(),
+                    debugStack(this.menu.getCarried()));
+        }
 
         if (sortMenuOpen) {
             // If click is NOT on the sort button or any dropdown option, close it
@@ -447,6 +479,19 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         }
         int gridSlot = dbGridSlotAt(mouseX, mouseY);
         if (gridSlot >= 0 && (button == 0 || button == 1)) {
+            if (isSimulated) {
+                if (CardDatabaseDebug.enabled()) {
+                    CardDatabaseDebug.log("[CardDBDebug] client ignored simulated DB grid click button={} x={} y={} gridSlot={} shift={} carried={}",
+                            button,
+                            Math.round(mouseX),
+                            Math.round(mouseY),
+                            gridSlot,
+                            shiftDown(),
+                            debugStack(this.menu.getCarried()));
+                }
+                return true;
+            }
+
             int action;
             if (button == 1) {
                 action = shiftDown()
