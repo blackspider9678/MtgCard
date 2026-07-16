@@ -58,7 +58,12 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenH
     @Override
     public CardStoreScreenHandler.OpenData getScreenOpeningData(ServerPlayer player) {
         UUID playerId = player == null ? null : player.getUUID();
-        return new CardStoreScreenHandler.OpenData(this.worldPosition, getSavedCart(playerId));
+        return new CardStoreScreenHandler.OpenData(
+                this.worldPosition,
+                getSavedCart(playerId),
+                CardStoreScreenHandler.defaultPriceItemId(),
+                CardStoreScreenHandler.defaultPriceBasis()
+        );
     }
 
     @Nullable

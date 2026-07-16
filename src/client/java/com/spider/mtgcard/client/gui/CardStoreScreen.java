@@ -371,6 +371,8 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         this.imageWidth = 352;   // adjust later to match your art
         this.imageHeight = 256;  // includes player inventory area
         this.inventoryLabelY = this.imageHeight - 94;
+        this.priceItemId = handler.priceItemId();
+        this.priceBasis = handler.priceBasis();
         loadSavedCart(handler.initialCart());
     }
 

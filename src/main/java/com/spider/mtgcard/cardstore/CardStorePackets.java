@@ -452,10 +452,6 @@ public final class CardStorePackets {
         if (serverRegistered) return;
         serverRegistered = true;
 
-        var cfg = com.spider.mtgcard.config.MtgcardConfig.get();
-        String priceItemId = cfg.Price_Item;
-        String priceBasis  = cfg.Price_Basis;
-
         ServerPlayNetworking.registerGlobalReceiver(ConfirmPurchaseC2S.ID, (payload, ctx) ->
                 ctx.server().execute(() -> {
                     if (!(ctx.player() instanceof ServerPlayer sp)) return;
@@ -686,7 +682,7 @@ public final class CardStorePackets {
 
             if (q == null || q.trim().isEmpty()) {
                 server.execute(() -> ServerPlayNetworking.send(player,
-                        new SearchPrintsStartS2C(payload.storePos(), reqId, false, "Type a card name.", page, 0, false, priceItemId, priceBasis)));
+                        new SearchPrintsStartS2C(payload.storePos(), reqId, false, "Type a card name.", page, 0, false, currentPriceItemId(), currentPriceBasis())));
                 server.execute(() -> ServerPlayNetworking.send(player,
                         new SearchPrintsDoneS2C(payload.storePos(), reqId, false, "No query.", page, 0, false)));
                 return;
@@ -724,7 +720,7 @@ public final class CardStorePackets {
                         boolean hasMore = total > (offset + pageSize);
 
                         server.execute(() -> ServerPlayNetworking.send(player,
-                                new SearchPrintsStartS2C(payload.storePos(), reqId, true, "Searching…", page, total, hasMore, priceItemId, priceBasis)));
+                                new SearchPrintsStartS2C(payload.storePos(), reqId, true, "Searching…", page, total, hasMore, currentPriceItemId(), currentPriceBasis())));
 
                         ArrayList<SearchPrintsS2C.Entry> customEntries = buildCustomEntries(customPage);
                         server.execute(() -> {
@@ -764,6 +760,14 @@ public final class CardStorePackets {
                                 });
                     });
         });
+    }
+
+    private static String currentPriceItemId() {
+        return CardStoreScreenHandler.defaultPriceItemId();
+    }
+
+    private static String currentPriceBasis() {
+        return CardStoreScreenHandler.defaultPriceBasis();
     }
 
     // -------------------------
