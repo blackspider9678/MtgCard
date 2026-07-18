@@ -1,18 +1,26 @@
 package com.spider.mtgcard.client.command;
 
 import com.spider.mtgcard.deckbox.DeckboxBlockItem;
+import com.spider.mtgcard.deckbox.DeckboxBlockEntity;
+import com.spider.mtgcard.item.ModItemTags;
+import com.spider.mtgcard.util.TcgCardMeta;
+import net.minecraft.core.NonNullList;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtOps;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.BundleContents;
 import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.component.ItemContainerContents;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -31,8 +39,10 @@ import java.util.stream.Stream;
 
 public final class DeckClientIO {
 
-    private static final String MTG_CARD_ID = "mtgcard:card";
     private static final String SEC = "\u00A7";
+    private static final String LEGACY_BLOCK_ENTITY_TAG = "BlockEntityTag";
+    private static final String LEGACY_ITEMS_TAG = "Items";
+    private static final String LEGACY_STACK_TAG = "Stack";
 
     public static void handleExport(String rawName) {
         Minecraft mc = Minecraft.getInstance();
@@ -61,7 +71,7 @@ public final class DeckClientIO {
 
         StringBuilder txtOut = new StringBuilder();
         for (ExportRow r : rows) {
-            if (!r.name().isEmpty()) txtOut.append(r.count()).append(' ').append(r.name()).append('\n');
+            if (!r.name().isEmpty()) txtOut.append(formatTxtRow(r)).append('\n');
         }
 
         StringBuilder csvOut = new StringBuilder();
@@ -145,72 +155,10 @@ public final class DeckClientIO {
     ) {}
 
     private static List<ExportRow> readDeckboxExportRows(ItemStack deckbox) {
-        CustomData comp = deckbox.get(DataComponents.CUSTOM_DATA);
-        if (comp == null) return List.of();
-
-        CompoundTag root = comp.copyTag();
-        if (root == null) return List.of();
-
-        var beTagOpt = root.getCompound("BlockEntityTag");
-        if (beTagOpt.isEmpty()) return List.of();
-
-        var itemsOpt = beTagOpt.get().getList("Items");
-        if (itemsOpt.isEmpty()) return List.of();
-
-        ListTag items = itemsOpt.get();
         Map<String, MutableAgg> agg = new LinkedHashMap<>();
 
-        for (int i = 0; i < items.size(); i++) {
-            if (!(items.get(i) instanceof CompoundTag entry)) continue;
-
-            var stackOpt = entry.getCompound("Stack");
-            if (stackOpt.isEmpty()) continue;
-
-            CompoundTag st = stackOpt.get();
-            String itemId = st.getString("id").orElse("");
-            if (!MTG_CARD_ID.equals(itemId)) continue;
-
-            int count = st.getInt("count").orElse(1);
-
-            var compsOpt = st.getCompound("components");
-            if (compsOpt.isEmpty()) continue;
-            CompoundTag comps = compsOpt.get();
-
-            var customDataOpt = comps.getCompound("minecraft:custom_data");
-            if (customDataOpt.isEmpty()) continue;
-            CompoundTag customData = customDataOpt.get();
-
-            var metaOpt = customData.getCompound("mtg_meta");
-            if (metaOpt.isEmpty()) continue;
-            CompoundTag meta = metaOpt.get();
-
-            String name = meta.getString("name").orElse("");
-            String set = meta.getString("set").orElse("");
-            String collector = meta.getString("collector_number").orElse("");
-            String rarity = meta.getString("rarity").orElse("");
-            String manaCost = meta.getString("mana_cost").orElse("");
-
-            boolean isCustom = meta.getByte("is_custom").orElse((byte) 0) != 0;
-            String mtgUid = meta.getString("mtg_uid").orElse("");
-            String customId = meta.getString("custom_id").orElse("");
-            String idFallback = meta.getString("id").orElse("");
-
-            String id = isCustom
-                    ? (!customId.isEmpty() ? customId : idFallback)
-                    : (!mtgUid.isEmpty() ? mtgUid : idFallback);
-
-            String source = isCustom ? "custom" : "scryfall";
-            String key = source + ":" + (!id.isEmpty() ? id : (name + "|" + set + "|" + collector));
-
-            MutableAgg a = agg.computeIfAbsent(key, k -> new MutableAgg());
-            a.name = pickNonEmpty(a.name, name);
-            a.set = pickNonEmpty(a.set, set);
-            a.collectorNumber = pickNonEmpty(a.collectorNumber, collector);
-            a.id = pickNonEmpty(a.id, id);
-            a.rarity = pickNonEmpty(a.rarity, rarity);
-            a.manaCost = pickNonEmpty(a.manaCost, manaCost);
-            a.source = pickNonEmpty(a.source, source);
-            a.count += Math.max(1, count);
+        for (ItemStack stack : readStoredDeckboxStacks(deckbox)) {
+            collectStack(stack, agg);
         }
 
         return agg.entrySet().stream()
@@ -230,6 +178,124 @@ public final class DeckClientIO {
                 })
                 .sorted(Comparator.comparing(ExportRow::name, String.CASE_INSENSITIVE_ORDER))
                 .collect(Collectors.toList());
+    }
+
+    private static List<ItemStack> readStoredDeckboxStacks(ItemStack deckbox) {
+        java.util.ArrayList<ItemStack> stacks = new java.util.ArrayList<>();
+
+        ItemContainerContents contents = deckbox.get(DataComponents.CONTAINER);
+        if (contents != null) {
+            NonNullList<ItemStack> items = NonNullList.withSize(DeckboxBlockEntity.INVENTORY_SIZE, ItemStack.EMPTY);
+            contents.copyInto(items);
+            for (ItemStack stack : items) {
+                if (stack != null && !stack.isEmpty()) stacks.add(stack.copy());
+            }
+        }
+
+        if (stacks.isEmpty()) {
+            stacks.addAll(readLegacyStoredDeckboxStacks(deckbox));
+        }
+
+        return stacks;
+    }
+
+    private static List<ItemStack> readLegacyStoredDeckboxStacks(ItemStack deckbox) {
+        CustomData comp = deckbox.get(DataComponents.CUSTOM_DATA);
+        if (comp == null) return List.of();
+
+        CompoundTag root = comp.copyTag();
+        if (root == null) return List.of();
+
+        var beTagOpt = root.getCompound(LEGACY_BLOCK_ENTITY_TAG);
+        if (beTagOpt.isEmpty()) return List.of();
+
+        var itemsOpt = beTagOpt.get().getList(LEGACY_ITEMS_TAG);
+        if (itemsOpt.isEmpty()) return List.of();
+
+        java.util.ArrayList<ItemStack> stacks = new java.util.ArrayList<>();
+        ListTag items = itemsOpt.get();
+        for (int i = 0; i < items.size(); i++) {
+            if (!(items.get(i) instanceof CompoundTag entry)) continue;
+
+            ItemStack stack = readLegacyStoredStack(entry);
+            if (!stack.isEmpty()) stacks.add(stack);
+        }
+        return stacks;
+    }
+
+    private static ItemStack readLegacyStoredStack(CompoundTag entry) {
+        var storedStack = entry.getCompound(LEGACY_STACK_TAG);
+        if (storedStack.isPresent()) {
+            return ItemStack.CODEC.parse(NbtOps.INSTANCE, storedStack.get()).result().orElse(ItemStack.EMPTY);
+        }
+
+        return ItemStack.CODEC.parse(NbtOps.INSTANCE, entry).result().orElse(ItemStack.EMPTY);
+    }
+
+    private static void collectStack(ItemStack stack, Map<String, MutableAgg> agg) {
+        if (stack == null || stack.isEmpty()) return;
+
+        if (stack.is(Items.BUNDLE)) {
+            collectBundleContents(stack, agg);
+            return;
+        }
+
+        if (!stack.is(ModItemTags.TCG_CARD)) return;
+
+        TcgCardMeta.Info info = TcgCardMeta.read(stack);
+        if (!info.isMtg()) return;
+
+        String name = info.name().isBlank() ? stack.getHoverName().getString() : info.name();
+        if (name == null || name.isBlank()) return;
+
+        String set = info.set();
+        String collector = info.collectorNumber();
+        String rarity = info.rarity();
+        String manaCost = info.manaCost();
+
+        CompoundTag root = customData(stack);
+        CompoundTag mtg = root.getCompound(TcgCardMeta.MTG_META).orElseGet(CompoundTag::new);
+        String customId = mtg.getString("custom_id").orElse("");
+        boolean isCustom = mtg.getBoolean("is_custom").orElse(false) || !customId.isBlank();
+        String id = info.id();
+        if (isCustom && !customId.isBlank()) id = customId;
+
+        String source = isCustom ? "custom" : "scryfall";
+        String key = source + ":" + (!id.isBlank() ? id : (name + "|" + set + "|" + collector));
+
+        MutableAgg a = agg.computeIfAbsent(key, k -> new MutableAgg());
+        a.name = pickNonEmpty(a.name, name);
+        a.set = pickNonEmpty(a.set, set);
+        a.collectorNumber = pickNonEmpty(a.collectorNumber, collector);
+        a.id = pickNonEmpty(a.id, id);
+        a.rarity = pickNonEmpty(a.rarity, rarity);
+        a.manaCost = pickNonEmpty(a.manaCost, manaCost);
+        a.source = pickNonEmpty(a.source, source);
+        a.count += Math.max(1, stack.getCount());
+    }
+
+    private static void collectBundleContents(ItemStack bundle, Map<String, MutableAgg> agg) {
+        BundleContents contents = bundle.getOrDefault(DataComponents.BUNDLE_CONTENTS, BundleContents.EMPTY);
+        for (ItemStack bundled : contents.items()) {
+            if (bundled != null && !bundled.isEmpty()) collectStack(bundled.copy(), agg);
+        }
+    }
+
+    private static CompoundTag customData(ItemStack stack) {
+        CustomData comp = stack.get(DataComponents.CUSTOM_DATA);
+        return comp == null ? new CompoundTag() : comp.copyTag();
+    }
+
+    private static String formatTxtRow(ExportRow row) {
+        StringBuilder out = new StringBuilder();
+        out.append(row.count()).append(' ').append(row.name());
+        if (!row.set().isBlank()) {
+            out.append(" (").append(row.set()).append(')');
+        }
+        if (!row.collectorNumber().isBlank()) {
+            out.append(' ').append(row.collectorNumber());
+        }
+        return out.toString();
     }
 
     private static final class MutableAgg {
