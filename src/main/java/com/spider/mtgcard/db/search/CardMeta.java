@@ -1,9 +1,8 @@
 // com/spider/mtgcard/db/search/CardMeta.java
 package com.spider.mtgcard.db.search;
 
+import com.spider.mtgcard.util.TcgCardMeta;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
 
 import java.util.HashSet;
 import java.util.Locale;
@@ -26,54 +25,31 @@ public final class CardMeta {
     public static Info read(ItemStack st) {
         if (st == null || st.isEmpty()) return empty();
 
-        // Your helper already normalizes CUSTOM_DATA:
-        CompoundTag root = com.spider.mtgcard.util.StackData.readCustom(st);
-        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
-
-        String name  = meta.getString("name").orElse("");
-        String set   = meta.getString("set").orElse("");
-        String rar   = normRarity(meta.getString("rarity").orElse(""));
-        int mv       = meta.getInt("mana_value").orElseGet(() -> meta.getInt("cmc").orElse(0));
-
-
-        // type / oracle: prefer top-level; fall back to first face if needed
-        String type  = meta.getString("type_line").orElseGet(() -> firstFace(meta, "type_line"));
-        String text  = meta.getString("oracle_text").orElseGet(() -> firstFace(meta, "oracle_text"));
-
-        Set<Character> colors = readColorList(meta.getList("colors").orElse(null));
-        Set<Character> ci     = readColorList(meta.getList("color_identity").orElse(null));
-
-        boolean foil  = root.getBoolean("mtg_foil").orElse(false);
-        boolean token = meta.getBoolean("is_token_like").orElseGet(() -> meta.getBoolean("is_token").orElse(false));
-
-
-        return new Info(name, set, rar, mv, colors, ci, type, text, foil, token);
+        TcgCardMeta.Info meta = TcgCardMeta.read(st);
+        return new Info(
+                meta.name(),
+                meta.set(),
+                normRarity(meta.rarity()),
+                meta.manaValue(),
+                readColorSet(meta.colors()),
+                readColorSet(meta.colorIdentity()),
+                meta.typeLine(),
+                meta.oracleText(),
+                meta.foil(),
+                meta.tokenLike()
+        );
     }
 
-    private static Set<Character> readColorList(ListTag lst) {
+    private static Set<Character> readColorSet(Set<String> colors) {
         Set<Character> out = new HashSet<>();
-        if (lst == null) return out;
-        for (int i = 0; i < lst.size(); i++) {
-            var s = lst.getString(i).orElse("").toUpperCase(Locale.ROOT);
-            if (!s.isEmpty()) {
-                char c = s.charAt(0);
-                if ("WUBRG".indexOf(c) >= 0) out.add(c);
-            }
+        if (colors == null) return out;
+        for (String s : colors) {
+            String value = s == null ? "" : s.toUpperCase(Locale.ROOT);
+            if (value.isEmpty()) continue;
+            char c = value.charAt(0);
+            if ("WUBRG".indexOf(c) >= 0) out.add(c);
         }
         return out;
-    }
-
-    private static String firstFace(CompoundTag meta, String key) {
-        var facesOpt = meta.getList("card_faces");
-        if (facesOpt.isEmpty()) return "";
-        var faces = facesOpt.get();
-        for (int i = 0; i < faces.size(); i++) {
-            var f = faces.getCompound(i).orElse(null);
-            if (f == null) continue;
-            String v = f.getString(key).orElse("");
-            if (!v.isEmpty()) return v;
-        }
-        return "";
     }
 
     private static String normRarity(String r) {

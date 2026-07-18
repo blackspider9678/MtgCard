@@ -1,6 +1,6 @@
 package com.spider.mtgcard.deckbox;
 
-import com.spider.mtgcard.item.ModItems;
+import com.spider.mtgcard.item.ModItemTags;
 import com.spider.mtgcard.screen.ModScreenHandlers;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.player.Inventory;
@@ -156,12 +156,7 @@ public class DeckboxScreenHandler extends AbstractContainerMenu {
     }
 
     private static boolean isCard(ItemStack stack) {
-        // Strict equality against your single Card item
-        return stack.getItem() == ModItems.CARD;
-        // If you don't have ModItems.CARD, replace with your reference, e.g.:
-        // return stack.getItem() == com.spider.mtgcard.items.CardItem.INSTANCE;
-        // or, if you prefer class-based:
-        // return stack.getItem() instanceof com.spider.mtgcard.items.CardItem;
+        return stack.is(ModItemTags.TCG_CARD);
     }
 
     private static class CardOnlySlot extends Slot {

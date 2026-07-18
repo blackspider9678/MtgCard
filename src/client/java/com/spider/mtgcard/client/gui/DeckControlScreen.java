@@ -11,16 +11,15 @@ import com.spider.mtgcard.deckbox.DeckboxBlockEntity;
 import com.spider.mtgcard.deckcontrol.DeckControlBlockEntity;
 import com.spider.mtgcard.deckcontrol.DeckControlPackets;
 import com.spider.mtgcard.deckcontrol.DeckControlScreenHandler;
+import com.spider.mtgcard.util.TcgCardMeta;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.input.KeyEvent;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.network.chat.Component;
@@ -794,7 +793,7 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
         Slot slot = this.hoveredSlot;
         if (slot != null && slot.hasItem() && isMouseOverSlotArea(slot, mouseX, mouseY)) {
             ItemStack st = slot.getItem();
-            if (st.is(com.spider.mtgcard.item.ModItems.CARD)) return st;
+            if (st.is(com.spider.mtgcard.item.ModItemTags.TCG_CARD)) return st;
         }
 
         // 2) CASCADE overlay: hover thumbnails grid (multi-row)
@@ -857,7 +856,7 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
         if (idx < 0 || idx >= stacks.size()) return ItemStack.EMPTY;
 
         ItemStack st = stacks.get(idx);
-        return (st != null && !st.isEmpty() && st.is(com.spider.mtgcard.item.ModItems.CARD)) ? st : ItemStack.EMPTY;
+        return (st != null && !st.isEmpty() && st.is(com.spider.mtgcard.item.ModItemTags.TCG_CARD)) ? st : ItemStack.EMPTY;
     }
 
     private void drawScrySurveilOverlay(GuiGraphics ctx, int mouseX, int mouseY) {
@@ -1280,10 +1279,7 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
     }
 
     private static int readFaceIndex(ItemStack st) {
-        var comp = st.get(DataComponents.CUSTOM_DATA);
-        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
-        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
-        return meta.getInt("mtg_face").orElse(0);
+        return TcgCardMeta.read(st).face();
     }
 
     private void drawCardArtFit(GuiGraphics ctx, ItemStack st, int x, int y, int w, int h) {
@@ -1649,7 +1645,7 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
         if (mouseX < cx || mouseX >= cx + OVER_CARD_W) return ItemStack.EMPTY;
 
         ItemStack st = stacks.get(col);
-        return (st != null && !st.isEmpty() && st.is(com.spider.mtgcard.item.ModItems.CARD)) ? st : ItemStack.EMPTY;
+        return (st != null && !st.isEmpty() && st.is(com.spider.mtgcard.item.ModItemTags.TCG_CARD)) ? st : ItemStack.EMPTY;
     }
 
     private ItemStack hoverRowByOrder(int mouseX, int mouseY, int startX, int startY, int cols, java.util.List<Integer> order) {
@@ -1675,7 +1671,7 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
         if (idx < 0 || idx >= overlayCards.size()) return ItemStack.EMPTY;
 
         ItemStack st = overlayCards.get(idx);
-        return (st != null && !st.isEmpty() && st.is(com.spider.mtgcard.item.ModItems.CARD)) ? st : ItemStack.EMPTY;
+        return (st != null && !st.isEmpty() && st.is(com.spider.mtgcard.item.ModItemTags.TCG_CARD)) ? st : ItemStack.EMPTY;
     }
 
     private boolean isFoil(ItemStack st) {
@@ -1695,7 +1691,7 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
 
     private void renderHoverPreview(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
         ItemStack st = getHoveredCardForPreview(mouseX, mouseY);
-        if (st == null || st.isEmpty() || !st.is(com.spider.mtgcard.item.ModItems.CARD)) {
+        if (st == null || st.isEmpty() || !st.is(com.spider.mtgcard.item.ModItemTags.TCG_CARD)) {
             lastHoverStack = ItemStack.EMPTY;
             lastTexRef = null;
             return;

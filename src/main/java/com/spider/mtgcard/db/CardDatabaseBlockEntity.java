@@ -4,10 +4,10 @@ package com.spider.mtgcard.db;
 import com.spider.mtgcard.registry.ModBlockEntities;
 import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.registry.ModRegistry;
-import com.spider.mtgcard.item.ModItems;
+import com.spider.mtgcard.item.ModItemTags;
+import com.spider.mtgcard.util.TcgCardMeta;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.core.HolderLookup;
@@ -49,7 +49,7 @@ public class CardDatabaseBlockEntity extends BlockEntity {
     private final net.minecraft.world.SimpleContainer window =
             new net.minecraft.world.SimpleContainer(PAGE) {
                 @Override public boolean canPlaceItem(int slot, ItemStack stack) {
-                    return stack.is(ModItems.CARD);
+                    return stack.is(ModItemTags.TCG_CARD);
                 }
                 @Override public void setChanged() {
                     // If *we* are updating the window from code, don't bounce updates back
@@ -106,7 +106,7 @@ public class CardDatabaseBlockEntity extends BlockEntity {
     /** Append a CARD stack to the unbounded intake and refresh the window. (SERVER ONLY) */
     public void appendToIntake(ItemStack stack) {
         if (!(level instanceof ServerLevel)) return;
-        if (stack.isEmpty() || !stack.is(ModItems.CARD)) return;
+        if (stack.isEmpty() || !stack.is(ModItemTags.TCG_CARD)) return;
 
         // were we already showing the bottom-most page?
         boolean anchoredToBottom = (this.windowOffset == getMaxWindowOffset());
@@ -304,7 +304,7 @@ public class CardDatabaseBlockEntity extends BlockEntity {
         boolean any = false;
         for (int i = 0; i < intakeAll.size(); i++) {
             ItemStack st = intakeAll.get(i);
-            if (st.isEmpty() || !st.is(ModItems.CARD)) continue;
+            if (st.isEmpty() || !st.is(ModItemTags.TCG_CARD)) continue;
 
             long moved = st.getCount();
             String key = keyOf(st);
@@ -348,16 +348,9 @@ public class CardDatabaseBlockEntity extends BlockEntity {
     Map<String, Long> snapshot() { return new HashMap<>(store); }
 
     private static String keyOf(ItemStack stack) {
-        var comp = stack.getOrDefault(DataComponents.CUSTOM_DATA, null);
-        var root = (comp == null) ? new net.minecraft.nbt.CompoundTag() : comp.copyTag();
-        var meta = root.getCompound("mtg_meta").orElseGet(net.minecraft.nbt.CompoundTag::new);
-
-        String name = meta.getString("name").orElse("");
-        String set  = meta.getString("set").orElse("");
-        String col  = meta.getString("collector_number").orElse("");
-        boolean foil = root.getCompound("mtg_flags").map(n -> n.getBoolean("mtg_foil").orElse(false)).orElse(false);
-
-        return (set + "|" + col + "|" + (foil ? "F" : "N") + "|" + name).trim();
+        TcgCardMeta.Info meta = TcgCardMeta.read(stack);
+        return (meta.game() + "|" + meta.set() + "|" + meta.collectorNumber() + "|"
+                + (meta.foil() ? "F" : "N") + "|" + meta.name()).trim();
     }
 
     @Override

@@ -165,17 +165,12 @@ public final class ModPayloads {
                 var st = player.getInventory().getItem(slot);
                 if (st.isEmpty()) return;
 
-                // write mtg_face into CUSTOM_DATA -> mtg_meta
                 var comp = st.get(DataComponents.CUSTOM_DATA);
                 CompoundTag root = (comp == null)
                         ? new CompoundTag()
                         : comp.copyTag();
 
-                CompoundTag meta = root.getCompound("mtg_meta")
-                        .orElseGet(CompoundTag::new);
-
-                meta.putInt("mtg_face", Math.max(0, face));
-                root.put("mtg_meta", meta);
+                com.spider.mtgcard.util.TcgCardMeta.writeFace(root, face);
 
                 st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
 
@@ -479,17 +474,14 @@ public final class ModPayloads {
     }
 
     private static int readFaceIndex(net.minecraft.world.item.ItemStack st) {
-        var meta = getMeta(st);
-        return meta.getInt("mtg_face").orElse(0);
+        return com.spider.mtgcard.util.TcgCardMeta.read(st).face();
     }
 
     private static void writeFaceIndex(net.minecraft.world.item.ItemStack st, int idx) {
         var comp = st.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
         net.minecraft.nbt.CompoundTag root = (comp == null) ? new net.minecraft.nbt.CompoundTag() : comp.copyTag();
-        net.minecraft.nbt.CompoundTag meta = root.getCompound("mtg_meta").orElseGet(net.minecraft.nbt.CompoundTag::new);
 
-        meta.putInt("mtg_face", idx);
-        root.put("mtg_meta", meta);
+        com.spider.mtgcard.util.TcgCardMeta.writeFace(root, idx);
 
         st.set(net.minecraft.core.component.DataComponents.CUSTOM_DATA, net.minecraft.world.item.component.CustomData.of(root));
     }

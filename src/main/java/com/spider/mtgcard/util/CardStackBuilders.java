@@ -48,6 +48,7 @@ public final class CardStackBuilders {
 
         CompoundTag root = new CompoundTag();
         root.put("mtg_meta", meta);
+        TcgCardMeta.mirrorMtgToTcg(root);
         card.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
 
         // ✅ Give ID-only customs a visible debug name (since no meta.name here)
@@ -104,6 +105,7 @@ public final class CardStackBuilders {
 
         CompoundTag root = new CompoundTag();
         root.put("mtg_meta", meta);
+        TcgCardMeta.mirrorMtgToTcg(root);
         card.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
 
         // ✅ IMPORTANT: give it a visible name so it’s not just "Card"
@@ -259,6 +261,7 @@ public final class CardStackBuilders {
 
         CompoundTag root = new CompoundTag();
         root.put("mtg_meta", meta);
+        TcgCardMeta.mirrorMtgToTcg(root);
         card.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
 
         applyColoredNameIfUnset(card, c.name, c.rarity);

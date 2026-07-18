@@ -6,6 +6,7 @@ import com.spider.mtgcard.registry.ModBlockEntities;
 import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.db.search.CardMeta;
 import com.spider.mtgcard.deckbox.DeckboxBlockEntity;
+import com.spider.mtgcard.item.ModItemTags;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
 import net.minecraft.core.BlockPos;
@@ -438,7 +439,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedScree
         ItemStack st = player.getInventory().getItem(playerInvSlot);
         if (st.isEmpty()) return false;
 
-        if (!st.is(com.spider.mtgcard.item.ModItems.CARD)) return false;
+        if (!st.is(ModItemTags.TCG_CARD)) return false;
 
         int empty = -1;
         for (int i = 0; i < LIBRARY_SLOTS; i++) {

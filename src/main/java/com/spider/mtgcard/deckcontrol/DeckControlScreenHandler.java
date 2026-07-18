@@ -1,5 +1,6 @@
 package com.spider.mtgcard.deckcontrol;
 
+import com.spider.mtgcard.item.ModItemTags;
 import com.spider.mtgcard.screen.ModScreenHandlers;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.player.Inventory;
@@ -128,7 +129,7 @@ public class DeckControlScreenHandler extends AbstractContainerMenu {
 
     public boolean isCardItem(ItemStack st) {
         return st != null && !st.isEmpty()
-                && st.is(com.spider.mtgcard.item.ModItems.CARD);
+                && st.is(ModItemTags.TCG_CARD);
     }
 
     public BlockPos getPos() {

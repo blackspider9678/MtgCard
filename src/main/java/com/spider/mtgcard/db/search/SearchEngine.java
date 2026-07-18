@@ -1,8 +1,7 @@
 package com.spider.mtgcard.db.search;
 
+import com.spider.mtgcard.util.TcgCardMeta;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
 
 import java.util.*;
 import java.util.function.Predicate;
@@ -80,77 +79,47 @@ public final class SearchEngine {
 
     /* ------------ Row extraction from NBT (matches CardNBTUtil) ------------- */
     public static Row toRow(ItemStack st) {
-        var comp = st.getOrDefault(net.minecraft.core.component.DataComponents.CUSTOM_DATA, null);
-        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
-        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
-
-        String name = meta.getString("name").orElse("");
-        String set  = meta.getString("set").orElse("");
+        TcgCardMeta.Info meta = TcgCardMeta.read(st);
 
         // rarity normalization -> common|uncommon|rare|mythic (your sorter also accepts c/u/r/m)
-        String rarRaw = meta.getString("rarity").orElse("");
-        String rarity = normalizeRarity(rarRaw);
+        String rarity = normalizeRarity(meta.rarity());
 
         // prefer meta.type_line; fall back to first face.type_line if missing
-        String type = meta.getString("type_line").orElse("");
-        if (type.isEmpty()) type = firstFace(meta, "type_line");
+        String type = meta.typeLine();
 
         // mv comes from "cmc" (your writer uses meta.putInt("cmc", ...))
-        int mv = meta.getInt("cmc").orElse(0);
+        int mv = meta.manaValue();
 
         // colors & color_identity are NbtList of strings like "W","U","B","R","G"
-        Set<String> cols = readColors(meta.getList("colors").orElse(null));
-        Set<String> cid  = readColors(meta.getList("color_identity").orElse(null));
+        Set<String> cols = normalizeColors(meta.colors());
+        Set<String> cid  = normalizeColors(meta.colorIdentity());
 
         // flags
-        boolean foil      = root.getBoolean("mtg_foil").orElse(false);
-        boolean tokenLike = meta.getBoolean("is_token").orElse(false);
+        boolean foil      = meta.foil();
+        boolean tokenLike = meta.tokenLike();
 
         // --- price (best-effort) ---
         // Pick ONE canonical storage key in your writer if you can.
         // These reads are defensive so it won’t crash if you change formats.
-        double priceUsd = Double.NaN;
+        double priceUsd = meta.priceUsd();
 
         // common patterns:
-        priceUsd = readDouble(meta, "usd", Double.NaN);              // e.g. meta.usd = "1.23" or 1.23
-        if (Double.isNaN(priceUsd)) priceUsd = readDouble(meta, "price_usd", Double.NaN);
-        if (Double.isNaN(priceUsd)) priceUsd = readDouble(meta, "price", Double.NaN);
-
         // --- power/toughness (prefer meta; fallback to face 0) ---
-        String power = meta.getString("power").orElse("");
-        if (power.isEmpty()) power = firstFace(meta, "power");
+        String power = meta.power();
+        String toughness = meta.toughness();
 
-        String toughness = meta.getString("toughness").orElse("");
-        if (toughness.isEmpty()) toughness = firstFace(meta, "toughness");
-
-        return new Row(st, name, set, rarity, type, cols, cid, mv, foil, tokenLike, priceUsd, power, toughness);
+        return new Row(st, meta.name(), meta.set(), rarity, type, cols, cid, mv, foil, tokenLike, priceUsd, power, toughness);
 
     }
 
-    private static Set<String> readColors(ListTag lst) {
+    private static Set<String> normalizeColors(Set<String> colors) {
+        if (colors == null || colors.isEmpty()) return Set.of();
         Set<String> out = new HashSet<>();
-        if (lst == null) return out;
-        for (int i = 0; i < lst.size(); i++) {
-            String s = lst.getString(i).orElse("").trim().toUpperCase(Locale.ROOT);
-            if (!s.isEmpty()) {
-                // store as single-letter tokens "W","U","B","R","G"
-                out.add(String.valueOf(s.charAt(0)));
-            }
+        for (String color : colors) {
+            String value = color == null ? "" : color.trim().toUpperCase(Locale.ROOT);
+            if (!value.isEmpty()) out.add(String.valueOf(value.charAt(0)));
         }
         return out;
-    }
-
-    private static String firstFace(CompoundTag meta, String key) {
-        var facesOpt = meta.getList("card_faces");
-        if (facesOpt.isEmpty()) return "";
-        var faces = facesOpt.get();
-        for (int i = 0; i < faces.size(); i++) {
-            var f = faces.getCompound(i).orElse(null);
-            if (f == null) continue;
-            String v = f.getString(key).orElse("");
-            if (!v.isEmpty()) return v;
-        }
-        return "";
     }
 
     private static String normalizeRarity(String r) {
@@ -664,24 +633,4 @@ public final class SearchEngine {
         return out;
     }
 
-    private static double readDouble(CompoundTag nbt, String key, double def) {
-        if (nbt == null || key == null) return def;
-
-        // If stored as string
-        var sOpt = nbt.getString(key);
-        if (sOpt.isPresent()) {
-            String s = sOpt.get().trim();
-            if (s.isEmpty()) return def;
-            try { return Double.parseDouble(s); } catch (Exception ignore) {}
-        }
-
-        // If stored as number (int/float/double)
-        var dOpt = nbt.getDouble(key);
-        if (dOpt.isPresent()) return dOpt.get();
-
-        var iOpt = nbt.getInt(key);
-        if (iOpt.isPresent()) return (double) iOpt.get();
-
-        return def;
-    }
 }

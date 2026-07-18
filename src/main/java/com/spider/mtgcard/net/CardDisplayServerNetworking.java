@@ -2,6 +2,7 @@ package com.spider.mtgcard.net;
 
 import com.spider.mtgcard.display.CardDisplayEntity;
 import com.spider.mtgcard.net.payload.CardDisplayPayloads;
+import com.spider.mtgcard.util.TcgCardMeta;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.component.CustomData;
@@ -81,12 +82,9 @@ public final class CardDisplayServerNetworking {
     }
 
     private static void setFace(ItemStack st, int faceIdx) {
-        CompoundTag meta = getOrCreateMeta(st);
-        meta.putInt("mtg_face", Math.max(0, faceIdx));
-
         var comp = st.get(DataComponents.CUSTOM_DATA);
         CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
-        root.put("mtg_meta", meta);
+        TcgCardMeta.writeFace(root, faceIdx);
         st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
     }
 

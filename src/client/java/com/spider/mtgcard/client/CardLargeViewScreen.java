@@ -7,6 +7,7 @@ import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.net.payload.SetCounterMetaPayload;
 import com.spider.mtgcard.net.payload.SetCounterValuePayload;
 import com.spider.mtgcard.net.payload.SetFacePayload;
+import com.spider.mtgcard.util.TcgCardMeta;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -2487,25 +2488,17 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
     // ------------------------------------------------------------
 
     private static int readFaceIndex(ItemStack st) {
-        CompoundTag meta = getMeta(st);
-        return meta.getInt("mtg_face").orElse(0);
+        return TcgCardMeta.read(st).face();
     }
 
     private static int readFaceCount(ItemStack st) {
-        CompoundTag meta = getMeta(st);
-
-        Tag el = meta.get("card_faces");
-        if (el instanceof ListTag list) return Math.max(1, list.size());
-        return 1;
+        return TcgCardMeta.faceCount(st);
     }
 
     private static void writeFaceIndex(ItemStack st, int idx) {
         var comp = st.get(DataComponents.CUSTOM_DATA);
         CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
-        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
-
-        meta.putInt("mtg_face", idx);
-        root.put("mtg_meta", meta);
+        TcgCardMeta.writeFace(root, idx);
 
         st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
     }

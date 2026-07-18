@@ -3,11 +3,10 @@ package com.spider.mtgcard.item;
 import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.display.CardDisplayEntity;
-import com.spider.mtgcard.util.StackData;
+import com.spider.mtgcard.util.TcgCardMeta;
 import java.util.function.Consumer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -28,24 +27,9 @@ public class CardItem extends Item {
         INSTANCE = this;
     }
 
-    // --- helpers to unwrap optionals from your NBT API ---
-    private static boolean getBool(CompoundTag tag, String key) {
-        return tag.getBoolean(key).orElse(false);
-    }
-    private static String getStr(CompoundTag tag, String key) {
-        return tag.getString(key).orElse("");
-    }
-    private static int getInt(CompoundTag tag, String key) {
-        return tag.getInt(key).orElse(0);
-    }
-    private static CompoundTag getCmp(CompoundTag tag, String key) {
-        return tag.getCompound(key).orElseGet(CompoundTag::new);
-    }
-
     @Override
     public boolean isFoil(ItemStack stack) {
-        CompoundTag root = StackData.readCustom(stack);
-        return getBool(root, "mtg_foil") || super.isFoil(stack);
+        return TcgCardMeta.read(stack).foil() || super.isFoil(stack);
     }
 
     @Override
@@ -54,10 +38,7 @@ public class CardItem extends Item {
         if (custom != null) return custom;
 
         // ✅ Use the same normalized reader as the rest of your codebase
-        CompoundTag root = StackData.readCustom(stack);
-        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
-
-        String name = meta.getString("name").orElse("");
+        String name = TcgCardMeta.read(stack).name();
         if (!name.isEmpty()) return Component.literal(name);
 
         return super.getName(stack);
@@ -67,14 +48,10 @@ public class CardItem extends Item {
     public void appendHoverText(ItemStack stack, TooltipContext context, TooltipDisplay displayComponent,
                               Consumer<Component> textConsumer, TooltipFlag type) {
 
-        CompoundTag root = StackData.readCustom(stack);
-        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
-
-        String name = meta.getString("name").orElse("");
-        String set  = meta.getString("set").orElse("");
-        String num  = meta.getString("collector_number").orElse("");
-
-        boolean foil = root.getBoolean("mtg_foil").orElse(false);
+        TcgCardMeta.Info meta = TcgCardMeta.read(stack);
+        String set  = meta.set();
+        String num  = meta.collectorNumber();
+        boolean foil = meta.foil();
 
         if (!set.isEmpty() || !num.isEmpty()) {
             String line = (set.isEmpty() ? "" : set.toUpperCase())

@@ -2,7 +2,7 @@
 package com.spider.mtgcard.db;
 
 import com.spider.mtgcard.db.search.SearchEngine;
-import com.spider.mtgcard.item.ModItems;
+import com.spider.mtgcard.item.ModItemTags;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
@@ -84,7 +84,7 @@ public final class CardDBSession implements CardDBView {
     private final net.minecraft.world.SimpleContainer window =
             new net.minecraft.world.SimpleContainer(54) {
                 @Override public boolean canPlaceItem(int slot, ItemStack stack) {
-                    return stack.is(ModItems.CARD);
+                    return stack.is(ModItemTags.TCG_CARD);
                 }
                 @Override
                 public void setChanged() {
@@ -331,7 +331,7 @@ public final class CardDBSession implements CardDBView {
         int added = 0;
 
         for (ItemStack stack : stacks) {
-            if (stack == null || stack.isEmpty() || !stack.is(ModItems.CARD)) continue;
+            if (stack == null || stack.isEmpty() || !stack.is(ModItemTags.TCG_CARD)) continue;
 
             ItemStack copy = stack.copy();
             ensureUid(copy);

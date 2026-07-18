@@ -40,11 +40,7 @@ public final class StackData {
 
         var comp = st.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY);
         CompoundTag root = comp.copyTag();
-        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
-
-        meta.putInt("mtg_face", Math.max(0, face));
-
-        root.put("mtg_meta", meta);
+        TcgCardMeta.writeFace(root, face);
         st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
     }
 

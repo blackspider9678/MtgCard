@@ -4,6 +4,7 @@ import com.spider.mtgcard.client.compat.LegacyContainerScreen;
 import com.spider.mtgcard.client.compat.MtgGuiScaleHelper;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.client.net.DBClientPackets;
+import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.db.CardDatabaseDebug;
 import com.spider.mtgcard.db.CardDatabaseScreenHandler;
 import net.minecraft.client.gui.GuiGraphics;
@@ -76,6 +77,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
     private int rightPanelY() { return this.topPos; }
 
     private Button btnStoreAll;
+    private Button btnGame;
     private Button btnRoute;
 
     private boolean suppressSearchListener = false;
@@ -88,6 +90,9 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
     private Button btnSort;
     private boolean sortMenuOpen = false;
     private final java.util.List<Button> sortMenuButtons = new java.util.ArrayList<>();
+
+    private boolean gameMenuOpen = false;
+    private final java.util.List<Button> gameMenuButtons = new java.util.ArrayList<>();
 
     private static final SortOpt[] SORT_OPTS = {
             new SortOpt("Name",       "name"),
@@ -148,6 +153,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         super.containerTick();
         maybeFireAutoSearch();
         syncClientSortState();
+        syncClientGameState();
 
         if (btnRoute != null) {
             boolean hasDeckbox = H().getClientDeckboxCount() > 0;
@@ -170,6 +176,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
 
         // If a dropdown is open and we re-init (resize), close it
         closeSortMenu();
+        closeGameMenu();
 
         // ----------------------------
         // Scrollbar geometry (left panel)
@@ -234,6 +241,12 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         });
         this.btnStoreAll.setMessage(Component.literal(STORE_ALL_GLYPH));
 
+        // Game filter dropdown, shown only when an addon registers another game.
+        this.btnGame = null;
+        if (TcgGameRegistry.hasMultipleGames()) {
+            this.btnGame = addGutterButton(gx, gy + (row++ * step), TcgGameRegistry.shortLabel(H().getClientGameFilter()), "Card game filter", this::toggleGameMenu);
+        }
+
         // Sort dropdown
         this.btnSort = addGutterButton(gx, gy + (row++ * step), "S", "Sort options", this::toggleSortMenu);
 
@@ -280,6 +293,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         }
 
         syncClientSortState();
+        syncClientGameState();
     }
 
 
@@ -290,6 +304,12 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
     private void syncClientSortState() {
         this.orderKey = H().getClientSortOrder();
         this.dirAsc = H().isClientSortAscending();
+    }
+
+    private void syncClientGameState() {
+        if (btnGame != null) {
+            btnGame.setMessage(Component.literal(TcgGameRegistry.shortLabel(H().getClientGameFilter())));
+        }
     }
 
     private int getScrollContentCount() {
@@ -439,6 +459,17 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
             }
             if (!overSort && !overAny) {
                 closeSortMenu();
+            }
+        }
+
+        if (gameMenuOpen) {
+            boolean overGame = (btnGame != null && btnGame.isMouseOver(click.x(), click.y()));
+            boolean overAny = false;
+            for (var b : gameMenuButtons) {
+                if (b != null && b.isMouseOver(click.x(), click.y())) { overAny = true; break; }
+            }
+            if (!overGame && !overAny) {
+                closeGameMenu();
             }
         }
 
@@ -640,7 +671,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         }
 
         ItemStack st = slot.getItem();
-        if (!st.is(com.spider.mtgcard.item.ModItems.CARD)) {
+        if (!st.is(com.spider.mtgcard.item.ModItemTags.TCG_CARD)) {
             lastHoverStack = ItemStack.EMPTY;
             lastTexRef = null;
             return;
@@ -942,6 +973,62 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         return b;
     }
 
+    private void toggleGameMenu() {
+        if (gameMenuOpen) closeGameMenu();
+        else openGameMenu();
+    }
+
+    private void openGameMenu() {
+        if (this.btnGame == null) return;
+        closeGameMenu();
+        closeSortMenu();
+
+        java.util.List<TcgGameRegistry.Entry> options = TcgGameRegistry.filterOptions();
+        final int rowH = 16;
+        final int w = 96;
+        final int hTotal = options.size() * rowH;
+
+        int x0 = this.btnGame.getX() - 4 - w;
+        int y0 = this.btnGame.getY();
+
+        int minX = 4;
+        int maxX = this.width - w - 4;
+        int minY = 4;
+        int maxY = this.height - hTotal - 4;
+
+        x0 = clamp(x0, minX, maxX);
+        y0 = clamp(y0, minY, maxY);
+
+        for (int i = 0; i < options.size(); i++) {
+            TcgGameRegistry.Entry opt = options.get(i);
+            int optionIndex = i;
+            Button b = Button.builder(opt.label(), btn -> {
+                if (this.minecraft != null && this.minecraft.gameMode != null) {
+                    this.minecraft.gameMode.handleInventoryButtonClick(
+                            this.menu.containerId,
+                            CardDatabaseScreenHandler.GAME_FILTER_BASE + optionIndex
+                    );
+                }
+                closeGameMenu();
+            }).bounds(x0, y0 + i * rowH, w, rowH).build();
+
+            gameMenuButtons.add(b);
+            this.addRenderableWidget(b);
+        }
+
+        gameMenuOpen = true;
+    }
+
+    private void closeGameMenu() {
+        if (!gameMenuButtons.isEmpty()) {
+            for (var b : gameMenuButtons) {
+                this.removeWidget(b);
+            }
+            gameMenuButtons.clear();
+        }
+        gameMenuOpen = false;
+    }
+
     private void toggleSortMenu() {
         if (sortMenuOpen) closeSortMenu();
         else openSortMenu();
@@ -950,6 +1037,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
     private void openSortMenu() {
         if (this.btnSort == null) return;
         closeSortMenu(); // safety
+        closeGameMenu();
 
         final int rowH = 16;
         final int w = 96;
