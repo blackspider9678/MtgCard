@@ -2,12 +2,13 @@ package com.spider.mtgcard.net;
 
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.config.ImportPerms;
+import com.spider.mtgcard.shared.CardArtCommon;
+import com.spider.mtgcard.shared.MtgCardPaths;
 import com.spider.mtgcard.util.ArtImageStorage;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.level.storage.LevelResource;
 
 import java.nio.file.Path;
 import java.util.Locale;
@@ -33,6 +34,7 @@ public final class CustomArtUploadServer {
     private static final class Upload {
         final UUID playerId;
         final String artKey;
+        final String setCode;
         final String ext;
         final int totalBytes;
         final int totalChunks;
@@ -40,9 +42,10 @@ public final class CustomArtUploadServer {
         int received = 0;
         long lastTouchMs = System.currentTimeMillis();
 
-        Upload(UUID playerId, String artKey, String ext, int totalBytes, int totalChunks) {
+        Upload(UUID playerId, String artKey, String setCode, String ext, int totalBytes, int totalChunks) {
             this.playerId = playerId;
             this.artKey = artKey;
+            this.setCode = setCode;
             this.ext = ext;
             this.totalBytes = totalBytes;
             this.totalChunks = totalChunks;
@@ -82,7 +85,8 @@ public final class CustomArtUploadServer {
         }
 
         String ext = safeExt(payload.ext());
-        ACTIVE.put(payload.uploadId(), new Upload(playerId, artKey, ext, payload.totalBytes(), payload.totalChunks()));
+        String setCode = MtgCardPaths.sanitizeSetFolder(payload.setCode());
+        ACTIVE.put(payload.uploadId(), new Upload(playerId, artKey, setCode, ext, payload.totalBytes(), payload.totalChunks()));
     }
 
     public static void handleChunk(CustomCardPackets.CustomArtChunk payload, ServerPlayer player) {
@@ -139,10 +143,11 @@ public final class CustomArtUploadServer {
 
         byte[][] chunks = upload.chunks;
         String artKey = upload.artKey;
+        String setCode = upload.setCode;
         String ext = upload.ext;
         UUID playerId = player.getUUID();
         String playerName = player.getName().getString();
-        Path dir = server.getWorldPath(LevelResource.ROOT).resolve("mtgcard").resolve("art");
+        Path dir = MtgCardPaths.customArtDir(server, setCode);
         final int totalBytes = total;
 
         ART_WRITE_EXECUTOR.execute(() -> {
@@ -177,7 +182,7 @@ public final class CustomArtUploadServer {
 
                 server.execute(() -> {
                     for (ServerPlayer current : server.getPlayerList().getPlayers()) {
-                        ServerPlayNetworking.send(current, new CustomCardPackets.CustomArtReady(artKey));
+                        ServerPlayNetworking.send(current, new CustomCardPackets.CustomArtReady(artKey, setCode));
                     }
                 });
             } catch (Throwable t) {
@@ -214,11 +219,7 @@ public final class CustomArtUploadServer {
             return "";
         }
 
-        key = key.trim().toLowerCase(Locale.ROOT);
-        if (key.length() > 128) {
-            key = key.substring(0, 128);
-        }
-        key = key.replaceAll("[^a-z0-9_\\-\\.]", "_");
+        key = CardArtCommon.sanitizeArtKey(key);
 
         if (!key.startsWith("custom_") && key.matches("[0-9a-f]{32}_f[01]")) {
             key = "custom_" + key;

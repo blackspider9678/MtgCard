@@ -12,13 +12,15 @@ public final class ArtPackets {
     public static final Identifier REQ_ID = Identifier.fromNamespaceAndPath("mtgcard", "art_req");
     public static final Identifier CHUNK_ID = Identifier.fromNamespaceAndPath("mtgcard", "art_chunk");
 
-    public record ArtRequest(String artKey, String url) implements CustomPacketPayload {
+    public record ArtRequest(String artKey, String url, String fallbackKeys, String setCode) implements CustomPacketPayload {
         public static final Type<ArtRequest> ID = new Type<>(REQ_ID);
 
         public static final StreamCodec<RegistryFriendlyByteBuf, ArtRequest> CODEC =
                 StreamCodec.composite(
                         ByteBufCodecs.STRING_UTF8, ArtRequest::artKey,
                         ByteBufCodecs.STRING_UTF8, ArtRequest::url,
+                        ByteBufCodecs.STRING_UTF8, ArtRequest::fallbackKeys,
+                        ByteBufCodecs.STRING_UTF8, ArtRequest::setCode,
                         ArtRequest::new
                 );
 

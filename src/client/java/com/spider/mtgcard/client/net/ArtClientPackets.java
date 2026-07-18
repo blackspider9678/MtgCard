@@ -78,8 +78,9 @@ public final class ArtClientPackets {
         );
         ClientPlayNetworking.registerGlobalReceiver(CustomCardPackets.CustomArtReady.ID, (payload, ctx) -> {
             String key = payload.artKey();
+            String setCode = payload.setCode();
             ctx.client().execute(() -> {
-                com.spider.mtgcard.client.java.CardArtManager.refreshWorldArt(key);
+                com.spider.mtgcard.client.java.CardArtManager.refreshWorldArt(key, setCode);
             });
         });
         ClientPlayNetworking.registerGlobalReceiver(CustomCardPackets.CustomArtInvalidate.ID, (payload, ctx) -> {

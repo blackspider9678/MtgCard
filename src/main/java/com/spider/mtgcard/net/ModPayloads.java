@@ -6,6 +6,7 @@ import com.spider.mtgcard.cardstore.CardStorePackets;
 import com.spider.mtgcard.content.pack.PackProgressBars;
 import com.spider.mtgcard.graveyard.GraveyardBlockEntity;
 import com.spider.mtgcard.net.payload.*;
+import com.spider.mtgcard.shared.MtgCardPaths;
 import com.spider.mtgcard.util.ArtImageStorage;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
@@ -300,10 +301,10 @@ public final class ModPayloads {
             byte[] imageBytes = payload.imgBytes();
             String fileName = payload.fileName();
             String sourceUrl = payload.sourceUrl();
+            String setCode = payload.setCode();
             UUID playerId = player.getUUID();
 
             server.execute(() -> {
-                Path worldRoot = resolveWorldRoot(server);
                 XML_ART_EXECUTOR.execute(() -> {
                     Path savedFile = null;
                     try {
@@ -337,7 +338,7 @@ public final class ModPayloads {
                         safe = stem + "_" + hex + ext;
                     }
 
-                    Path artDir = worldRoot.resolve("mtgcard").resolve("art");
+                    Path artDir = MtgCardPaths.customArtDir(server, setCode);
                     Files.createDirectories(artDir);
 
                     Path out = artDir.resolve(safe);

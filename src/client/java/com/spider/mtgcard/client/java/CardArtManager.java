@@ -2,6 +2,8 @@ package com.spider.mtgcard.client.java;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
+import com.spider.mtgcard.shared.CardArtCommon;
+import com.spider.mtgcard.shared.MtgCardPaths;
 import com.spider.mtgcard.util.StackData;
 import net.minecraft.client.Minecraft;
 import com.mojang.blaze3d.platform.NativeImage;
@@ -20,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -31,7 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * CardArtManager — unchanged public API.
  * - Supports custom world art (mtg_meta.world_art_front/world_art_back) for custom cards.
  * - Still supports Scryfall URLs (image_png/card_faces[i].image_png).
- * - Writes art-index.json in integrated server; in remote MP we rely on server pushes.
+ * - Writes art_index.json in integrated server; in remote MP we rely on server pushes.
  *
  * NEW:
  * - Requests are QUEUED and sent gradually (one-by-one / rate-limited) to avoid spamming 80 at once.
@@ -42,6 +45,7 @@ public final class CardArtManager {
 
     private static final Map<String, TextureRef> TEX = new ConcurrentHashMap<>();
     private static final ConcurrentMap<String, String> DISK_INDEX = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, String> ART_SET_INDEX = new ConcurrentHashMap<>();
     private static final ExecutorService IO = Executors.newFixedThreadPool(2, r -> {
         Thread t = new Thread(r, "mtg-card-textures");
         t.setDaemon(true);
@@ -56,7 +60,7 @@ public final class CardArtManager {
     // -----------------------
     // NEW: request queue
     // -----------------------
-    private record PendingReq(String artKey, String url, String fileName) {}
+    private record PendingReq(String artKey, String url, String fileName, String fallbackKeys, String setCode) {}
 
     private static final ConcurrentLinkedQueue<PendingReq> PENDING = new ConcurrentLinkedQueue<>();
     private static final Set<String> QUEUED = ConcurrentHashMap.newKeySet();
@@ -81,6 +85,16 @@ public final class CardArtManager {
 
     /** Enqueue a request (deduped). The actual packet send happens in pumpQueue(). */
     private static void enqueueRequest(String artKey, String url, String fileName) {
+        enqueueRequest(artKey, url, fileName, "", "");
+    }
+
+    /** Enqueue a request (deduped). The actual packet send happens in pumpQueue(). */
+    private static void enqueueRequest(String artKey, String url, String fileName, String fallbackKeys) {
+        enqueueRequest(artKey, url, fileName, fallbackKeys, "");
+    }
+
+    /** Enqueue a request (deduped). The actual packet send happens in pumpQueue(). */
+    private static void enqueueRequest(String artKey, String url, String fileName, String fallbackKeys, String setCode) {
         if (artKey == null || artKey.isBlank()) return;
 
         // If it's already queued, do nothing
@@ -91,8 +105,17 @@ public final class CardArtManager {
             DISK_INDEX.putIfAbsent(artKey, fileName);
             saveIndexAsync();
         }
+        if (setCode != null && !setCode.isBlank()) {
+            ART_SET_INDEX.put(artKey, MtgCardPaths.sanitizeSetFolder(setCode));
+        }
 
-        PENDING.add(new PendingReq(artKey, url == null ? "" : url, fileName == null ? "" : fileName));
+        PENDING.add(new PendingReq(
+                artKey,
+                url == null ? "" : url,
+                fileName == null ? "" : fileName,
+                fallbackKeys == null ? "" : fallbackKeys,
+                setCode == null ? "" : setCode
+        ));
     }
 
     /**
@@ -122,7 +145,7 @@ public final class CardArtManager {
 
             // send request packet (server will fetch & respond)
             net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(
-                    new com.spider.mtgcard.net.ArtPackets.ArtRequest(req.artKey(), req.url())
+                    new com.spider.mtgcard.net.ArtPackets.ArtRequest(req.artKey(), req.url(), req.fallbackKeys(), req.setCode())
             );
 
             started++;
@@ -142,27 +165,64 @@ public final class CardArtManager {
 
     /**
      * Cache dir:
-     * - Integrated server (SP/LAN): <world>/mtgcard/art
-     * - Remote MP client: <runDir>/mtgcard/art/<server-address or level-name>
+     * - Integrated server (SP/LAN): <world>/mtgcard/mtg/main_art
+     * - Remote MP client: <runDir>/mtgcard/mtg/main_art/<server-address or level-name>
      */
     public static Path cacheDir() {
+        return mainArtCacheDir();
+    }
+
+    private static Path mainArtCacheDir() {
         var mc = Minecraft.getInstance();
         if (isIntegrated(mc)) {
             Path root = mc.getSingleplayerServer().getWorldPath(LevelResource.ROOT);
-            Path dir = root.resolve("mtgcard").resolve("art");
+            Path dir = root.resolve("mtgcard").resolve("mtg").resolve("main_art");
             try { Files.createDirectories(dir); } catch (Exception ignored) {}
             return dir;
         }
         var game = mc.gameDirectory.toPath();
+        var dir = game.resolve("mtgcard").resolve("mtg").resolve("main_art").resolve(cacheScope(mc));
+        try { Files.createDirectories(dir); } catch (Exception ignored) {}
+        return dir;
+    }
+
+    private static Path customArtRoot() {
+        var mc = Minecraft.getInstance();
+        if (isIntegrated(mc)) {
+            Path root = mc.getSingleplayerServer().getWorldPath(LevelResource.ROOT);
+            Path dir = root.resolve("mtgcard").resolve("mtg").resolve("custom_art");
+            try { Files.createDirectories(dir); } catch (Exception ignored) {}
+            return dir;
+        }
+        var game = mc.gameDirectory.toPath();
+        Path dir = game.resolve("mtgcard").resolve("mtg").resolve("custom_art").resolve(cacheScope(mc));
+        try { Files.createDirectories(dir); } catch (Exception ignored) {}
+        return dir;
+    }
+
+    private static Path customArtDir(String setCode) {
+        Path dir = customArtRoot().resolve(MtgCardPaths.sanitizeSetFolder(setCode));
+        try { Files.createDirectories(dir); } catch (Exception ignored) {}
+        return dir;
+    }
+
+    private static Path legacyArtCacheDir() {
+        var mc = Minecraft.getInstance();
+        if (isIntegrated(mc)) {
+            Path root = mc.getSingleplayerServer().getWorldPath(LevelResource.ROOT);
+            return root.resolve("mtgcard").resolve("art");
+        }
+        return mc.gameDirectory.toPath().resolve("mtgcard").resolve("art").resolve(cacheScope(mc));
+    }
+
+    private static String cacheScope(Minecraft mc) {
         String scope = "singleplayer";
         if (mc.getCurrentServer() != null) {
             scope = mc.getCurrentServer().ip.replace(':','_');
         } else if (mc.getSingleplayerServer() != null) {
             scope = mc.getSingleplayerServer().getWorldData().getLevelName().replace(' ','_');
         }
-        var dir = game.resolve("mtgcard").resolve("art").resolve(scope);
-        try { Files.createDirectories(dir); } catch (Exception ignored) {}
-        return dir;
+        return scope;
     }
 
     /** Index file path: world-scoped in integrated server; null in remote MP (server owns it). */
@@ -170,11 +230,20 @@ public final class CardArtManager {
         var mc = Minecraft.getInstance();
         if (isIntegrated(mc)) {
             Path root = mc.getSingleplayerServer().getWorldPath(LevelResource.ROOT);
-            Path file = root.resolve("mtgcard").resolve("art-index.json");
+            Path file = root.resolve("mtgcard").resolve("mtg").resolve("art_index.json");
             try { Files.createDirectories(file.getParent()); } catch (Exception ignored) {}
             return file;
         }
         return null; // remote MP -> don't write an index on the client
+    }
+
+    private static Path legacyIndexFile() {
+        var mc = Minecraft.getInstance();
+        if (isIntegrated(mc)) {
+            Path root = mc.getSingleplayerServer().getWorldPath(LevelResource.ROOT);
+            return root.resolve("mtgcard").resolve("art-index.json");
+        }
+        return null;
     }
 
     private static boolean isIntegrated(Minecraft mc) {
@@ -183,7 +252,15 @@ public final class CardArtManager {
 
     private static void loadIndex() {
         var file = indexFile();
-        if (file == null || !Files.exists(file)) return;
+        if (file == null) return;
+        if (!Files.exists(file)) {
+            Path legacy = legacyIndexFile();
+            if (legacy != null && Files.exists(legacy)) {
+                file = legacy;
+            } else {
+                return;
+            }
+        }
         try (Reader r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
             Map<String, String> m = GSON.fromJson(r, INDEX_TYPE);
             if (m != null) DISK_INDEX.putAll(m);
@@ -203,19 +280,8 @@ public final class CardArtManager {
     /** Purge all cached art files and index (scoped to current cacheDir). */
     public static int purgeAll() {
         int deleted = 0;
-        try (var files = Files.list(cacheDir())) {
-            for (Path p : files.toList()) {
-                if (Files.isRegularFile(p) && (
-                        p.toString().endsWith(".png")
-                                || p.toString().endsWith(".webp")
-                                || p.toString().endsWith(".jpg")
-                                || p.toString().endsWith(".jpeg")
-                )) {
-                    Files.deleteIfExists(p);
-                    deleted++;
-                }
-            }
-        } catch (Exception ignored) {}
+        deleted += deleteImagesUnder(mainArtCacheDir(), false);
+        deleted += deleteImagesUnder(customArtRoot(), true);
         DISK_INDEX.clear();
         saveIndexAsync();
         return deleted;
@@ -224,37 +290,16 @@ public final class CardArtManager {
     /** Rebuild the JSON index from files on disk (scoped to current cacheDir). */
     public static int rebuildIndex() {
         DISK_INDEX.clear();
-        try (var files = Files.list(cacheDir())) {
-            files.filter(p -> {
-                String s = p.toString().toLowerCase(Locale.ROOT);
-                return s.endsWith(".png") || s.endsWith(".webp") || s.endsWith(".jpg") || s.endsWith(".jpeg");
-            }).forEach(p -> {
-                String name = p.getFileName().toString();
-                String key = name
-                        .replace(".png", "")
-                        .replace(".webp", "")
-                        .replace(".jpg", "")
-                        .replace(".jpeg", "");
-                DISK_INDEX.put(key, name);
-            });
-        } catch (Exception ignored) {}
+        indexImagesUnder(mainArtCacheDir(), false);
+        indexImagesUnder(customArtRoot(), true);
         saveIndexAsync();
         return DISK_INDEX.size();
     }
 
     public static String stats() {
         try {
-            long count = Files.list(cacheDir())
-                    .filter(p -> {
-                        String s = p.toString().toLowerCase(Locale.ROOT);
-                        return s.endsWith(".png") || s.endsWith(".webp") || s.endsWith(".jpg") || s.endsWith(".jpeg");
-                    })
-                    .count();
-            long bytes = Files.walk(cacheDir())
-                    .filter(Files::isRegularFile)
-                    .mapToLong(f -> {
-                        try { return Files.size(f); } catch (Exception e) { return 0; }
-                    }).sum();
+            long count = countImagesUnder(mainArtCacheDir(), false) + countImagesUnder(customArtRoot(), true);
+            long bytes = bytesUnder(mainArtCacheDir(), false) + bytesUnder(customArtRoot(), true);
             double mb = bytes / 1024.0 / 1024.0;
             return count + " textures (" + String.format(Locale.ROOT, "%.1f", mb) + " MB)";
         } catch (Exception e) {
@@ -272,39 +317,57 @@ public final class CardArtManager {
         String worldKey = extractWorldArtKey(meta, faceIndex);
 
         if (worldKey != null && !worldKey.isBlank()) {
-            return getOrRequestWorld(worldKey.trim());
+            String setCode = meta.getString("set").orElse("");
+            return getOrRequestWorld(worldKey.trim(), setCode);
         }
 
         // Scryfall path
-        String artKey = computeArtKey(meta, faceIndex);
+        String artKey = CardArtCommon.computeArtKey(meta, faceIndex);
+        List<String> fallbackKeys = CardArtCommon.legacyFallbackArtKeys(meta, faceIndex);
 
         TextureRef cached = getLiveCached(artKey);
         if (cached != null) return cached;
 
-        String url = extractImageUrl(meta, faceIndex);
-        if (url == null || url.isEmpty()) return null;
+        for (String fallbackKey : fallbackKeys) {
+            cached = getLiveCached(fallbackKey);
+            if (cached != null) return cached;
+        }
 
-        Path file = resolveCachedFile(artKey);
+        Path file = resolveMainCachedFile(artKey, fallbackKeys);
 
         if (Files.exists(file)) {
+            DISK_INDEX.put(artKey, file.getFileName().toString());
+            saveIndexAsync();
             queueDiskLoad(artKey, file);
             return null;
         }
 
+        String url = CardArtCommon.extractImageUrl(meta, faceIndex);
+        if (url == null || url.isEmpty()) return null;
+
         // IMPORTANT: queue instead of sending immediately
         String fileName = DISK_INDEX.getOrDefault(artKey, artKey + ".webp");
-        enqueueRequest(artKey, url, fileName);
+        enqueueRequest(artKey, url, fileName, CardArtCommon.encodeFallbackKeys(fallbackKeys));
         return null;
     }
 
     /** Resolve world-art by key: bind from disk if present, else request from server. */
     private static TextureRef getOrRequestWorld(String artKey) {
+        return getOrRequestWorld(artKey, ART_SET_INDEX.getOrDefault(artKey, ""));
+    }
+
+    /** Resolve world-art by key: bind from disk if present, else request from server. */
+    private static TextureRef getOrRequestWorld(String artKey, String setCode) {
         TextureRef cached = getLiveCached(artKey);
         if (cached != null) {
             return cached;
         }
 
-        Path file = resolveCachedFile(artKey);
+        if (setCode != null && !setCode.isBlank()) {
+            ART_SET_INDEX.put(artKey, MtgCardPaths.sanitizeSetFolder(setCode));
+        }
+
+        Path file = resolveCustomCachedFile(artKey, setCode);
 
         if (Files.exists(file)) {
             DISK_INDEX.put(artKey, file.getFileName().toString());
@@ -317,7 +380,7 @@ public final class CardArtManager {
         saveIndexAsync();
 
         // IMPORTANT: queue instead of sending immediately
-        enqueueRequest(artKey, "", artKey + ".webp");
+        enqueueRequest(artKey, "", artKey + ".webp", "", setCode);
         return null;
     }
 
@@ -350,7 +413,14 @@ public final class CardArtManager {
     }
 
     public static void refreshWorldArt(String artKey) {
+        refreshWorldArt(artKey, ART_SET_INDEX.getOrDefault(artKey, ""));
+    }
+
+    public static void refreshWorldArt(String artKey, String setCode) {
         if (artKey == null || artKey.isBlank()) return;
+        if (setCode != null && !setCode.isBlank()) {
+            ART_SET_INDEX.put(artKey, MtgCardPaths.sanitizeSetFolder(setCode));
+        }
 
         invalidateArtKey(artKey);
 
@@ -361,7 +431,7 @@ public final class CardArtManager {
         }
 
         deleteCachedFiles(artKey);
-        enqueueRequest(artKey, "", artKey + ".webp");
+        enqueueRequest(artKey, "", artKey + ".webp", "", ART_SET_INDEX.getOrDefault(artKey, ""));
     }
 
     public static void forgetWorldArt(String artKey) {
@@ -378,60 +448,6 @@ public final class CardArtManager {
         TEX.clear();
     }
 
-    private static String computeArtKey(CompoundTag meta, int faceIndex) {
-        String scryId = meta.getString("scryfall_id").orElse("");
-        if (scryId.isEmpty()) scryId = meta.getString("id").orElse("");
-        if (!scryId.isEmpty()) return scryId + "_f" + faceIndex;
-
-        String url = extractImageUrl(meta, faceIndex);
-        if (url == null || url.isEmpty()) return "missingmeta_f" + faceIndex;
-
-        String norm = stripQuery(url);
-        String hash = sha1(norm);
-        return hash + "_f" + faceIndex;
-    }
-
-    private static String extractImageUrl(CompoundTag meta, int faceIndex) {
-        Optional<ListTag> facesOpt = meta.getList("card_faces");
-        if (facesOpt.isPresent() && !facesOpt.get().isEmpty()) {
-            int idx = Math.max(0, Math.min(faceIndex, facesOpt.get().size() - 1));
-            Optional<CompoundTag> face0 = facesOpt.get().getCompound(idx);
-            if (face0.isPresent()) {
-                String direct = face0.get().getString("image_png").orElse("");
-                if (!direct.isEmpty()) return direct;
-
-                Optional<CompoundTag> uris = face0.get().getCompound("image_uris");
-                if (uris.isPresent()) {
-                    String u = choiceImageUrl(uris.get());
-                    if (!u.isEmpty()) return u;
-                }
-            }
-        }
-
-        String directRoot = meta.getString("image_png").orElse("");
-        if (!directRoot.isEmpty()) return directRoot;
-
-        Optional<CompoundTag> urisRoot = meta.getCompound("image_uris");
-        if (urisRoot.isPresent()) {
-            String u = choiceImageUrl(urisRoot.get());
-            if (!u.isEmpty()) return u;
-        }
-        return "";
-    }
-
-    private static String choiceImageUrl(CompoundTag uris) {
-        String png   = uris.getString("png").orElse("");
-        if (!png.isEmpty()) return png;
-        String large = uris.getString("large").orElse("");
-        if (!large.isEmpty()) return large;
-        String normal = uris.getString("normal").orElse("");
-        if (!normal.isEmpty()) return normal;
-        String art = uris.getString("art_crop").orElse("");
-        if (!art.isEmpty()) return art;
-        String border = uris.getString("border_crop").orElse("");
-        return border == null ? "" : border;
-    }
-
     // Called by the client networking receiver when the server sends image bytes.
     public static void onArtResponse(String artKey, byte[] imgBytes) {
         IN_FLIGHT.remove(artKey);
@@ -439,11 +455,15 @@ public final class CardArtManager {
         try {
             String ext = detectExt(imgBytes);
             String fileName = artKey + "." + ext;
-            Path file = cacheDir().resolve(fileName);
+            String setCode = ART_SET_INDEX.get(artKey);
+            Path dir = (setCode == null || setCode.isBlank())
+                    ? mainArtCacheDir()
+                    : customArtDir(setCode);
+            Path file = dir.resolve(fileName);
 
             Files.createDirectories(file.getParent());
             Files.write(file, imgBytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-            com.spider.mtgcard.util.ArtImageStorage.deleteSiblingFormats(cacheDir(), artKey, ext);
+            com.spider.mtgcard.util.ArtImageStorage.deleteSiblingFormats(dir, artKey, ext);
 
             DISK_INDEX.put(artKey, fileName);
             saveIndexAsync();
@@ -452,10 +472,21 @@ public final class CardArtManager {
         } catch (Exception ignored) {}
     }
 
-    private static Path resolveCachedFile(String artKey) {
-        Path dir = cacheDir();
+    private static Path resolveAnyCachedFile(String artKey) {
+        Path main = resolveMainCachedFile(artKey, List.of());
+        if (Files.exists(main)) return main;
 
-        for (String candidate : artKeyCandidates(artKey)) {
+        String setCode = ART_SET_INDEX.getOrDefault(artKey, "");
+        Path custom = resolveCustomCachedFile(artKey, setCode);
+        if (Files.exists(custom)) return custom;
+
+        return main;
+    }
+
+    private static Path resolveMainCachedFile(String artKey, List<String> fallbackKeys) {
+        Path dir = mainArtCacheDir();
+
+        for (String candidate : artKeyCandidates(artKey, fallbackKeys)) {
             Path indexed = resolveIndexedFile(dir, candidate);
             if (indexed != null) return indexed;
 
@@ -463,7 +494,48 @@ public final class CardArtManager {
             if (exact != null) return exact;
         }
 
+        Path legacyDir = legacyArtCacheDir();
+        for (String candidate : artKeyCandidates(artKey, fallbackKeys)) {
+            Path legacy = resolveExactFile(legacyDir, candidate);
+            if (legacy != null) return migrateLegacyArt(dir, artKey, legacy);
+        }
+
         return dir.resolve(artKey + ".webp");
+    }
+
+    private static Path resolveCustomCachedFile(String artKey, String setCode) {
+        Path setDir = customArtDir(setCode);
+        Path exact = resolveExactFile(setDir, artKey);
+        if (exact != null) return exact;
+
+        Path root = customArtRoot();
+        try (var dirs = Files.list(root)) {
+            for (Path dir : dirs.toList()) {
+                if (!Files.isDirectory(dir) || dir.equals(setDir)) continue;
+                exact = resolveExactFile(dir, artKey);
+                if (exact != null) return exact;
+            }
+        } catch (Exception ignored) {
+        }
+
+        Path legacy = resolveExactFile(legacyArtCacheDir(), artKey);
+        if (legacy != null) return migrateLegacyArt(setDir, artKey, legacy);
+
+        return setDir.resolve(artKey + ".webp");
+    }
+
+    private static Path migrateLegacyArt(Path targetDir, String artKey, Path legacyFile) {
+        try {
+            Files.createDirectories(targetDir);
+            String ext = extensionOf(legacyFile);
+            Path target = targetDir.resolve(artKey + "." + ext);
+            if (!Files.exists(target)) {
+                Files.copy(legacyFile, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return target;
+        } catch (Exception ignored) {
+            return legacyFile;
+        }
     }
 
     private static Path resolveIndexedFile(Path dir, String artKey) {
@@ -475,6 +547,8 @@ public final class CardArtManager {
     }
 
     private static Path resolveExactFile(Path dir, String artKey) {
+        if (dir == null || artKey == null || artKey.isBlank()) return null;
+
         Path webp = dir.resolve(artKey + ".webp");
         if (Files.exists(webp)) return webp;
 
@@ -490,20 +564,95 @@ public final class CardArtManager {
         return null;
     }
 
+    private static String extensionOf(Path path) {
+        String name = path.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        return dot >= 0 ? name.substring(dot + 1).toLowerCase(Locale.ROOT) : "webp";
+    }
+
+    private static boolean isImagePath(Path path) {
+        if (path == null) return false;
+        String s = path.toString().toLowerCase(Locale.ROOT);
+        return s.endsWith(".png") || s.endsWith(".webp") || s.endsWith(".jpg") || s.endsWith(".jpeg");
+    }
+
+    private static int deleteImagesUnder(Path dir, boolean recursive) {
+        if (dir == null || !Files.exists(dir)) return 0;
+        int deleted = 0;
+        try (var stream = recursive ? Files.walk(dir) : Files.list(dir)) {
+            for (Path p : stream.toList()) {
+                if (Files.isRegularFile(p) && isImagePath(p) && Files.deleteIfExists(p)) {
+                    deleted++;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return deleted;
+    }
+
+    private static void indexImagesUnder(Path dir, boolean recursive) {
+        if (dir == null || !Files.exists(dir)) return;
+        try (var stream = recursive ? Files.walk(dir) : Files.list(dir)) {
+            stream.filter(Files::isRegularFile)
+                    .filter(CardArtManager::isImagePath)
+                    .forEach(p -> {
+                        String name = p.getFileName().toString();
+                        String key = name
+                                .replace(".png", "")
+                                .replace(".webp", "")
+                                .replace(".jpg", "")
+                                .replace(".jpeg", "");
+                        DISK_INDEX.put(key, name);
+                    });
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static long countImagesUnder(Path dir, boolean recursive) throws IOException {
+        if (dir == null || !Files.exists(dir)) return 0;
+        try (var stream = recursive ? Files.walk(dir) : Files.list(dir)) {
+            return stream.filter(Files::isRegularFile)
+                    .filter(CardArtManager::isImagePath)
+                    .count();
+        }
+    }
+
+    private static long bytesUnder(Path dir, boolean recursive) throws IOException {
+        if (dir == null || !Files.exists(dir)) return 0;
+        try (var stream = recursive ? Files.walk(dir) : Files.list(dir)) {
+            return stream.filter(Files::isRegularFile)
+                    .filter(CardArtManager::isImagePath)
+                    .mapToLong(f -> {
+                        try { return Files.size(f); } catch (Exception e) { return 0; }
+                    }).sum();
+        }
+    }
+
     private static Iterable<String> artKeyCandidates(String artKey) {
+        return artKeyCandidates(artKey, List.of());
+    }
+
+    private static Iterable<String> artKeyCandidates(String artKey, List<String> fallbackKeys) {
         java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>();
-        if (artKey == null || artKey.isBlank()) return keys;
 
         addArtKeyCandidate(keys, artKey);
 
-        String trimmed = artKey.trim();
-        String lower = trimmed.toLowerCase(Locale.ROOT);
-        addArtKeyCandidate(keys, lower);
+        if (fallbackKeys != null) {
+            for (String fallback : fallbackKeys) {
+                addArtKeyCandidate(keys, fallback);
+            }
+        }
 
-        if (lower.startsWith("custom_")) {
-            addArtKeyCandidate(keys, lower.substring("custom_".length()));
-        } else {
-            addArtKeyCandidate(keys, "custom_" + lower);
+        java.util.LinkedHashSet<String> expanded = new java.util.LinkedHashSet<>(keys);
+        for (String key : expanded) {
+            String lower = key.trim().toLowerCase(Locale.ROOT);
+            addArtKeyCandidate(keys, lower);
+
+            if (lower.startsWith("custom_")) {
+                addArtKeyCandidate(keys, lower.substring("custom_".length()));
+            } else {
+                addArtKeyCandidate(keys, "custom_" + lower);
+            }
         }
 
         return keys;
@@ -660,12 +809,13 @@ public final class CardArtManager {
     private static int deleteCachedFiles(String artKey) {
         int deleted = 0;
         try {
-            Path dir = cacheDir();
             for (String candidate : artKeyCandidates(artKey)) {
-                for (String ext : new String[]{"webp", "png", "jpg", "jpeg"}) {
-                    Path file = dir.resolve(candidate + "." + ext);
-                    if (Files.deleteIfExists(file)) {
-                        deleted++;
+                for (Path dir : artKeyDeleteDirs()) {
+                    for (String ext : new String[]{"webp", "png", "jpg", "jpeg"}) {
+                        Path file = dir.resolve(candidate + "." + ext);
+                        if (Files.deleteIfExists(file)) {
+                            deleted++;
+                        }
                     }
                 }
                 DISK_INDEX.remove(candidate);
@@ -676,10 +826,22 @@ public final class CardArtManager {
         return deleted;
     }
 
+    private static List<Path> artKeyDeleteDirs() {
+        java.util.ArrayList<Path> dirs = new java.util.ArrayList<>();
+        dirs.add(mainArtCacheDir());
+        dirs.add(customArtRoot());
+        try (var stream = Files.list(customArtRoot())) {
+            stream.filter(Files::isDirectory).forEach(dirs::add);
+        } catch (Exception ignored) {
+        }
+        dirs.add(legacyArtCacheDir());
+        return dirs;
+    }
+
     public static void tryLoadNow(String artKey) {
         if (artKey == null || artKey.isBlank()) return;
 
-        Path file = resolveCachedFile(artKey);
+        Path file = resolveAnyCachedFile(artKey);
         if (Files.exists(file)) {
             DISK_INDEX.put(artKey, file.getFileName().toString());
             saveIndexAsync();

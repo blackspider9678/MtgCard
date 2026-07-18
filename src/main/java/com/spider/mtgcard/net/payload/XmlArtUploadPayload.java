@@ -6,7 +6,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload.Type;
 import net.minecraft.resources.Identifier;
 
-public record XmlArtUploadPayload(String fileName, String sourceUrl, byte[] imgBytes) implements CustomPacketPayload {
+public record XmlArtUploadPayload(String fileName, String sourceUrl, String setCode, byte[] imgBytes) implements CustomPacketPayload {
 
     public static final Type<XmlArtUploadPayload> ID =
             new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "xml_art_upload"));
@@ -22,13 +22,15 @@ public record XmlArtUploadPayload(String fileName, String sourceUrl, byte[] imgB
     private static XmlArtUploadPayload read(RegistryFriendlyByteBuf buf) {
         String fn = buf.readUtf();
         String su = buf.readUtf();
+        String sc = buf.readUtf();
         byte[] data = buf.readByteArray();
-        return new XmlArtUploadPayload(fn, su, data);
+        return new XmlArtUploadPayload(fn, su, sc, data);
     }
 
     private static void write(RegistryFriendlyByteBuf buf, XmlArtUploadPayload p) {
         buf.writeUtf(p.fileName());
         buf.writeUtf(p.sourceUrl());
+        buf.writeUtf(p.setCode());
         buf.writeByteArray(p.imgBytes());
     }
 

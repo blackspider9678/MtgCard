@@ -1981,7 +1981,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
             ctx.drawString(this.font, label, lx, ly, 0xFFEFEFEF, false);
         }
     }
-    private void enqueueArtUpload(String artKey, byte[] bytes) {
+    private void enqueueArtUpload(String artKey, String setCode, byte[] bytes) {
         if (artKey == null || artKey.isEmpty()) return;
         if (bytes == null || bytes.length == 0) return;
 
@@ -1997,7 +1997,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         final int totalChunks = (int) Math.ceil(totalBytes / (double) chunkSize);
 
         enqueueUpload(() -> ClientPlayNetworking.send(
-                new CustomCardPackets.CustomArtBegin(uploadId, artKey, ext, totalBytes, chunkSize, totalChunks)
+                new CustomCardPackets.CustomArtBegin(uploadId, artKey, nz(setCode), ext, totalBytes, chunkSize, totalChunks)
         ));
 
         for (int i = 0; i < totalChunks; i++) {
@@ -2377,10 +2377,11 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
             String customId = stableCustomId(frontEntry);
             String frontKey = "custom_" + customId + "_f0";
             String backKey  = (df ? "custom_" + customId + "_f1" : "");
+            String setCode = nz(frontEntry.meta.set);
 
             // 1) Upload art first (chunked)
-            enqueueArtUpload(frontKey, frontBytes);
-            if (!backKey.isEmpty()) enqueueArtUpload(backKey, backBytes);
+            enqueueArtUpload(frontKey, setCode, frontBytes);
+            if (!backKey.isEmpty()) enqueueArtUpload(backKey, setCode, backBytes);
 
             // 2) Send batch create referencing those keys
             //    (Assumes BatchEntry now has `id` as first param)
@@ -2615,6 +2616,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                         ClientPlayNetworking.send(new com.spider.mtgcard.net.payload.XmlArtUploadPayload(
                                 fileName,
                                 source,
+                                nz(job.meta == null ? "" : job.meta.set),
                                 enc.bytes
                         ));
 
