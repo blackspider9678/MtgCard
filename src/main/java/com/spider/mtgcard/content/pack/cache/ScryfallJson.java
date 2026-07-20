@@ -20,9 +20,12 @@ final class ScryfallJson {
         c.collectorNumber  = getStr(o, "collector_number");
         c.rarity           = getStr(o, "rarity");
         c.layout           = getStr(o, "layout");
+        c.manaCost         = getStr(o, "mana_cost");
         c.typeLine         = getStr(o, "type_line");
+        c.oracleText       = getStr(o, "oracle_text");
         c.power            = getStr(o, "power");
         c.toughness        = getStr(o, "toughness");
+        c.loyalty          = getStr(o, "loyalty");
         c.manaValue        = o.has("cmc") ? o.get("cmc").getAsInt() : 0;
 
         c.colors        = getStringList(o, "colors");
@@ -48,6 +51,7 @@ final class ScryfallJson {
                 f.oracleText = getStr(fo, "oracle_text");
                 f.power      = getStr(fo, "power");
                 f.toughness  = getStr(fo, "toughness");
+                f.loyalty    = getStr(fo, "loyalty");
                 if (fo.has("image_uris")) {
                     f.imageUris = getStringMap(fo.getAsJsonObject("image_uris"));
                 }
@@ -171,9 +175,12 @@ final class ScryfallJson {
         put(o,"collector_number",c.collectorNumber);
         put(o,"rarity",c.rarity);
         put(o,"layout",c.layout);
+        put(o,"mana_cost",c.manaCost);
         put(o,"type_line",c.typeLine);
+        put(o,"oracle_text",c.oracleText);
         put(o,"power",c.power);
         put(o,"toughness",c.toughness);
+        put(o,"loyalty",c.loyalty);
         o.addProperty("cmc", c.manaValue);
         o.add("colors", toArray(c.colors));
         o.add("color_identity", toArray(c.colorIdentity));
@@ -189,6 +196,7 @@ final class ScryfallJson {
                 put(fo,"oracle_text",f.oracleText);
                 put(fo,"power",f.power);
                 put(fo,"toughness",f.toughness);
+                put(fo,"loyalty",f.loyalty);
                 fo.add("image_uris", toObj(f.imageUris));
                 arr.add(fo);
             }

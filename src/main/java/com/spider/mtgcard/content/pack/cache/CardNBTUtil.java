@@ -31,9 +31,12 @@ public final class CardNBTUtil {
         putStr(meta, "collector_number", rec.collectorNumber);
         putStr(meta, "rarity",       rec.rarity);
         putStr(meta, "layout",       rec.layout);
+        putStr(meta, "mana_cost",    rec.manaCost);
         putStr(meta, "type_line",    rec.typeLine);
+        putStr(meta, "oracle_text",  rec.oracleText);
         putStr(meta, "power",        nz(rec.power));
         putStr(meta, "toughness",    nz(rec.toughness));
+        putStr(meta, "loyalty",      nz(rec.loyalty));
         meta.putInt("cmc",           rec.manaValue);
 
         // ---------- Colors ----------
@@ -72,6 +75,7 @@ public final class CardNBTUtil {
                 if (f.oracleText != null) putStr(fn, "oracle_text", f.oracleText);
                 if (f.power      != null) putStr(fn, "power",       f.power);
                 if (f.toughness  != null) putStr(fn, "toughness",   f.toughness);
+                if (f.loyalty    != null) putStr(fn, "loyalty",     f.loyalty);
 
                 faceList.add(fn);
             }

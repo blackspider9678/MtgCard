@@ -194,9 +194,12 @@ public final class CardStackBuilders {
             meta.put("color_identity", list);
         }
 
+        if (c.manaCost != null) meta.putString("mana_cost", c.manaCost);
         if (c.typeLine != null) meta.putString("type_line", c.typeLine);
+        if (c.oracleText != null) meta.putString("oracle_text", c.oracleText);
         if (c.power != null) meta.putString("power", c.power);
         if (c.toughness != null) meta.putString("toughness", c.toughness);
+        if (c.loyalty != null) meta.putString("loyalty", c.loyalty);
         meta.putInt("mana_value", c.manaValue);
 
         if (c.legalities != null && !c.legalities.isEmpty()) {
@@ -245,6 +248,7 @@ public final class CardStackBuilders {
                 if (fModel.oracleText != null) f.putString("oracle_text", fModel.oracleText);
                 if (fModel.power != null)      f.putString("power",       fModel.power);
                 if (fModel.toughness != null)  f.putString("toughness",   fModel.toughness);
+                if (fModel.loyalty != null)    f.putString("loyalty",     fModel.loyalty);
 
                 faces.add(f);
             }

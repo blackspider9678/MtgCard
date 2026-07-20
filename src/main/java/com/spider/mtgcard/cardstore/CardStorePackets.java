@@ -1,6 +1,7 @@
 package com.spider.mtgcard.cardstore;
 
 import com.spider.mtgcard.content.pack.cache.*;
+import com.spider.mtgcard.db.search.ScryfallSyntax;
 import com.spider.mtgcard.registry.ModRegistry;
 import com.spider.mtgcard.util.CardStackBuilders;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
@@ -27,8 +28,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public final class CardStorePackets {
     private static boolean serverRegistered = false;
@@ -800,9 +799,6 @@ public final class CardStorePackets {
         return t;
     }
 
-    private static final Pattern CUSTOM_FIELD_QUERY =
-            Pattern.compile("\\b([a-zA-Z_]+):(?:\"([^\"]+)\"|(\\S+))");
-
     private static List<com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta> findCustomMatches(
             MinecraftServer server,
             String queryRaw
@@ -835,47 +831,114 @@ public final class CardStorePackets {
         String query = (queryRaw == null) ? "" : queryRaw.trim();
         if (query.isBlank()) return false;
 
-        Matcher matcher = CUSTOM_FIELD_QUERY.matcher(query);
-        boolean sawFieldQuery = false;
-
-        while (matcher.find()) {
-            sawFieldQuery = true;
-
-            String field = matcher.group(1);
-            String value = matcher.group(2) != null ? matcher.group(2) : matcher.group(3);
-            if (value == null || value.isBlank()) continue;
-
-            if (!customFieldValue(meta, field).contains(norm(value))) {
-                return false;
-            }
-        }
-
-        if (sawFieldQuery) return true;
-
-        String haystack = String.join(" ",
-                norm(meta.name),
-                norm(meta.typeLine),
-                norm(meta.oracleText),
-                norm(meta.set),
-                norm(meta.id),
-                norm(meta.backName),
-                norm(meta.backTypeLine),
-                norm(meta.backOracleText)
-        ).trim();
-
-        return !haystack.isEmpty() && haystack.contains(norm(query));
+        return ScryfallSyntax.parse(query).matches(new CustomCardView(meta));
     }
 
-    private static String customFieldValue(com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta meta, String rawField) {
-        String field = rawField == null ? "" : rawField.trim().toLowerCase(Locale.ROOT);
-        return switch (field) {
-            case "name", "n" -> norm(meta.name) + " " + norm(meta.backName);
-            case "type", "type_line", "t" -> norm(meta.typeLine) + " " + norm(meta.backTypeLine);
-            case "oracle", "oracle_text", "o" -> norm(meta.oracleText) + " " + norm(meta.backOracleText);
-            case "set", "s", "e" -> norm(meta.set);
-            case "id", "cn", "collector", "collector_number" -> norm(meta.id);
-            default -> "";
-        };
+    private static final class CustomCardView implements ScryfallSyntax.CardView {
+        private final com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta meta;
+
+        CustomCardView(com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta meta) {
+            this.meta = meta;
+        }
+
+        @Override public String name() { return nz(meta == null ? null : meta.name); }
+        @Override public String otherNames() { return nz(meta == null ? null : meta.backName); }
+        @Override public String set() { return nz(meta == null ? null : meta.set); }
+        @Override public String collectorNumber() { return nz(meta == null ? null : meta.id); }
+        @Override public String rarity() { return nz(meta == null ? null : meta.rarity); }
+        @Override public String manaCost() { return nz(meta == null ? null : meta.manaCost); }
+        @Override public String typeLine() {
+            return joinSearchText(meta == null ? null : meta.typeLine, meta == null ? null : meta.backTypeLine);
+        }
+        @Override public String oracleText() {
+            return joinSearchText(meta == null ? null : meta.oracleText, meta == null ? null : meta.backOracleText);
+        }
+        @Override public String power() { return nz(meta == null ? null : meta.power); }
+        @Override public String toughness() { return nz(meta == null ? null : meta.toughness); }
+        @Override public String loyalty() { return nz(meta == null ? null : meta.loyalty); }
+        @Override public String layout() { return meta != null && meta.doubleFaced ? "custom_dfc" : "custom"; }
+        @Override public int manaValue() { return estimateManaValue(meta == null ? null : meta.manaCost); }
+        @Override public java.util.Set<String> colors() {
+            return ScryfallSyntax.colorsFromManaCost(meta == null ? null : meta.manaCost);
+        }
+        @Override public java.util.Set<String> colorIdentity() {
+            return ScryfallSyntax.colorsFromManaCost(meta == null ? null : meta.manaCost);
+        }
+        @Override public boolean tokenLike() {
+            return typeHasAny(typeLine(), "token", "emblem", "dungeon", "attraction", "sticker",
+                    "contraption", "scheme", "plane", "phenomenon", "vanguard");
+        }
+        @Override public boolean legendary() { return typeHasAny(typeLine(), "legendary"); }
+        @Override public boolean doubleFaced() { return meta != null && meta.doubleFaced; }
+    }
+
+    private static String nz(String value) {
+        return value == null ? "" : value;
+    }
+
+    private static String joinSearchText(String... values) {
+        StringBuilder out = new StringBuilder();
+        if (values != null) {
+            for (String value : values) {
+                if (value == null || value.isBlank()) continue;
+                if (!out.isEmpty()) out.append(' ');
+                out.append(value);
+            }
+        }
+        return out.toString();
+    }
+
+    private static boolean typeHasAny(String typeLine, String... words) {
+        if (typeLine == null || typeLine.isBlank() || words == null) return false;
+        String lower = typeLine.toLowerCase(Locale.ROOT);
+        for (String part : lower.split("[^a-z0-9]+")) {
+            for (String word : words) {
+                if (word != null && part.equals(word.toLowerCase(Locale.ROOT))) return true;
+            }
+        }
+        return false;
+    }
+
+    private static int estimateManaValue(String manaCost) {
+        if (manaCost == null || manaCost.isBlank()) return 0;
+        int total = 0;
+        String s = manaCost.trim();
+        int i = 0;
+        while (i < s.length()) {
+            char ch = s.charAt(i);
+            if (ch == '{') {
+                int end = s.indexOf('}', i + 1);
+                if (end < 0) break;
+                total += manaSymbolValue(s.substring(i + 1, end));
+                i = end + 1;
+                continue;
+            }
+            if (Character.isDigit(ch)) {
+                int start = i;
+                while (i < s.length() && Character.isDigit(s.charAt(i))) i++;
+                total += parseManaNumber(s.substring(start, i));
+                continue;
+            }
+            if ("WUBRGC".indexOf(Character.toUpperCase(ch)) >= 0) total++;
+            i++;
+        }
+        return Math.max(0, total);
+    }
+
+    private static int manaSymbolValue(String symbol) {
+        String s = symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
+        if (s.isBlank() || s.equals("X") || s.equals("Y") || s.equals("Z")) return 0;
+        if (s.contains("/")) return 1;
+        if ("WUBRGC".contains(s)) return 1;
+        return parseManaNumber(s);
+    }
+
+    private static int parseManaNumber(String value) {
+        try {
+            return Math.max(0, Integer.parseInt(value.trim()));
+        } catch (Exception ignored) {
+            return 0;
+        }
     }
 
     private static ArrayList<SearchPrintsS2C.Entry> buildSearchEntries(

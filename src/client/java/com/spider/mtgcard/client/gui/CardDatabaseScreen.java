@@ -206,6 +206,8 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         this.search = new EditBox(this.font, leftX, headerY, searchW, fieldH, Component.literal(""));
         this.search.setBordered(true);
         this.search.setEditable(true);
+        this.search.setMaxLength(512);
+        this.search.setHint(Component.literal("Scryfall syntax"));
         this.addRenderableWidget(this.search);
         this.setInitialFocus(this.search);
 

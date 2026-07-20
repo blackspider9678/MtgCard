@@ -646,8 +646,8 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         int fieldW = rightW - (RIGHT_PAD * 2);
 
         searchField = new EditBox(this.font, fieldX, fieldY, fieldW, 18, Component.literal(""));
-        searchField.setMaxLength(128);
-        searchField.setHint(Component.literal("Search Name"));
+        searchField.setMaxLength(512);
+        searchField.setHint(Component.literal("Scryfall syntax"));
         this.addWidget(searchField);
 
         // Add-to-cart sits ABOVE the inventory block, aligned to right panel

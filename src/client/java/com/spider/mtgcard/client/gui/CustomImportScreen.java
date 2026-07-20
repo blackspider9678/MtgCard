@@ -3,6 +3,7 @@ package com.spider.mtgcard.client.gui;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import com.spider.mtgcard.client.compat.MtgGuiScaleHelper;
+import com.spider.mtgcard.db.search.ScryfallSyntax;
 import com.spider.mtgcard.net.CustomCardPackets;
 import com.spider.mtgcard.util.Cockatrice;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -473,20 +474,8 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
     }
 
     private Predicate<Entry> buildImportSearchPredicate(String rawQuery) {
-        List<List<ImportSearchTerm>> groups = parseImportSearch(rawQuery);
-        if (groups.isEmpty()) return entry -> true;
-
-        List<Predicate<Entry>> ors = new ArrayList<>();
-        for (List<ImportSearchTerm> terms : groups) {
-            List<Predicate<Entry>> ands = new ArrayList<>();
-            for (ImportSearchTerm term : terms) {
-                Predicate<Entry> predicate = buildImportTermPredicate(term);
-                if (term.neg) predicate = predicate.negate();
-                ands.add(predicate);
-            }
-            ors.add(ands.stream().reduce(x -> true, Predicate::and));
-        }
-        return ors.stream().reduce(x -> false, Predicate::or);
+        ScryfallSyntax.Parsed parsed = ScryfallSyntax.parse(rawQuery);
+        return entry -> parsed.matches(new ImportCardView(entry));
     }
 
     private Predicate<Entry> buildImportTermPredicate(ImportSearchTerm term) {
@@ -706,6 +695,92 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         public String backLoyalty = "";
     }
 
+    private static final class ImportCardView implements ScryfallSyntax.CardView {
+        private final Entry entry;
+        private final Meta meta;
+
+        ImportCardView(Entry entry) {
+            this.entry = entry;
+            this.meta = entry == null || entry.meta == null ? new Meta() : entry.meta;
+        }
+
+        @Override public String name() { return nz(meta.name); }
+        @Override public String otherNames() { return nz(meta.backName); }
+        @Override public String set() { return nz(meta.set); }
+        @Override public String collectorNumber() {
+            String cn = nz(meta.collectorNumber);
+            return cn.isBlank() ? nz(meta.id) : cn;
+        }
+        @Override public String rarity() { return nz(meta.rarity); }
+        @Override public String manaCost() { return nz(meta.manaCost); }
+        @Override public String typeLine() { return joinSearchText(meta.typeLine, meta.backTypeLine); }
+        @Override public String oracleText() { return joinSearchText(meta.oracleText, meta.backOracleText); }
+        @Override public String power() { return nz(meta.power); }
+        @Override public String toughness() { return nz(meta.toughness); }
+        @Override public String loyalty() { return nz(meta.loyalty); }
+        @Override public String layout() { return meta.doubleFaced ? "custom_dfc" : "custom"; }
+        @Override public int manaValue() { return estimateManaValue(meta.manaCost); }
+        @Override public Set<String> colors() { return ScryfallSyntax.colorsFromManaCost(meta.manaCost); }
+        @Override public Set<String> colorIdentity() { return ScryfallSyntax.colorsFromManaCost(meta.manaCost); }
+        @Override public boolean tokenLike() { return entry != null && isTokenLike(entry); }
+        @Override public boolean legendary() { return hasTypeWord(nz(meta.typeLine).toLowerCase(Locale.ROOT), "legendary"); }
+        @Override public boolean doubleFaced() { return meta.doubleFaced; }
+    }
+
+    private static String joinSearchText(String... values) {
+        StringBuilder out = new StringBuilder();
+        if (values != null) {
+            for (String value : values) {
+                if (value == null || value.isBlank()) continue;
+                if (!out.isEmpty()) out.append(' ');
+                out.append(value);
+            }
+        }
+        return out.toString();
+    }
+
+    private static int estimateManaValue(String manaCost) {
+        if (manaCost == null || manaCost.isBlank()) return 0;
+        int total = 0;
+        String s = manaCost.trim();
+        int i = 0;
+        while (i < s.length()) {
+            char ch = s.charAt(i);
+            if (ch == '{') {
+                int end = s.indexOf('}', i + 1);
+                if (end < 0) break;
+                total += manaSymbolValue(s.substring(i + 1, end));
+                i = end + 1;
+                continue;
+            }
+            if (Character.isDigit(ch)) {
+                int start = i;
+                while (i < s.length() && Character.isDigit(s.charAt(i))) i++;
+                total += parseManaNumber(s.substring(start, i));
+                continue;
+            }
+            if ("WUBRGC".indexOf(Character.toUpperCase(ch)) >= 0) total++;
+            i++;
+        }
+        return Math.max(0, total);
+    }
+
+    private static int manaSymbolValue(String symbol) {
+        String s = symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
+        if (s.isBlank() || s.equals("X") || s.equals("Y") || s.equals("Z")) return 0;
+        if (s.contains("/")) return 1;
+        if ("WUBRGC".contains(s)) return 1;
+        return parseManaNumber(s);
+    }
+
+    private static int parseManaNumber(String value) {
+        try {
+            return Math.max(0, Integer.parseInt(value.trim()));
+        } catch (Exception ignored) {
+            return 0;
+        }
+    }
+
     // --- Linking state & helpers ---
     private static final class Link {
         int partnerIndex = -1;   // index in `entries`
@@ -850,8 +925,8 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         searchBox = new EditBox(this.font, leftX, headerY, searchW, fieldH, Component.literal(""));
         searchBox.setBordered(true);
         searchBox.setEditable(true);
-        searchBox.setHint(Component.literal("Search or " + BLANK_SEARCH_TOKEN));
-        searchBox.setMaxLength(256);
+        searchBox.setHint(Component.literal("Scryfall syntax or " + BLANK_SEARCH_TOKEN));
+        searchBox.setMaxLength(512);
         searchBox.setValue(searchQuery);
         searchBox.setResponder(value -> {
             searchQuery = value;
