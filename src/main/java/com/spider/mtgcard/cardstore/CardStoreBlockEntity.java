@@ -2,6 +2,8 @@ package com.spider.mtgcard.cardstore;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import com.spider.mtgcard.api.CardStoreProviderRegistry;
+import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.deckbox.DeckboxBlockEntity;
 import com.spider.mtgcard.deckbox.DeckboxInsertUtil;
 import com.spider.mtgcard.registry.ModBlockEntities;
@@ -44,6 +46,7 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenH
     private boolean delivering = false;
 
     private final Map<UUID, List<CardStoreScreenHandler.CartEntryData>> playerCarts = new HashMap<>();
+    private final Map<UUID, String> playerSelectedGames = new HashMap<>();
     private final Random rng = new Random();
 
     public CardStoreBlockEntity(BlockPos pos, BlockState state) {
@@ -62,7 +65,8 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenH
                 this.worldPosition,
                 getSavedCart(playerId),
                 CardStoreScreenHandler.defaultPriceItemId(),
-                CardStoreScreenHandler.defaultPriceBasis()
+                CardStoreScreenHandler.defaultPriceBasis(),
+                getSelectedGame(playerId)
         );
     }
 
@@ -105,6 +109,28 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenH
         if (playerCarts.remove(playerId) != null) {
             setChanged();
         }
+    }
+
+    public String getSelectedGame(@Nullable UUID playerId) {
+        if (playerId == null) return TcgGameRegistry.MTG;
+        String game = CardStoreProviderRegistry.sanitizeGameId(playerSelectedGames.get(playerId));
+        return CardStoreProviderRegistry.containsProvider(game) ? game : TcgGameRegistry.MTG;
+    }
+
+    public void setSelectedGame(@Nullable UUID playerId, String game) {
+        if (playerId == null) return;
+        String normalized = CardStoreProviderRegistry.sanitizeGameId(game);
+        if (!CardStoreProviderRegistry.containsProvider(normalized)) return;
+
+        String old = getSelectedGame(playerId);
+        if (old.equals(normalized)) return;
+
+        if (TcgGameRegistry.MTG.equals(normalized)) {
+            playerSelectedGames.remove(playerId);
+        } else {
+            playerSelectedGames.put(playerId, normalized);
+        }
+        setChanged();
     }
 
     public void beginPrinting(UUID buyer, ItemStack stackTemplate, int count) {
@@ -176,6 +202,14 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenH
             if (cart == null || cart.playerId() == null || cart.entries().isEmpty()) continue;
             playerCarts.put(cart.playerId(), List.copyOf(cart.entries()));
         }
+
+        playerSelectedGames.clear();
+        var savedGames = view.read("PlayerSelectedGames", SavedGame.CODEC.listOf()).orElse(List.of());
+        for (var selected : savedGames) {
+            if (selected == null || selected.playerId() == null || selected.game().isBlank()) continue;
+            if (!CardStoreProviderRegistry.containsProvider(selected.game())) continue;
+            playerSelectedGames.put(selected.playerId(), selected.game());
+        }
     }
 
     @Override
@@ -188,6 +222,16 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenH
             saved.add(new SavedCart(entry.getKey(), entry.getValue()));
         }
         view.store("PlayerCarts", SavedCart.CODEC.listOf(), saved);
+
+        ArrayList<SavedGame> savedGames = new ArrayList<>();
+        for (var entry : playerSelectedGames.entrySet()) {
+            if (entry.getKey() == null) continue;
+            String game = CardStoreProviderRegistry.sanitizeGameId(entry.getValue());
+            if (game.isBlank() || TcgGameRegistry.MTG.equals(game)) continue;
+            if (!CardStoreProviderRegistry.containsProvider(game)) continue;
+            savedGames.add(new SavedGame(entry.getKey(), game));
+        }
+        view.store("PlayerSelectedGames", SavedGame.CODEC.listOf(), savedGames);
     }
 
     private void stopDelivering() {
@@ -245,6 +289,17 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenH
 
         SavedCart {
             entries = entries == null || entries.isEmpty() ? List.of() : List.copyOf(entries);
+        }
+    }
+
+    private record SavedGame(UUID playerId, String game) {
+        static final Codec<SavedGame> CODEC = RecordCodecBuilder.create(inst -> inst.group(
+                UUID_CODEC.fieldOf("PlayerId").forGetter(SavedGame::playerId),
+                Codec.STRING.fieldOf("Game").forGetter(SavedGame::game)
+        ).apply(inst, SavedGame::new));
+
+        SavedGame {
+            game = CardStoreProviderRegistry.sanitizeGameId(game);
         }
     }
 

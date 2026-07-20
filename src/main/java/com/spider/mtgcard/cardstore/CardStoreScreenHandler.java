@@ -3,6 +3,8 @@ package com.spider.mtgcard.cardstore;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import com.spider.mtgcard.api.CardStoreProviderRegistry;
+import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.screen.ModScreenHandlers;
 import net.minecraft.core.BlockPos;
@@ -23,32 +25,34 @@ public class CardStoreScreenHandler extends AbstractContainerMenu {
     private final List<CartEntryData> initialCart;
     private final String priceItemId;
     private final String priceBasis;
+    private final String selectedGame;
 
     // Layout constants (must match what your Screen expects visually)
     public static final int MARGIN = 10;
     public static final int INV_BLOCK_H = (3 * 18) + 4 + 18; // 3 rows + gap + hotbar
 
     public CardStoreScreenHandler(int syncId, Inventory playerInv) {
-        this(syncId, playerInv, new OpenData(BlockPos.ZERO, List.of(), defaultPriceItemId(), defaultPriceBasis()));
+        this(syncId, playerInv, new OpenData(BlockPos.ZERO, List.of(), defaultPriceItemId(), defaultPriceBasis(), TcgGameRegistry.MTG));
     }
 
     public CardStoreScreenHandler(int syncId, Inventory playerInv, BlockPos blockPos) {
-        this(syncId, playerInv, new OpenData(blockPos, List.of(), defaultPriceItemId(), defaultPriceBasis()));
+        this(syncId, playerInv, new OpenData(blockPos, List.of(), defaultPriceItemId(), defaultPriceBasis(), TcgGameRegistry.MTG));
     }
 
     public CardStoreScreenHandler(int syncId, Inventory playerInv, BlockPos blockPos, List<CartEntryData> initialCart) {
-        this(syncId, playerInv, new OpenData(blockPos, initialCart, defaultPriceItemId(), defaultPriceBasis()));
+        this(syncId, playerInv, new OpenData(blockPos, initialCart, defaultPriceItemId(), defaultPriceBasis(), TcgGameRegistry.MTG));
     }
 
     public CardStoreScreenHandler(int syncId, Inventory playerInv, OpenData openData) {
         super(ModScreenHandlers.CARD_STORE, syncId);
         OpenData data = openData == null
-                ? new OpenData(BlockPos.ZERO, List.of(), defaultPriceItemId(), defaultPriceBasis())
+                ? new OpenData(BlockPos.ZERO, List.of(), defaultPriceItemId(), defaultPriceBasis(), TcgGameRegistry.MTG)
                 : openData;
         this.blockPos = data.blockPos();
         this.initialCart = data.cartEntries();
         this.priceItemId = data.priceItemId();
         this.priceBasis = data.priceBasis();
+        this.selectedGame = data.selectedGame();
 
         // Put inventory at the bottom of a fixed virtual fullscreen GUI.
         int guiW = 426;
@@ -71,6 +75,10 @@ public class CardStoreScreenHandler extends AbstractContainerMenu {
 
     public String priceBasis() {
         return priceBasis;
+    }
+
+    public String selectedGame() {
+        return selectedGame;
     }
 
     @Override
@@ -126,8 +134,9 @@ public class CardStoreScreenHandler extends AbstractContainerMenu {
         return raw == null || raw.isBlank() ? "USD" : raw.trim();
     }
 
-    public record CartEntryData(String set, String cn, ItemStack stack, long priceItems, int qty) {
+    public record CartEntryData(String game, String set, String cn, ItemStack stack, long priceItems, int qty) {
         public static final Codec<CartEntryData> CODEC = RecordCodecBuilder.create(inst -> inst.group(
+                Codec.STRING.optionalFieldOf("Game", TcgGameRegistry.MTG).forGetter(CartEntryData::game),
                 Codec.STRING.fieldOf("Set").forGetter(CartEntryData::set),
                 Codec.STRING.fieldOf("Cn").forGetter(CartEntryData::cn),
                 ItemStack.CODEC.fieldOf("Stack").forGetter(CartEntryData::stack),
@@ -138,6 +147,7 @@ public class CardStoreScreenHandler extends AbstractContainerMenu {
         public static final StreamCodec<RegistryFriendlyByteBuf, CartEntryData> STREAM_CODEC =
                 StreamCodec.of(
                         (buf, entry) -> {
+                            buf.writeUtf(entry.game(), 128);
                             buf.writeUtf(entry.set());
                             buf.writeUtf(entry.cn(), 64);
                             ItemStack.STREAM_CODEC.encode(buf, entry.stack());
@@ -145,6 +155,7 @@ public class CardStoreScreenHandler extends AbstractContainerMenu {
                             buf.writeVarInt(entry.qty());
                         },
                         (buf) -> new CartEntryData(
+                                buf.readUtf(128),
                                 buf.readUtf(),
                                 buf.readUtf(64),
                                 ItemStack.STREAM_CODEC.decode(buf),
@@ -153,7 +164,12 @@ public class CardStoreScreenHandler extends AbstractContainerMenu {
                         )
                 );
 
+        public CartEntryData(String set, String cn, ItemStack stack, long priceItems, int qty) {
+            this(TcgGameRegistry.MTG, set, cn, stack, priceItems, qty);
+        }
+
         public CartEntryData {
+            game = CardStoreProviderRegistry.sanitizeGameId(game);
             set = set == null ? "" : set.trim();
             cn = cn == null ? "" : cn.trim();
             stack = sanitizeStack(stack);
@@ -162,7 +178,7 @@ public class CardStoreScreenHandler extends AbstractContainerMenu {
         }
 
         public boolean isValid() {
-            return !set.isBlank() && !cn.isBlank() && !stack.isEmpty() && qty > 0;
+            return !game.isBlank() && !set.isBlank() && !cn.isBlank() && !stack.isEmpty() && qty > 0;
         }
 
         private static ItemStack sanitizeStack(ItemStack stack) {
@@ -171,13 +187,14 @@ public class CardStoreScreenHandler extends AbstractContainerMenu {
         }
     }
 
-    public record OpenData(BlockPos blockPos, List<CartEntryData> cartEntries, String priceItemId, String priceBasis) {
+    public record OpenData(BlockPos blockPos, List<CartEntryData> cartEntries, String priceItemId, String priceBasis, String selectedGame) {
         public static final StreamCodec<RegistryFriendlyByteBuf, OpenData> STREAM_CODEC =
                 StreamCodec.of(
                         (buf, data) -> {
                             buf.writeBlockPos(data.blockPos());
                             buf.writeUtf(data.priceItemId());
                             buf.writeUtf(data.priceBasis());
+                            buf.writeUtf(data.selectedGame(), 128);
                             buf.writeVarInt(data.cartEntries().size());
                             for (var entry : data.cartEntries()) {
                                 CartEntryData.STREAM_CODEC.encode(buf, entry);
@@ -187,20 +204,26 @@ public class CardStoreScreenHandler extends AbstractContainerMenu {
                             BlockPos pos = buf.readBlockPos();
                             String priceItemId = buf.readUtf();
                             String priceBasis = buf.readUtf();
+                            String selectedGame = buf.readUtf(128);
                             int count = buf.readVarInt();
                             ArrayList<CartEntryData> entries = new ArrayList<>(count);
                             for (int i = 0; i < count; i++) {
                                 entries.add(CartEntryData.STREAM_CODEC.decode(buf));
                             }
-                            return new OpenData(pos, entries, priceItemId, priceBasis);
+                            return new OpenData(pos, entries, priceItemId, priceBasis, selectedGame);
                         }
                 );
+
+        public OpenData(BlockPos blockPos, List<CartEntryData> cartEntries, String priceItemId, String priceBasis) {
+            this(blockPos, cartEntries, priceItemId, priceBasis, TcgGameRegistry.MTG);
+        }
 
         public OpenData {
             blockPos = blockPos == null ? BlockPos.ZERO : blockPos.immutable();
             cartEntries = sanitizeCart(cartEntries);
             priceItemId = sanitizePriceItemId(priceItemId);
             priceBasis = sanitizePriceBasis(priceBasis);
+            selectedGame = CardStoreProviderRegistry.sanitizeGameId(selectedGame);
         }
     }
 }

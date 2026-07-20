@@ -8,6 +8,13 @@ public final class CardStoreClientPackets {
 
     public static void registerClient() {
 
+        ClientPlayNetworking.registerGlobalReceiver(CardStorePackets.SearchS2C.ID, (payload, context) -> {
+            context.client().execute(() -> {
+                var screen = context.client().screen;
+                if (screen instanceof CardStoreScreen cs) cs.onSearchResult(payload);
+            });
+        });
+
         ClientPlayNetworking.registerGlobalReceiver(CardStorePackets.SearchPrintsStartS2C.ID, (payload, context) -> {
             context.client().execute(() -> {
                 var screen = context.client().screen;

@@ -1,5 +1,7 @@
 package com.spider.mtgcard.cardstore;
 
+import com.spider.mtgcard.api.CardStoreProviderRegistry;
+import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.content.pack.cache.ScryfallExactFetch;
 import com.spider.mtgcard.content.pack.cache.ScryfallModels;
@@ -90,6 +92,16 @@ public final class CardStorePurchaseService {
 
         if (store.isDelivering()) {
             player.sendSystemMessage(Component.literal("This store is already printing."), true);
+            return;
+        }
+
+        String purchaseGame = commonPurchaseGame(lines);
+        if (purchaseGame == null) {
+            player.sendSystemMessage(Component.literal("Buy cards for one game at a time."), true);
+            return;
+        }
+        if (!TcgGameRegistry.MTG.equals(purchaseGame)) {
+            handleProviderConfirm(server, player, store, purchaseGame, lines);
             return;
         }
 
@@ -278,6 +290,121 @@ public final class CardStorePurchaseService {
                         : "Purchase confirmed. Printing cards..."), true);
             });
         });
+    }
+
+    private static String commonPurchaseGame(List<CardStorePackets.ConfirmPurchaseC2S.Line> lines) {
+        String game = null;
+        if (lines == null) return TcgGameRegistry.MTG;
+
+        for (var line : lines) {
+            if (line == null) continue;
+            String set = line.setCode() == null ? "" : line.setCode().trim();
+            String cn = line.collectorNumber() == null ? "" : line.collectorNumber().trim();
+            if (line.qty() <= 0 || set.isBlank() || cn.isBlank()) continue;
+
+            String next = CardStoreProviderRegistry.sanitizeGameId(line.game());
+            if (game == null) {
+                game = next;
+            } else if (!game.equals(next)) {
+                return null;
+            }
+        }
+
+        return game == null ? TcgGameRegistry.MTG : game;
+    }
+
+    private static void handleProviderConfirm(
+            MinecraftServer server,
+            ServerPlayer player,
+            CardStoreBlockEntity store,
+            String game,
+            List<CardStorePackets.ConfirmPurchaseC2S.Line> lines
+    ) {
+        CardStoreProviderRegistry.Provider provider = CardStoreProviderRegistry.get(game).orElse(null);
+        if (provider == null) {
+            player.sendSystemMessage(Component.literal("No Card Store provider for this game."), true);
+            return;
+        }
+
+        List<CardStoreProviderRegistry.PurchaseLine> purchaseLines = toProviderPurchaseLines(lines);
+        if (purchaseLines.isEmpty()) {
+            player.sendSystemMessage(Component.literal("Cart is empty."), true);
+            return;
+        }
+
+        ServerLevel world = (ServerLevel) player.level();
+        provider.preparePurchase(
+                        new CardStoreProviderRegistry.SearchContext(server, world, player, store, store.getBlockPos()),
+                        purchaseLines
+                )
+                .exceptionally(err -> CardStoreProviderRegistry.PurchaseResult.empty("Purchase failed."))
+                .whenComplete((result, ex) -> server.execute(() -> {
+                    CardStoreProviderRegistry.PurchaseResult safe = result == null
+                            ? CardStoreProviderRegistry.PurchaseResult.empty("Purchase failed.")
+                            : result;
+
+                    if (!safe.ok() || safe.entries().isEmpty()) {
+                        String message = safe.message().isBlank() ? "No cards could be resolved." : safe.message();
+                        player.sendSystemMessage(Component.literal(message), true);
+                        return;
+                    }
+
+                    if (store.isDelivering()) {
+                        player.sendSystemMessage(Component.literal("This store is already printing."), true);
+                        return;
+                    }
+
+                    boolean creative = player.isCreative();
+                    MtgcardConfig cfg = MtgcardConfig.get();
+                    Item currency = resolveCurrencyItem(cfg);
+                    int costItems = totalProviderCost(safe.entries());
+
+                    if (!creative) {
+                        int have = countInInv(player, currency);
+                        if (have < costItems) {
+                            player.sendSystemMessage(Component.literal("Not enough currency. Need " + costItems + " " + currency.getName(new ItemStack(currency)).getString()
+                                    + " (have " + have + ")."), true);
+                            return;
+                        }
+                        removeFromInv(player, currency, costItems);
+                    }
+
+                    for (var entry : safe.entries()) {
+                        queueNoStack(store, player.getUUID(), entry.stack(), entry.qty());
+                    }
+
+                    player.sendSystemMessage(Component.literal(creative
+                            ? "Printing cards (creative)."
+                            : "Purchase confirmed. Printing cards..."), true);
+                }));
+    }
+
+    private static List<CardStoreProviderRegistry.PurchaseLine> toProviderPurchaseLines(
+            List<CardStorePackets.ConfirmPurchaseC2S.Line> lines
+    ) {
+        if (lines == null || lines.isEmpty()) return List.of();
+        ArrayList<CardStoreProviderRegistry.PurchaseLine> out = new ArrayList<>();
+        for (var line : lines) {
+            if (line == null) continue;
+            String set = line.setCode() == null ? "" : line.setCode().trim();
+            String cn = line.collectorNumber() == null ? "" : line.collectorNumber().trim();
+            int qty = Math.max(0, line.qty());
+            if (qty <= 0 || set.isBlank() || cn.isBlank()) continue;
+            out.add(new CardStoreProviderRegistry.PurchaseLine(set, cn, qty));
+        }
+        return out.isEmpty() ? List.of() : List.copyOf(out);
+    }
+
+    private static int totalProviderCost(List<CardStoreProviderRegistry.PurchaseEntry> entries) {
+        long total = 0L;
+        if (entries != null) {
+            for (var entry : entries) {
+                if (entry == null) continue;
+                long add = Math.max(0L, entry.priceItems()) * (long) Math.max(1, entry.qty());
+                total = Math.min(Integer.MAX_VALUE, total + add);
+            }
+        }
+        return (int) Math.min(Integer.MAX_VALUE, total);
     }
 
     // -------- Pricing helpers --------

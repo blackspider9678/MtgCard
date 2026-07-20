@@ -1,6 +1,8 @@
 // src/client/java/com/spider/mtgcard/client/gui/CardStoreScreen.java
 package com.spider.mtgcard.client.gui;
 
+import com.spider.mtgcard.api.CardStoreProviderRegistry;
+import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.cardstore.CardStorePackets;
 import com.spider.mtgcard.cardstore.CardStoreScreenHandler;
 import com.spider.mtgcard.client.compat.LegacyContainerScreen;
@@ -77,6 +79,10 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     private EditBox searchField;
     private Button addToCartBtn;
+    private Button gameBtn;
+    private String selectedGame = TcgGameRegistry.MTG;
+    private boolean gameMenuOpen = false;
+    private final ArrayList<Button> gameMenuButtons = new ArrayList<>();
 
     // ---- virtual GUI size (MUST match ScreenHandler) ----
     private static final int GUI_W = 426;
@@ -213,6 +219,106 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     private void closeSortMenu() {
         sortMenuOpen = false;
         sortMenuHover = -1;
+    }
+
+    private String normalizeClientGame(String game) {
+        String normalized = CardStoreProviderRegistry.sanitizeGameId(game);
+        return CardStoreProviderRegistry.containsProvider(normalized) ? normalized : TcgGameRegistry.MTG;
+    }
+
+    private boolean sameGame(String game) {
+        return selectedGame.equals(CardStoreProviderRegistry.sanitizeGameId(game));
+    }
+
+    private String gameButtonText(String game) {
+        String label = TcgGameRegistry.labelForGame(game).getString().trim();
+        if (label.isEmpty()) label = TcgGameRegistry.shortLabel(game);
+        return label.length() <= 10 ? label : label.substring(0, 10);
+    }
+
+    private void updateSearchHint() {
+        if (searchField == null) return;
+        searchField.setHint(Component.literal(TcgGameRegistry.MTG.equals(selectedGame) ? "Scryfall syntax" : "Search cards"));
+    }
+
+    private void toggleGameMenu() {
+        if (gameMenuOpen) closeGameMenu();
+        else openGameMenu();
+    }
+
+    private void openGameMenu() {
+        if (gameBtn == null) return;
+        closeGameMenu();
+
+        List<TcgGameRegistry.Entry> options = CardStoreProviderRegistry.gameEntriesWithProviders();
+        if (options.size() <= 1) return;
+
+        int rowH = 18;
+        int w = 112;
+        int hTotal = options.size() * rowH;
+        int x0 = gameBtn.getX();
+        int y0 = gameBtn.getY() + gameBtn.getHeight() + 2;
+        x0 = Math.max(4, Math.min(x0, this.width - w - 4));
+        y0 = Math.max(4, Math.min(y0, this.height - hTotal - 4));
+
+        for (int i = 0; i < options.size(); i++) {
+            TcgGameRegistry.Entry option = options.get(i);
+            Button button = Button.builder(option.label(), b -> selectGame(option.id()))
+                    .bounds(x0, y0 + (i * rowH), w, rowH)
+                    .build();
+            gameMenuButtons.add(button);
+            this.addRenderableWidget(button);
+        }
+
+        gameMenuOpen = true;
+    }
+
+    private void closeGameMenu() {
+        if (!gameMenuButtons.isEmpty()) {
+            for (Button button : gameMenuButtons) {
+                this.removeWidget(button);
+            }
+            gameMenuButtons.clear();
+        }
+        gameMenuOpen = false;
+    }
+
+    private void selectGame(String game) {
+        String next = normalizeClientGame(game);
+        closeGameMenu();
+        if (selectedGame.equals(next)) return;
+
+        selectedGame = next;
+        if (gameBtn != null) gameBtn.setMessage(Component.literal(gameButtonText(selectedGame)));
+        updateSearchHint();
+        resetStoreSearchState();
+
+        if (this.minecraft != null && this.minecraft.getConnection() != null) {
+            ClientPlayNetworking.send(new CardStorePackets.SetGameC2S(menu.blockPos, selectedGame));
+        }
+        updateWidgetVisibility();
+    }
+
+    private void resetStoreSearchState() {
+        activePrintsRequest = new UUID(0L, 0L);
+        gridLoading = false;
+        grid.clear();
+        gridPage = 1;
+        gridHasMore = false;
+        gridTotal = 0;
+        selectedIndex = -1;
+        nextArrivalIndex = 0;
+        lastPrintsQuery = "";
+        lastCanonicalName = "";
+        lastKnownTotalForQuery = 0;
+        resolvedSet = "";
+        resolvedCn = "";
+        selectedPriceItems = 0;
+        preview = ItemStack.EMPTY;
+        previewTex = null;
+        previewFace = 0;
+        if (searchField != null) searchField.setValue("");
+        status = "Selected " + TcgGameRegistry.labelForGame(selectedGame).getString();
     }
 
     private void setSortMode(SortMode mode) {
@@ -373,6 +479,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         this.inventoryLabelY = this.imageHeight - 94;
         this.priceItemId = handler.priceItemId();
         this.priceBasis = handler.priceBasis();
+        this.selectedGame = normalizeClientGame(handler.selectedGame());
         loadSavedCart(handler.initialCart());
     }
 
@@ -392,6 +499,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
             int qty = Math.max(1, line.qty);
             lines.add(new CardStoreScreenHandler.CartEntryData(
+                    line.game,
                     line.set,
                     line.cn,
                     line.stack.copyWithCount(1),
@@ -409,13 +517,15 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     private int selectedIndex = -1;
 
     private static class PrintEntry {
+        final String game;
         final String set;
         final String cn;
         final ItemStack stack;
         final long priceItems;
         final int arrival; // << NEW
 
-        PrintEntry(String set, String cn, ItemStack stack, long priceItems, int arrival) {
+        PrintEntry(String game, String set, String cn, ItemStack stack, long priceItems, int arrival) {
+            this.game = CardStoreProviderRegistry.sanitizeGameId(game);
             this.set = set;
             this.cn = cn;
             this.stack = stack;
@@ -607,7 +717,9 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         this.titleLabelY = topY + 6;
 
         // Clear & rebuild widgets
+        closeGameMenu();
         this.clearWidgets();
+        gameBtn = null;
 
         // Tabs
         int tabX = topX + 2;
@@ -644,10 +756,22 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         int fieldY = rightY + RIGHT_PAD;
 
         int fieldW = rightW - (RIGHT_PAD * 2);
+        int searchX = fieldX;
+        int searchW = fieldW;
 
-        searchField = new EditBox(this.font, fieldX, fieldY, fieldW, 18, Component.literal(""));
+        if (CardStoreProviderRegistry.hasMultipleProviders()) {
+            int gameW = 72;
+            gameBtn = this.addRenderableWidget(Button.builder(
+                    Component.literal(gameButtonText(selectedGame)),
+                    b -> toggleGameMenu()
+            ).bounds(fieldX, fieldY, gameW, 18).build());
+            searchX = fieldX + gameW + 4;
+            searchW = Math.max(40, fieldW - gameW - 4);
+        }
+
+        searchField = new EditBox(this.font, searchX, fieldY, searchW, 18, Component.literal(""));
         searchField.setMaxLength(512);
-        searchField.setHint(Component.literal("Scryfall syntax"));
+        updateSearchHint();
         this.addWidget(searchField);
 
         // Add-to-cart sits ABOVE the inventory block, aligned to right panel
@@ -677,7 +801,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             for (var line : cart) {
                 int q = Math.max(0, line.qty);
                 if (q <= 0) continue;
-                lines.add(new CardStorePackets.ConfirmPurchaseC2S.Line(line.set, line.cn, q));
+                lines.add(new CardStorePackets.ConfirmPurchaseC2S.Line(line.game, line.set, line.cn, q));
             }
 
             if (lines.isEmpty()) { status = "Cart is empty."; return; }
@@ -736,7 +860,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             UUID req = UUID.randomUUID();
             activePrintsRequest = req;
 
-            ClientPlayNetworking.send(new CardStorePackets.SearchPrintsC2S(menu.blockPos, lastPrintsQuery, target, pageSize, req));
+            ClientPlayNetworking.send(new CardStorePackets.SearchPrintsC2S(menu.blockPos, selectedGame, lastPrintsQuery, target, pageSize, req));
             status = "Loading page " + target + "…";
 
         }).bounds(startX, pagerY, pagerBtnW, pagerBtnH).build());
@@ -756,7 +880,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             UUID req = UUID.randomUUID();
             activePrintsRequest = req;
 
-            ClientPlayNetworking.send(new CardStorePackets.SearchPrintsC2S(menu.blockPos, lastPrintsQuery, target, pageSize, req));
+            ClientPlayNetworking.send(new CardStorePackets.SearchPrintsC2S(menu.blockPos, selectedGame, lastPrintsQuery, target, pageSize, req));
             status = "Loading page " + target + "…";
 
         }).bounds(startX + pagerBtnW + pagerGap + pageLabelW + pagerGap, pagerY, pagerBtnW, pagerBtnH).build());
@@ -852,8 +976,14 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             flipPreviewBtn.active = store && GuiCardFaceFlipper.isDoubleFaced(preview);
         }
         if (tab != Tab.STORE) closeSortMenu();
+        if (tab != Tab.STORE) closeGameMenu();
 
         if (searchField != null) searchField.setVisible(store);
+        if (gameBtn != null) {
+            gameBtn.visible = store;
+            gameBtn.active = store;
+            gameBtn.setMessage(Component.literal(gameButtonText(selectedGame)));
+        }
 
         if (addToCartBtn != null) addToCartBtn.visible = store;
         if (prevPageBtn != null) prevPageBtn.visible = store;
@@ -964,6 +1094,16 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
         // If tabs were clicked (buttons), visibility should update right away
         updateWidgetVisibility();
+
+        if (gameMenuOpen) {
+            int mx = (int) click.x();
+            int my = (int) click.y();
+            if (isMouseOverGameButton(mx, my) || isMouseOverGameMenuButton(mx, my)) {
+                return true;
+            }
+            closeGameMenu();
+            return true;
+        }
 
         // If dropdown open, consume clicks for it first
         // If dropdown open, consume clicks for it first
@@ -1123,6 +1263,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     public void onPrintsStart(CardStorePackets.SearchPrintsStartS2C p) {
         if (!p.storePos().equals(menu.blockPos)) return;
+        if (!sameGame(p.game())) return;
 
         // accept + lock to this request
         activePrintsRequest = p.requestId();
@@ -1158,8 +1299,9 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
         var e = p.entry();
         if (e == null || e.stack() == null || e.stack().isEmpty()) return;
+        if (!sameGame(e.game())) return;
 
-        grid.add(new PrintEntry(e.setCode(), e.collectorNumber(), e.stack(), e.priceItems(), nextArrivalIndex++));
+        grid.add(new PrintEntry(e.game(), e.setCode(), e.collectorNumber(), e.stack(), e.priceItems(), nextArrivalIndex++));
 
         // auto-select first arriving card
         if (selectedIndex < 0 && !grid.isEmpty()) {
@@ -1181,6 +1323,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     public void onPrintsDone(CardStorePackets.SearchPrintsDoneS2C p) {
         if (!p.storePos().equals(menu.blockPos)) return;
+        if (!sameGame(p.game())) return;
         if (!p.requestId().equals(activePrintsRequest)) return;
 
         status = p.message();
@@ -1266,7 +1409,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             int wrapW = searchField.getWidth() - 4;
 
             String q = (searchField != null) ? searchField.getValue() : "";
-            if (isAdvancedQuery(q)) {
+            if (TcgGameRegistry.MTG.equals(selectedGame) && isAdvancedQuery(q)) {
                 ctx.drawWordWrap(this.font, SCRY_HELP, hx, hy, wrapW, TEXT_FAINT, false);
             }
 
@@ -1323,6 +1466,25 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         return mx >= sortBtn.getX() && my >= sortBtn.getY()
                 && mx < sortBtn.getX() + sortBtn.getWidth()
                 && my < sortBtn.getY() + sortBtn.getHeight();
+    }
+
+    private boolean isMouseOverGameButton(int mx, int my) {
+        if (gameBtn == null || !gameBtn.visible) return false;
+        return mx >= gameBtn.getX() && my >= gameBtn.getY()
+                && mx < gameBtn.getX() + gameBtn.getWidth()
+                && my < gameBtn.getY() + gameBtn.getHeight();
+    }
+
+    private boolean isMouseOverGameMenuButton(int mx, int my) {
+        for (Button button : gameMenuButtons) {
+            if (button == null || !button.visible) continue;
+            if (mx >= button.getX() && my >= button.getY()
+                    && mx < button.getX() + button.getWidth()
+                    && my < button.getY() + button.getHeight()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void drawStorePagerLabel(GuiGraphics ctx) {
@@ -1442,6 +1604,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     public void onSearchResult(CardStorePackets.SearchS2C p) {
         if (!p.storePos().equals(menu.blockPos)) return;
+        if (!sameGame(p.game())) return;
 
         status = p.message();
 
@@ -1501,7 +1664,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             return;
         }
 
-        ClientPlayNetworking.send(new CardStorePackets.ImportDeckC2S(menu.blockPos, all.size(), all));
+        ClientPlayNetworking.send(new CardStorePackets.ImportDeckC2S(menu.blockPos, selectedGame, all.size(), all));
         status = "Importing " + all.size() + " lines from " + filesUsed + " file(s)...";
     }
 
@@ -1613,6 +1776,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     public void onImportDeckResult(CardStorePackets.ImportDeckS2C p) {
         if (!p.pos().equals(menu.blockPos)) return;
+        if (!sameGame(p.game())) return;
 
         status = p.message();
 
@@ -1622,7 +1786,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             // merge into cart by set+cn
             boolean merged = false;
             for (var line : cart) {
-                if (line.set.equals(e.set()) && line.cn.equals(e.cn())) {
+                if (line.game.equals(e.game()) && line.set.equals(e.set()) && line.cn.equals(e.cn())) {
                     line.qty += Math.max(1, e.qty());
                     merged = true;
                     break;
@@ -1630,7 +1794,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             }
             if (!merged) {
                 ItemStack icon = e.stack().copyWithCount(1);
-                cart.add(new CartLine(e.set(), e.cn(), icon, e.priceItems(), Math.max(1, e.qty())));
+                cart.add(new CartLine(e.game(), e.set(), e.cn(), icon, e.priceItems(), Math.max(1, e.qty())));
             }
         }
 
@@ -1640,6 +1804,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     @Override
     public void removed() {
+        closeGameMenu();
         syncCartToServer();
         super.removed();
     }
@@ -1740,6 +1905,12 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
                 return true;
             }
         }
+        if (gameMenuOpen) {
+            if (code == GLFW.GLFW_KEY_ESCAPE || code == GLFW.GLFW_KEY_E) {
+                closeGameMenu();
+                return true;
+            }
+        }
 
         // If we're typing in a text field, don't let "E" close the screen.
         if (tab == Tab.STORE && searchField != null && searchField.isFocused()) {
@@ -1772,7 +1943,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
                 activePrintsRequest = req;
 
                 // ✅ allow advanced queries again
-                ClientPlayNetworking.send(new CardStorePackets.SearchPrintsC2S(menu.blockPos, q, page, pageSize, req));
+                ClientPlayNetworking.send(new CardStorePackets.SearchPrintsC2S(menu.blockPos, selectedGame, q, page, pageSize, req));
                 status = "Loading page " + page + "…";
                 return true;
             }
@@ -1793,13 +1964,15 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     private final java.util.ArrayList<CartLine> cart = new java.util.ArrayList<>();
 
     private static class CartLine {
+        final String game;
         final String set;
         final String cn;
         final ItemStack stack;     // for icon/preview
         final long priceItems;     // per-item cost in configured currency item
         int qty;
 
-        CartLine(String set, String cn, ItemStack stack, long priceItems, int qty) {
+        CartLine(String game, String set, String cn, ItemStack stack, long priceItems, int qty) {
+            this.game = CardStoreProviderRegistry.sanitizeGameId(game);
             this.set = set;
             this.cn = cn;
             this.stack = stack;
@@ -1824,7 +1997,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
             boolean merged = false;
             for (var line : cart) {
-                if (line.set.equals(entry.set()) && line.cn.equals(entry.cn())) {
+                if (line.game.equals(entry.game()) && line.set.equals(entry.set()) && line.cn.equals(entry.cn())) {
                     line.qty += Math.max(1, entry.qty());
                     merged = true;
                     break;
@@ -1832,6 +2005,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             }
             if (!merged) {
                 cart.add(new CartLine(
+                        entry.game(),
                         entry.set(),
                         entry.cn(),
                         entry.stack().copyWithCount(1),
@@ -1863,7 +2037,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
         // If same printing already in cart -> increment qty
         for (var line : cart) {
-            if (line.set.equals(sel.set) && line.cn.equals(sel.cn)) {
+            if (line.game.equals(sel.game) && line.set.equals(sel.set) && line.cn.equals(sel.cn)) {
                 line.qty++;
                 status = "Added +1 (now " + line.qty + ")";
                 return;
@@ -1874,7 +2048,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         ItemStack icon = sel.stack.copy();
         icon.setCount(1);
 
-        cart.add(new CartLine(sel.set, sel.cn, icon, sel.priceItems, 1));
+        cart.add(new CartLine(sel.game, sel.set, sel.cn, icon, sel.priceItems, 1));
         status = "Added to cart (" + cart.size() + " items)";
     }
 
@@ -2127,7 +2301,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         activePrintsRequest = req;
 
         ClientPlayNetworking.send(new CardStorePackets.SearchPrintsC2S(
-                menu.blockPos, lastPrintsQuery, page, pageSize, req
+                menu.blockPos, selectedGame, lastPrintsQuery, page, pageSize, req
         ));
 
         status = "Loading page " + page + "…";
