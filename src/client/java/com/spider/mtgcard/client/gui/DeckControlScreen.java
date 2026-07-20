@@ -6,6 +6,8 @@ import com.spider.mtgcard.client.compat.MtgGuiScaleHelper;
 import com.spider.mtgcard.client.input.GuiCardFaceFlipHandler;
 import com.spider.mtgcard.client.input.GuiCardFaceFlipper;
 import com.spider.mtgcard.client.java.CardArtManager;
+import com.spider.mtgcard.api.DeckControlActionRegistry;
+import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.db.search.CardMeta;
 import com.spider.mtgcard.deckbox.DeckboxBlockEntity;
 import com.spider.mtgcard.deckcontrol.DeckControlBlockEntity;
@@ -30,7 +32,9 @@ import org.joml.Matrix3x2f;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static com.spider.mtgcard.deckcontrol.DeckControlBlockEntity.LIBRARY_SLOTS;
 import static com.spider.mtgcard.deckcontrol.DeckControlScreenHandler.GUI_H;
@@ -77,38 +81,28 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
     private boolean placeBottom = false;
     private int placeFromTop = 3;
 
-    // Amount steppers
-    private int revealN = 1;
-    private int scryN = 1;
-    private int surveilN = 1;
-    private int millN = 1;
-
-    // Cascade (kept as UI-only for now)
-    private int cascadeSourceMv = 4;
-
     // Buttons
-    private Button btnDraw;
-    private Button btnShuffle;
-
-    private Button btnStartCascade;
-    private Button btnPlaceHovered;
+    private Button btnGame;
 
     private Button btnOverlayPlaceConfirm;
     private Button btnOverlayConfirm; // Scry/Surveil Confirm
     private Button btnOverlayDone;    // Reveal Done
     private Button overlayCancel;
 
-    // Stepper buttons (main screen)
-    private Button btnScryMinus, btnScryPlus;
-    private Button btnSurveilMinus, btnSurveilPlus;
-    private Button btnRevealMinus, btnRevealPlus;
-    private Button btnMillMinus, btnMillPlus;
-
     // Place overlay controls (extra buttons)
     private Button btnPlaceTop;
     private Button btnPlaceBottomMode;
     private Button btnPlaceMinus;
     private Button btnPlacePlus;
+
+    private final Map<Button, DeckControlActionRegistry.Entry> actionButtons = new HashMap<>();
+    private final List<NumberControl> numberControls = new ArrayList<>();
+    private final Map<Identifier, Integer> actionValues = new HashMap<>();
+    private final List<Button> gameMenuButtons = new ArrayList<>();
+    private boolean gameMenuOpen = false;
+    private String builtActionGame = "";
+    private int mainHintY = 0;
+    private boolean noActionsForGame = false;
 
     private int cascadeHitIndex = -1;
     private int cascadeSourceMvNet = 0;
@@ -193,6 +187,9 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
         return out;
     }
 
+    private record NumberControl(DeckControlActionRegistry.Entry entry, Button minus, Button plus, int countX, int countY) {
+    }
+
     public DeckControlScreen(DeckControlScreenHandler handler, Inventory inv, Component title) {
         super(handler, inv, title);
 
@@ -213,6 +210,238 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
         return addRenderableWidget(w);
     }
 
+    private void clearMainButtons() {
+        closeGameMenu();
+        for (Button button : baseButtons) {
+            this.removeWidget(button);
+        }
+        baseButtons.clear();
+        actionButtons.clear();
+        numberControls.clear();
+        btnGame = null;
+    }
+
+    private void buildMainButtons(int left, int top) {
+        clearMainButtons();
+
+        String game = menu.getSelectedGame();
+        builtActionGame = game;
+        noActionsForGame = false;
+
+        if (DeckControlActionRegistry.hasMultipleGameActionSets()) {
+            btnGame = addBase(Button.builder(Component.literal(gameButtonText(game)), b -> toggleGameMenu())
+                    .bounds(left + 96, top + 3, 82, 14)
+                    .build());
+        }
+
+        int headerH = 20;
+        int selX = left + PAD;
+        int selY = top + headerH + PAD;
+        int controlsX = selX + SEL_PANEL_W + GAP;
+        int controlsY = selY;
+        int controlsW = (left + imageWidth - PAD) - controlsX;
+
+        List<DeckControlActionRegistry.Entry> entries = DeckControlActionRegistry.entriesForGame(game);
+        noActionsForGame = entries.isEmpty();
+        if (entries.isEmpty()) {
+            mainHintY = controlsY + BTN_H + 8;
+            return;
+        }
+
+        int rowY = controlsY;
+        DeckControlActionRegistry.Entry pendingHalf = null;
+        for (DeckControlActionRegistry.Entry entry : entries) {
+            if (entry.kind() == DeckControlActionRegistry.Kind.NUMBERED) {
+                if (pendingHalf != null) {
+                    addActionButton(pendingHalf, controlsX, rowY, controlsW);
+                    pendingHalf = null;
+                    rowY += BTN_H + 8;
+                }
+                addNumberedAction(entry, controlsX, rowY, controlsW);
+                rowY += BTN_H + 8;
+                continue;
+            }
+
+            if (pendingHalf == null) {
+                pendingHalf = entry;
+            } else {
+                int halfW = (controlsW - GAP) / 2;
+                addActionButton(pendingHalf, controlsX, rowY, halfW);
+                addActionButton(entry, controlsX + halfW + GAP, rowY, halfW);
+                pendingHalf = null;
+                rowY += BTN_H + 8;
+            }
+        }
+
+        if (pendingHalf != null) {
+            addActionButton(pendingHalf, controlsX, rowY, controlsW);
+            rowY += BTN_H + 8;
+        }
+
+        mainHintY = rowY + 2;
+    }
+
+    private void addActionButton(DeckControlActionRegistry.Entry entry, int x, int y, int w) {
+        Button button = Button.builder(entry.label(), b -> runRegisteredAction(entry))
+                .bounds(x, y, Math.max(24, w), BTN_H)
+                .build();
+        actionButtons.put(button, entry);
+        addBase(button);
+    }
+
+    private void addNumberedAction(DeckControlActionRegistry.Entry entry, int x, int y, int controlsW) {
+        int actionW = Math.min(118, controlsW - (STEP_W * 2 + GAP * 2 + 44));
+        int minusX = x + actionW + GAP;
+        int plusX = minusX + STEP_W + GAP;
+        int countX = plusX + STEP_W + COUNT_PAD;
+
+        Button minus = addBase(stepperButton(minusX, y, "-", () ->
+                setActionValue(entry, actionValue(entry) - 1)));
+        Button plus = addBase(stepperButton(plusX, y, "+", () ->
+                setActionValue(entry, actionValue(entry) + 1)));
+        addActionButton(entry, x, y, actionW);
+        numberControls.add(new NumberControl(entry, minus, plus, countX, y + COUNT_TEXT_Y_OFF));
+    }
+
+    private void runRegisteredAction(DeckControlActionRegistry.Entry entry) {
+        closeGameMenu();
+
+        if (entry.kind() == DeckControlActionRegistry.Kind.PLACE_SELECTED) {
+            overlay = OverlayMode.PLACE_CARD;
+            placeBottom = false;
+            placeFromTop = 3;
+            return;
+        }
+
+        int value = entry.kind() == DeckControlActionRegistry.Kind.NUMBERED ? actionValue(entry) : 0;
+        int slot = entry.activation() == DeckControlActionRegistry.Activation.SELECTED_CARD
+                ? selectedPlayerInvIndex
+                : -1;
+
+        ClientPlayNetworking.send(new DeckControlPackets.RunActionC2S(
+                menu.getPos(),
+                entry.id().toString(),
+                value,
+                slot
+        ));
+        toastFor(entry);
+    }
+
+    private void toastFor(DeckControlActionRegistry.Entry entry) {
+        Identifier id = entry.id();
+        if (id.equals(DeckControlActionRegistry.MTG_SHUFFLE)) {
+            toast = "Shuffling...";
+            toastTicks = 40;
+        } else if (id.equals(DeckControlActionRegistry.MTG_CASCADE)) {
+            toast = "Cascading...";
+            toastTicks = 30;
+        } else if (id.equals(DeckControlActionRegistry.MTG_SHUFFLE_GRAVEYARD)) {
+            toast = "Shuffling graveyard into library...";
+            toastTicks = 40;
+        } else if (id.equals(DeckControlActionRegistry.MTG_RESET)) {
+            toast = "Resetting deck...";
+            toastTicks = 40;
+        }
+    }
+
+    private int actionValue(DeckControlActionRegistry.Entry entry) {
+        return actionValues.computeIfAbsent(entry.id(), id -> entry.initialValue());
+    }
+
+    private void setActionValue(DeckControlActionRegistry.Entry entry, int value) {
+        actionValues.put(entry.id(), clamp(value, entry.minValue(), entry.maxValue()));
+    }
+
+    private void updateMainButtonStates(boolean modal) {
+        if (modal) closeGameMenu();
+
+        for (Button button : baseButtons) {
+            button.visible = !modal;
+            button.active = !modal;
+        }
+        if (modal) return;
+
+        for (Map.Entry<Button, DeckControlActionRegistry.Entry> e : actionButtons.entrySet()) {
+            e.getKey().active = isActionEnabled(e.getValue());
+        }
+        for (NumberControl control : numberControls) {
+            int value = actionValue(control.entry());
+            control.minus().active = value > control.entry().minValue();
+            control.plus().active = value < control.entry().maxValue();
+        }
+        if (btnGame != null) {
+            btnGame.setMessage(Component.literal(gameButtonText(menu.getSelectedGame())));
+            btnGame.active = true;
+        }
+    }
+
+    private boolean isActionEnabled(DeckControlActionRegistry.Entry entry) {
+        return switch (entry.activation()) {
+            case ALWAYS -> true;
+            case LINKED -> menu.isLinked();
+            case SELECTED_CARD -> canUseSelectedCard();
+        };
+    }
+
+    private String gameButtonText(String game) {
+        String label = TcgGameRegistry.labelForGame(game).getString().trim();
+        if (label.isEmpty()) label = TcgGameRegistry.shortLabel(game);
+        return label.length() <= 12 ? label : label.substring(0, 12);
+    }
+
+    private void toggleGameMenu() {
+        if (gameMenuOpen) closeGameMenu();
+        else openGameMenu();
+    }
+
+    private void openGameMenu() {
+        if (btnGame == null) return;
+        closeGameMenu();
+
+        List<TcgGameRegistry.Entry> options = DeckControlActionRegistry.gameEntriesWithActions();
+        int rowH = 16;
+        int w = 104;
+        int hTotal = options.size() * rowH;
+
+        int x0 = btnGame.getX();
+        int y0 = btnGame.getY() + btnGame.getHeight() + 2;
+        x0 = clamp(x0, 4, this.width - w - 4);
+        y0 = clamp(y0, 4, this.height - hTotal - 4);
+
+        for (int i = 0; i < options.size(); i++) {
+            TcgGameRegistry.Entry option = options.get(i);
+            Button button = Button.builder(option.label(), b -> {
+                ClientPlayNetworking.send(new DeckControlPackets.SetGameC2S(menu.getPos(), option.id()));
+                closeGameMenu();
+            }).bounds(x0, y0 + i * rowH, w, rowH).build();
+            gameMenuButtons.add(button);
+            this.addRenderableWidget(button);
+        }
+
+        gameMenuOpen = true;
+    }
+
+    private void closeGameMenu() {
+        if (!gameMenuButtons.isEmpty()) {
+            for (Button button : gameMenuButtons) {
+                this.removeWidget(button);
+            }
+            gameMenuButtons.clear();
+        }
+        gameMenuOpen = false;
+    }
+
+    @Override
+    protected void containerTick() {
+        super.containerTick();
+        String game = menu.getSelectedGame();
+        if (!game.equals(builtActionGame)) {
+            buildMainButtons(this.leftPos, this.topPos);
+        } else if (btnGame != null) {
+            btnGame.setMessage(Component.literal(gameButtonText(game)));
+        }
+    }
+
     @Override
     protected void init() {
         if (applyAutoFitGuiScaleWithSidePreview(this.imageWidth, this.imageHeight, 180, Math.min(this.imageHeight - 8, 220))) return;
@@ -226,105 +455,7 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
         int left = this.leftPos;
         int top  = this.topPos;
 
-        // --- Main layout anchors ---
-        int headerH = 20;
-
-        int selX = left + PAD;
-        int selY = top + headerH + PAD;
-
-        int controlsX = selX + SEL_PANEL_W + GAP;
-        int controlsY = selY;
-
-        int rightEdge = left + imageWidth - PAD;
-        int controlsW = rightEdge - controlsX;
-
-        // Top row: [Draw] [Shuffle] [Reveal Top]
-        int topBtnW = (controlsW - GAP * 2) / 3;
-
-
-        btnDraw = addBase(Button.builder(Component.literal("Draw"), b ->
-                sendDeckAction(DeckControlPackets.Action.DRAW, 0, 0)
-        ).bounds(controlsX, controlsY, topBtnW, BTN_H).build());
-
-        btnShuffle = addBase(Button.builder(Component.literal("Shuffle"), b -> {
-            sendDeckAction(DeckControlPackets.Action.SHUFFLE, 0, 0);
-            toast = "Shuffling…";
-            toastTicks = 40;
-        }).bounds(controlsX + topBtnW + GAP, controlsY, topBtnW, BTN_H).build());
-
-        // Action rows:
-        // [ Action ] [-] [+]   x#
-        int rowY = controlsY + BTN_H + 14;
-
-        int actionW = Math.min(118, controlsW - (STEP_W * 2 + GAP * 2 + 44)); // keep sane on narrow widths
-        int minusX = controlsX + actionW + GAP;
-        int plusX  = minusX + STEP_W + GAP;
-        int countX = plusX + STEP_W + COUNT_PAD; // text only
-
-        // Scry row
-        btnScryMinus = addBase(stepperButton(minusX, rowY, "-", () -> scryN = clamp(scryN - 1, 1, 31)));
-        btnScryPlus  = addBase(stepperButton(plusX,  rowY, "+", () -> scryN = clamp(scryN + 1, 1, 31)));
-        addBase(Button.builder(Component.literal("Scry"), b ->
-                sendDeckAction(DeckControlPackets.Action.START_SCRY, scryN, 0)
-        ).bounds(controlsX, rowY, actionW, BTN_H).build());
-        rowY += BTN_H + 8;
-
-        // Surveil row
-        btnSurveilMinus = addBase(stepperButton(minusX, rowY, "-", () -> surveilN = clamp(surveilN - 1, 1, 31)));
-        btnSurveilPlus  = addBase(stepperButton(plusX,  rowY, "+", () -> surveilN = clamp(surveilN + 1, 1, 31)));
-        addBase(Button.builder(Component.literal("Surveil"), b ->
-                sendDeckAction(DeckControlPackets.Action.START_SURVEIL, surveilN, 0)
-        ).bounds(controlsX, rowY, actionW, BTN_H).build());
-        rowY += BTN_H + 8;
-
-        // Reveal N row
-        btnRevealMinus = addBase(stepperButton(minusX, rowY, "-", () -> revealN = clamp(revealN - 1, 1, 31)));
-        btnRevealPlus  = addBase(stepperButton(plusX,  rowY, "+", () -> revealN = clamp(revealN + 1, 1, 31)));
-        addBase(Button.builder(Component.literal("Peek N"), b ->
-                sendDeckAction(DeckControlPackets.Action.REVEAL_N, revealN, 0)
-        ).bounds(controlsX, rowY, actionW, BTN_H).build());
-        rowY += BTN_H + 8;
-
-        // Mill row
-        btnMillMinus = addBase(stepperButton(minusX, rowY, "-", () -> millN = clamp(millN - 1, 1, 99)));
-        btnMillPlus  = addBase(stepperButton(plusX,  rowY, "+", () -> millN = clamp(millN + 1, 1, 99)));
-        addBase(Button.builder(Component.literal("Mill"), b ->
-                sendDeckAction(DeckControlPackets.Action.MILL_N, millN, 0)
-        ).bounds(controlsX, rowY, actionW, BTN_H).build());
-        rowY += BTN_H + 18;
-
-        // Bottom row: [Start Cascade] [Place Selected...]
-        int bottomBtnW = (controlsW - GAP) / 2;
-
-        btnStartCascade = addBase(Button.builder(Component.literal("Start Cascade"), b -> {
-            int mv = getCascadeSourceMv();
-            ClientPlayNetworking.send(new DeckControlPackets.CascadeStartC2S(menu.getPos(), mv));
-            toast = "Cascading…";
-            toastTicks = 30;
-        }).bounds(controlsX, rowY, bottomBtnW, BTN_H).build());
-
-        btnPlaceHovered = addBase(Button.builder(Component.literal("Place Selected…"), b -> {
-            overlay = OverlayMode.PLACE_CARD;
-            placeBottom = false;
-            placeFromTop = 3;
-        }).bounds(controlsX + bottomBtnW + GAP, rowY, bottomBtnW, BTN_H).build());
-
-        // New row under cascade/place
-        int utilY = rowY + BTN_H + 6;
-        int utilW = (controlsW - GAP) / 2;
-
-        addBase(Button.builder(Component.literal("Shuffle GY → Library"), b -> {
-            sendDeckAction(DeckControlPackets.Action.SHUFFLE_GRAVEYARD_TO_LIBRARY, 0, 0);
-            toast = "Shuffling graveyard into library…";
-            toastTicks = 40;
-        }).bounds(controlsX, utilY, utilW, BTN_H).build());
-
-        addBase(Button.builder(Component.literal("Reset Deck"), b -> {
-            sendDeckAction(DeckControlPackets.Action.RESET_DECK, 0, 0);
-            toast = "Resetting deck…";
-            toastTicks = 40;
-        }).bounds(controlsX + utilW + GAP, utilY, utilW, BTN_H).build());
-
+        buildMainButtons(left, top);
 
         // NOTE: positions for these are re-anchored inside drawOverlay() when CASCADE is open.
         btnCascadeCast = addOverlay(Button.builder(Component.literal("Cast"), b -> {
@@ -425,16 +556,7 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
 
         boolean modal = overlay != OverlayMode.NONE;
 
-        // Hide/disable normal UI while modal overlay is open
-        for (Button w : baseButtons) {
-            w.visible = !modal;
-            w.active  = !modal;
-        }
-
-        // set overlay vis/active BEFORE super.render
-        boolean ok = canUseSelectedCard();
-        if (btnStartCascade != null) btnStartCascade.active = ok;
-        if (btnPlaceHovered != null) btnPlaceHovered.active = ok;
+        updateMainButtonStates(modal);
 
         if (btnCascadeCast != null)  btnCascadeCast.visible  = (overlay == OverlayMode.CASCADE && cascadeHitIndex >= 0);
         if (btnCascadeExile != null) btnCascadeExile.visible = (overlay == OverlayMode.CASCADE);
@@ -514,41 +636,10 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
     }
 
     private void drawMainCounts(GuiGraphics ctx) {
-        int left = this.leftPos;
-        int top = this.topPos;
-
-        int headerH = 20;
-
-        int selX = left + PAD;
-        int selY = top + headerH + PAD;
-
-        int controlsX = selX + SEL_PANEL_W + GAP;
-        int controlsY = selY;
-
-        int rightEdge = left + imageWidth - PAD;
-        int controlsW = rightEdge - controlsX;
-
-        int rowY = controlsY + BTN_H + 14;
-
-        int actionW = Math.min(118, controlsW - (STEP_W * 2 + GAP * 2 + 44));
-        int minusX = controlsX + actionW + GAP;
-        int plusX  = minusX + STEP_W + GAP;
-        int countX = plusX + STEP_W + COUNT_PAD;
-
-        // Scry
-        ctx.drawString(font, Component.literal("x" + scryN), countX, rowY + COUNT_TEXT_Y_OFF, 0xFFD0D0D0, false);
-        rowY += BTN_H + 8;
-
-        // Surveil
-        ctx.drawString(font, Component.literal("x" + surveilN), countX, rowY + COUNT_TEXT_Y_OFF, 0xFFD0D0D0, false);
-        rowY += BTN_H + 8;
-
-        // Reveal N
-        ctx.drawString(font, Component.literal("x" + revealN), countX, rowY + COUNT_TEXT_Y_OFF, 0xFFD0D0D0, false);
-        rowY += BTN_H + 8;
-
-        // Mill
-        ctx.drawString(font, Component.literal("x" + millN), countX, rowY + COUNT_TEXT_Y_OFF, 0xFFD0D0D0, false);
+        for (NumberControl control : numberControls) {
+            ctx.drawString(font, Component.literal("x" + actionValue(control.entry())),
+                    control.countX(), control.countY(), 0xFFD0D0D0, false);
+        }
     }
 
     private void drawMainHint(GuiGraphics ctx) {
@@ -560,21 +651,21 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
         int selY = top + headerH + PAD;
 
         int controlsX = selX + SEL_PANEL_W + GAP;
-        int controlsY = selY;
-
         int rightEdge = left + imageWidth - PAD;
         int controlsW = rightEdge - controlsX;
 
-        int rowY = controlsY + BTN_H + 14;
-        rowY += (BTN_H + 8) * 4;  // 4 action rows
-        rowY += 18;               // spacing before bottom buttons
-        rowY += BTN_H + 6;        // below Start Cascade / Place Selected
-        rowY += BTN_H + 6;        // below Shuffle GY / Reset Deck
+        if (noActionsForGame) {
+            Component empty = Component.literal("No Deck Control actions registered");
+            int emptyW = font.width(empty);
+            int emptyX = controlsX + (controlsW - emptyW) / 2;
+            ctx.drawString(font, empty, emptyX, mainHintY, 0xFFB0B0B0, false);
+            return;
+        }
 
         Component hint = Component.literal("Click a card in your inventory to select");
         int w = font.width(hint);
         int x = controlsX + (controlsW - w) / 2;
-        ctx.drawString(font, hint, x, rowY, 0xFFB0B0B0, false);
+        ctx.drawString(font, hint, x, mainHintY, 0xFFB0B0B0, false);
     }
 
     @Override
@@ -1088,7 +1179,6 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
 
             selectedPlayerCard = slot.getItem();
             selectedPlayerInvIndex = slot.getContainerSlot();
-            cascadeSourceMv = CardMeta.read(selectedPlayerCard).mv();
             return true;
         }
 
@@ -1167,6 +1257,7 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
     @Override
     public void removed() {
         super.removed();
+        closeGameMenu();
         if (cascadePendingClient) {
             ClientPlayNetworking.send(new DeckControlPackets.CascadeResolveC2S(menu.getPos(), false));
             cascadePendingClient = false;
@@ -1198,11 +1289,6 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
                 && selectedPlayerInvIndex >= 0
                 && !selectedPlayerCard.isEmpty()
                 && menu.isCardItem(selectedPlayerCard);
-    }
-
-    private int getCascadeSourceMv() {
-        if (canUseSelectedCard()) return CardMeta.read(selectedPlayerCard).mv();
-        return cascadeSourceMv;
     }
 
     private static int clamp(int v, int min, int max) {

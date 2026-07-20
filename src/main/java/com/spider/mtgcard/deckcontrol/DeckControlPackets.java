@@ -1,5 +1,7 @@
 package com.spider.mtgcard.deckcontrol;
 
+import com.spider.mtgcard.api.DeckControlActionRegistry;
+import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.registry.ModRegistry;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -60,6 +62,42 @@ public final class DeckControlPackets {
                             buf.writeVarInt(p.b());
                         },
                         (buf) -> new ActionC2S(buf.readBlockPos(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt())
+                );
+
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
+    }
+
+    public record SetGameC2S(BlockPos pos, String gameId) implements CustomPacketPayload {
+        public static final Type<SetGameC2S> ID = new Type<>(ModRegistry.id("deck_set_game"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, SetGameC2S> CODEC =
+                StreamCodec.of(
+                        (buf, p) -> {
+                            buf.writeBlockPos(p.pos());
+                            buf.writeUtf(p.gameId(), 128);
+                        },
+                        (buf) -> new SetGameC2S(buf.readBlockPos(), buf.readUtf(128))
+                );
+
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
+    }
+
+    public record RunActionC2S(BlockPos pos, String actionId, int value, int playerInventorySlot)
+            implements CustomPacketPayload {
+        public static final Type<RunActionC2S> ID = new Type<>(ModRegistry.id("deck_run_action"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, RunActionC2S> CODEC =
+                StreamCodec.of(
+                        (buf, p) -> {
+                            buf.writeBlockPos(p.pos());
+                            buf.writeUtf(p.actionId(), 128);
+                            buf.writeVarInt(p.value());
+                            buf.writeVarInt(p.playerInventorySlot());
+                        },
+                        (buf) -> new RunActionC2S(
+                                buf.readBlockPos(),
+                                buf.readUtf(128),
+                                buf.readVarInt(),
+                                buf.readVarInt()
+                        )
                 );
 
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }
@@ -157,6 +195,8 @@ public final class DeckControlPackets {
     // -------------------- registration --------------------
     public static void registerTypes() {
         PayloadTypeRegistry.playC2S().register(ActionC2S.ID, ActionC2S.CODEC);
+        PayloadTypeRegistry.playC2S().register(SetGameC2S.ID, SetGameC2S.CODEC);
+        PayloadTypeRegistry.playC2S().register(RunActionC2S.ID, RunActionC2S.CODEC);
         PayloadTypeRegistry.playS2C().register(OverlayS2C.ID, OverlayS2C.CODEC);
 
         PayloadTypeRegistry.playC2S().register(CascadeStartC2S.ID, CascadeStartC2S.CODEC);
@@ -167,6 +207,37 @@ public final class DeckControlPackets {
     }
 
     public static void registerReceivers() {
+
+        ServerPlayNetworking.registerGlobalReceiver(SetGameC2S.ID, (payload, ctx) ->
+                ctx.server().execute(() -> {
+                    if (!(ctx.player() instanceof ServerPlayer sp)) return;
+                    ServerLevel world = (ServerLevel) sp.level();
+                    var be = world.getBlockEntity(payload.pos());
+                    if (!(be instanceof DeckControlBlockEntity dc)) return;
+
+                    String game = TcgGameRegistry.normalizeGameId(payload.gameId());
+                    if (game.isBlank()) return;
+                    if (!TcgGameRegistry.containsGame(game)) return;
+                    dc.setSelectedGame(game);
+                })
+        );
+
+        ServerPlayNetworking.registerGlobalReceiver(RunActionC2S.ID, (payload, ctx) ->
+                ctx.server().execute(() -> {
+                    if (!(ctx.player() instanceof ServerPlayer sp)) return;
+                    ServerLevel world = (ServerLevel) sp.level();
+                    var be = world.getBlockEntity(payload.pos());
+                    if (!(be instanceof DeckControlBlockEntity dc)) return;
+
+                    DeckControlActionRegistry.run(
+                            payload.actionId(),
+                            sp,
+                            dc,
+                            payload.value(),
+                            payload.playerInventorySlot()
+                    );
+                })
+        );
 
         // --- base action receiver ---
         ServerPlayNetworking.registerGlobalReceiver(ActionC2S.ID, (payload, ctx) ->

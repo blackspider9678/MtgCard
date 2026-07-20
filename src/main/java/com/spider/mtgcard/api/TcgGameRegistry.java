@@ -36,6 +36,11 @@ public final class TcgGameRegistry {
         return List.copyOf(entries);
     }
 
+    public static synchronized boolean containsGame(String id) {
+        String normalized = normalizeGameId(id);
+        return !normalized.isBlank() && GAMES.containsKey(normalized);
+    }
+
     public static List<Entry> filterOptions() {
         ArrayList<Entry> entries = new ArrayList<>();
         entries.add(ALL_ENTRY);
@@ -78,6 +83,30 @@ public final class TcgGameRegistry {
         List<Entry> options = filterOptions();
         if (index < 0 || index >= options.size()) return ALL_GAMES;
         return options.get(index).id();
+    }
+
+    public static int gameIndex(String id) {
+        String normalized = normalizeGameId(id);
+        List<Entry> options = gameEntries();
+        for (int i = 0; i < options.size(); i++) {
+            if (options.get(i).id().equals(normalized)) return i;
+        }
+
+        for (int i = 0; i < options.size(); i++) {
+            if (options.get(i).id().equals(MTG)) return i;
+        }
+        return 0;
+    }
+
+    public static String gameId(int index) {
+        List<Entry> options = gameEntries();
+        if (options.isEmpty()) return MTG;
+        if (index >= 0 && index < options.size()) return options.get(index).id();
+
+        for (Entry option : options) {
+            if (option.id().equals(MTG)) return option.id();
+        }
+        return options.getFirst().id();
     }
 
     public static String shortLabel(String id) {
