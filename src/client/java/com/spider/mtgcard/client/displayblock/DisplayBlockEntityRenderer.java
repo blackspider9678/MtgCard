@@ -59,6 +59,9 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
     private static final float Z_CMD_CIRCLES  = 0.0016f;
     private static final float Z_CMD_TEXT     = 0.0020f;
 
+    private static final float Z_COUNTER_ICON = 0.0018f;
+    private static final float Z_COUNTER_TEXT = 0.0022f;
+
     private static final float Z_LIFE_TEXT    = 0.0026f;
     private static final float Z_NAME_TEXT    = 0.0029f;
 
@@ -104,6 +107,9 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         boolean showCommander = false;
         List<CmdDmgEntry> cmd = new ArrayList<>();
 
+        boolean showCounters = false;
+        List<CounterEntry> counters = new ArrayList<>();
+
         BlockPos linkedLifePos = null;
     }
 
@@ -116,6 +122,16 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
             this.name = name;
             this.dmg = dmg;
             this.color = color;
+        }
+    }
+
+    private static final class CounterEntry {
+        final int value;
+        final String iconKey;
+
+        CounterEntry(int value, String iconKey) {
+            this.value = value;
+            this.iconKey = iconKey;
         }
     }
 
@@ -182,13 +198,17 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         s.name = "";
         s.lifeColor = 0xFFFFFF;
         s.playerColor = 0xE8E8E8;
+        s.iconColor = 0xFFFFFF;
         s.turnActive = false;
         s.iconKey = "none";
+        s.isDead = false;
 
         // ---- Commander damage parsing + threshold ----
         s.cmd.clear();
+        s.counters.clear();
         int area = s.wBlocks * s.hBlocks;
         s.showCommander = false;
+        s.showCounters = false;
 
         DisplayLinkedLifeClient.resolve(be).ifPresent(st -> {
             s.hasLife = true;
@@ -214,6 +234,9 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
             s.showCommander = LifePointClientState.getFormat(s.linkedLifePos).hasCommanderDamage()
                     && (area >= MIN_BLOCKS_FOR_COMMANDER)
                     && !s.isDead;
+
+            collectCounterEntries(st, s.counters);
+            s.showCounters = !s.isDead && !s.counters.isEmpty();
 
 
             if (s.showCommander) {
@@ -527,6 +550,59 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         return 0xFF000000 | (rgb & 0x00FFFFFF);
     }
 
+    private static void collectCounterEntries(CompoundTag st, List<CounterEntry> out) {
+        if (st == null || out == null) return;
+
+        CompoundTag counters = st.getCompound("Counters").orElse(new CompoundTag());
+        CompoundTag icons = st.getCompound("CounterIcons").orElse(new CompoundTag());
+
+        LinkedHashSet<String> keys = new LinkedHashSet<>();
+        for (String raw : counters.keySet()) {
+            String key = normalizeCounterKey(raw);
+            if (!key.isBlank()) keys.add(key);
+        }
+
+        for (String core : List.of("poison", "energy", "experience")) {
+            addCounterEntry(core, counters, icons, out);
+            keys.remove(core);
+        }
+
+        List<String> rest = new ArrayList<>(keys);
+        rest.sort(String::compareToIgnoreCase);
+        for (String key : rest) {
+            addCounterEntry(key, counters, icons, out);
+        }
+    }
+
+    private static void addCounterEntry(String key, CompoundTag counters, CompoundTag icons, List<CounterEntry> out) {
+        int value = counters.contains(key) ? counters.getInt(key).orElse(0) : 0;
+        if (value <= 0) return;
+
+        String iconKey;
+        if (key.equals("poison")) iconKey = "poison";
+        else if (key.equals("energy")) iconKey = "energy";
+        else if (key.equals("experience")) iconKey = "experience";
+        else iconKey = normalizeIconKey(icons.contains(key) ? icons.getString(key).orElse("none") : "none");
+
+        out.add(new CounterEntry(value, iconKey));
+    }
+
+    private static String normalizeCounterKey(String key) {
+        if (key == null) return "";
+        return key.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String normalizeIconKey(String key) {
+        if (key == null) return "none";
+        key = key.trim().toLowerCase(Locale.ROOT);
+        return key.isEmpty() ? "none" : key;
+    }
+
+    private static float overlayScaleForScreen(State s) {
+        float dim = Math.max(1.0f, Math.min(s.wBlocks, s.hBlocks));
+        return Math.min(2.25f, 1.0f + (dim - 1.0f) * 0.25f);
+    }
+
     /**
      * Return the world-direction that is "screen right" when you are looking at the screenFace.
      * NOTE: This expects a FACE normal (screenFace), not the tileFacing.
@@ -701,6 +777,10 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         // Commander damage overlay (only when big enough)
         if (s.showCommander && !s.cmd.isEmpty()) {
             drawCommanderDamage(s, matrices, queue, fx0, fx1, fyBottom, fyTop);
+        }
+
+        if (s.showCounters && !s.counters.isEmpty()) {
+            drawCounters(s, matrices, queue, fx0, fx1, fyBottom, fyTop);
         }
 
         // --- BACKPLATE: hides the front UI when looking from behind ---
@@ -1061,23 +1141,24 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         float startX = x0 + pad;
         float startY = yTop - pad - 0.22f; // leave room near the top edge / turn pip
 
-        // Size scales gently with screen size, but stays small.
-        float dim = Math.min(s.wBlocks, s.hBlocks);
+        // 5x5 screens should make these overlays about twice as large as the base size.
         float baseR = 0.10f;                       // radius in "world units"
-        float r = baseR * (1.0f + (dim - 1f) * 0.06f);
-        r = Math.min(r, 0.14f);// cap
+        float r = baseR * overlayScaleForScreen(s);
+        r = Math.min(r, 0.24f);// cap
 
         final float fr = r;
 
         float gap = r * 0.55f;                     // spacing between circles
         float stepY = (r * 2f) + gap;
 
-        // Cap how many we show so it doesn't clutter
-        int max = Math.min(8, s.cmd.size());
-
         // Optional: if you ever want 2 columns when too many
-        int wrapAt = 6;                            // 6 down, then start a new column
+        float reservedBottom = 0.24f;
+        int fitRows = (int)Math.floor((startY - yBottom - reservedBottom - (r * 2f)) / stepY) + 1;
+        int wrapAt = Math.max(1, Math.min(6, fitRows)); // then start a new column
         float colStepX = (r * 2f) + (r * 0.8f);
+
+        // Cap how many we show so it doesn't clutter or run below the name.
+        int max = Math.min(s.cmd.size(), Math.min(8, wrapAt * 2));
 
         for (int i = 0; i < max; i++) {
             CmdDmgEntry e = s.cmd.get(i);
@@ -1117,7 +1198,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
 
             // Small text scale tuned to circle size
             float sc = (r / 0.10f) * 0.012f; // 0.012 for r=0.10
-            sc = Math.min(sc, 0.018f);
+            sc = Math.min(sc, 0.030f);
             matrices.scale(sc, -sc, sc);
 
             int w = tr.width(txt);
@@ -1146,6 +1227,96 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
                     Font.DisplayMode.NORMAL,
                     FULL_BRIGHT,
                     color,
+                    0,
+                    0
+            );
+
+            matrices.popPose();
+        }
+    }
+
+    private void drawCounters(State s, PoseStack matrices, SubmitNodeCollector queue,
+                              float x0, float x1, float yBottom, float yTop) {
+
+        if (s.counters == null || s.counters.isEmpty()) return;
+
+        Font tr = Minecraft.getInstance().font;
+
+        float scale = overlayScaleForScreen(s);
+        float pad = 0.10f;
+        float iconSize = Math.min(0.16f * scale, 0.36f);
+        float rowGap = iconSize * 0.35f;
+        float stepY = iconSize + rowGap;
+        float textGap = iconSize * 0.30f;
+
+        float iconRight = x1 - pad;
+        float iconTop = yTop - pad;
+        float reservedBottom = 0.28f;
+        float availableH = Math.max(0.0f, iconTop - (yBottom + reservedBottom));
+        int maxRows = Math.max(0, (int)Math.floor((availableH + rowGap) / stepY));
+        int max = Math.min(s.counters.size(), maxRows);
+        if (max <= 0) return;
+
+        for (int i = 0; i < max; i++) {
+            CounterEntry e = s.counters.get(i);
+
+            float iy1 = iconTop - i * stepY;
+            float iy0 = iy1 - iconSize;
+            float ix1 = iconRight;
+            float ix0 = ix1 - iconSize;
+            float cy = (iy0 + iy1) * 0.5f;
+
+            Identifier tex = resolveIconIdRecolored(e.iconKey, s.iconColor);
+
+            queue.submitCustomGeometry(
+                    matrices,
+                    RenderTypes.entityCutout(tex),
+                    (entry, vc) -> {
+                        Matrix4f mat = entry.pose();
+                        drawPanelQuad(mat, vc,
+                                ix0, iy0, Z_COUNTER_ICON,
+                                ix1, iy1, Z_COUNTER_ICON,
+                                0f, 0f, 1f, 1f,
+                                FULL_BRIGHT,
+                                OverlayTexture.NO_OVERLAY,
+                                255, 255, 255, 255
+                        );
+                    }
+            );
+
+            String txt = Integer.toString(e.value);
+            float numberRight = ix0 - textGap;
+            int textW = tr.width(txt);
+            float availableWorldW = Math.max(0.08f, numberRight - (x0 + pad));
+            float sc = Math.min(0.014f * scale, availableWorldW / Math.max(1, textW));
+            sc = Math.max(0.006f, sc);
+
+            matrices.pushPose();
+            matrices.translate(numberRight, cy, Z_COUNTER_TEXT);
+            matrices.scale(sc, -sc, sc);
+
+            queue.submitText(
+                    matrices,
+                    (-textW) + 1f,
+                    (-tr.lineHeight / 2f) + 1f,
+                    Component.literal(txt).getVisualOrderText(),
+                    false,
+                    Font.DisplayMode.NORMAL,
+                    FULL_BRIGHT,
+                    0xA0000000,
+                    0,
+                    0
+            );
+
+            queue.submitText(
+                    matrices,
+                    -textW,
+                    -tr.lineHeight / 2f,
+                    Component.literal(txt).getVisualOrderText(),
+                    false,
+                    Font.DisplayMode.NORMAL,
+                    FULL_BRIGHT,
+                    0xFFFFFFFF,
                     0,
                     0
             );
