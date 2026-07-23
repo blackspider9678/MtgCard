@@ -281,6 +281,7 @@ public final class CustomCardPackets {
     public record CustomArtBegin(
             String uploadId,   // UUID string
             String artKey,     // e.g. custom_<hash>_front
+            String setCode,
             String ext,        // "png" or "webp" (optional but nice)
             int totalBytes,    // total expected
             int chunkSize,     // client chosen
@@ -293,12 +294,14 @@ public final class CustomCardPackets {
                         (p, buf) -> {
                             buf.writeUtf(p.uploadId());
                             buf.writeUtf(p.artKey());
+                            buf.writeUtf(p.setCode());
                             buf.writeUtf(p.ext());
                             buf.writeVarInt(p.totalBytes());
                             buf.writeVarInt(p.chunkSize());
                             buf.writeVarInt(p.totalChunks());
                         },
                         (buf) -> new CustomArtBegin(
+                                buf.readUtf(),
                                 buf.readUtf(),
                                 buf.readUtf(),
                                 buf.readUtf(),
@@ -351,13 +354,19 @@ public final class CustomCardPackets {
     public static final Identifier ART_READY_ID = Identifier.fromNamespaceAndPath("mtgcard","custom_art_ready");
     public static final Identifier ART_INVALIDATE_ID = Identifier.fromNamespaceAndPath("mtgcard","custom_art_invalidate");
 
-    public record CustomArtReady(String artKey) implements CustomPacketPayload {
+    public record CustomArtReady(String artKey, String setCode) implements CustomPacketPayload {
         public static final Type<CustomArtReady> ID = new Type<>(ART_READY_ID);
 
         public static final StreamCodec<RegistryFriendlyByteBuf, CustomArtReady> CODEC =
-                StreamCodec.composite(
-                        ByteBufCodecs.STRING_UTF8, CustomArtReady::artKey,
-                        CustomArtReady::new
+                StreamCodec.ofMember(
+                        (p, buf) -> {
+                            buf.writeUtf(p.artKey());
+                            buf.writeUtf(p.setCode());
+                        },
+                        (buf) -> new CustomArtReady(
+                                buf.readUtf(),
+                                buf.readUtf()
+                        )
                 );
 
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }

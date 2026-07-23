@@ -3,9 +3,9 @@ package com.spider.mtgcard.content.pack.custom;
 
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.net.CustomCardPackets;
+import com.spider.mtgcard.shared.MtgCardPaths;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.world.level.storage.LevelResource;
 
 import com.google.gson.*;
 import java.nio.charset.StandardCharsets;
@@ -20,8 +20,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class CustomCardStore {
-    private final Path artDir;
+    private final Path customArtRoot;
+    private final Path legacyArtDir;
     private final Path json;
+    private final Path legacyJson;
     private final Map<String, CardMeta> byId = new HashMap<>();
     public String artKeyFront = "";
     public String artKeyBack  = "";
@@ -40,10 +42,14 @@ public final class CustomCardStore {
 
 
     public CustomCardStore(MinecraftServer server) {
-        Path root = server.getWorldPath(LevelResource.ROOT).resolve("mtgcard");
-        this.artDir = root.resolve("art");
-        this.json   = root.resolve("custom").resolve("cards.json");
-        try { Files.createDirectories(artDir); Files.createDirectories(json.getParent()); } catch (Exception ignored) {}
+        this.customArtRoot = MtgCardPaths.customArtRoot(server);
+        this.legacyArtDir = MtgCardPaths.legacyArtDir(server);
+        this.json = MtgCardPaths.customCardsJson(server);
+        this.legacyJson = MtgCardPaths.legacyCustomCardsJson(server);
+        try {
+            Files.createDirectories(customArtRoot);
+            Files.createDirectories(json.getParent());
+        } catch (Exception ignored) {}
         load();
     }
 
@@ -57,6 +63,7 @@ public final class CustomCardStore {
             if (id == null) continue;
 
             CardMeta meta = CardMeta.fromBatch(id, be);
+            ensureSetArtDir(meta);
             byId.put(id, meta);
             added++;
         }
@@ -74,6 +81,7 @@ public final class CustomCardStore {
             if (id == null) return null;
 
             CardMeta meta = CardMeta.fromBatch(id, be);
+            ensureSetArtDir(meta);
             byId.put(id, meta);
             dirty = true;               // ✅ mark dirty, no save here
             return id;
@@ -206,15 +214,21 @@ public final class CustomCardStore {
     private void load() {
         byId.clear();
         try {
-            if (Files.exists(json)) {
-                String s = Files.readString(json, StandardCharsets.UTF_8);
+            Path source = Files.exists(json) ? json : (Files.exists(legacyJson) ? legacyJson : null);
+            if (source != null) {
+                String s = Files.readString(source, StandardCharsets.UTF_8);
                 CardMeta[] arr = GSON.fromJson(s, CardMeta[].class);
                 if (arr != null) {
                     for (CardMeta m : arr) {
                         if (m != null && m.id != null && !m.id.isBlank()) {
+                            ensureSetArtDir(m);
                             byId.put(m.id, m);
                         }
                     }
+                }
+                if (source.equals(legacyJson) && !Files.exists(json)) {
+                    Mtgcard.LOGGER.info("[MTGCard] Migrating custom card metadata from {} to {}", legacyJson, json);
+                    saveSnapshot(new ArrayList<>(byId.values()));
                 }
             } else {
                 // ensure parent dirs exist; file will be created on first save()
@@ -273,12 +287,16 @@ public final class CustomCardStore {
 
     private boolean artExists(String artKey) {
         if (artKey == null || artKey.isBlank()) return false;
-        try (var s = Files.list(artDir)) {
-            final String prefix = artKey + ".";
-            return s.anyMatch(p -> p.getFileName().toString().startsWith(prefix));
-        } catch (Exception ignored) {
-            return false;
+        for (Path dir : customArtSearchDirs()) {
+            try (var s = Files.list(dir)) {
+                final String prefix = artKey + ".";
+                if (s.anyMatch(p -> p.getFileName().toString().startsWith(prefix))) {
+                    return true;
+                }
+            } catch (Exception ignored) {
+            }
         }
+        return false;
     }
 
     private static void collectArtKeys(CardMeta meta, Set<String> out) {
@@ -310,16 +328,38 @@ public final class CustomCardStore {
         if (artKey == null || artKey.isBlank()) return 0;
 
         int deleted = 0;
-        for (String ext : List.of("webp", "png", "jpg", "jpeg")) {
-            try {
-                if (Files.deleteIfExists(artDir.resolve(artKey + "." + ext))) {
-                    deleted++;
+        for (Path dir : customArtSearchDirs()) {
+            for (String ext : List.of("webp", "png", "jpg", "jpeg")) {
+                try {
+                    if (Files.deleteIfExists(dir.resolve(artKey + "." + ext))) {
+                        deleted++;
+                    }
+                } catch (Exception e) {
+                    Mtgcard.LOGGER.warn("[MTGCard] Failed to delete custom art {}.{} from {}: {}",
+                            artKey, ext, dir, e.toString());
                 }
-            } catch (Exception e) {
-                Mtgcard.LOGGER.warn("[MTGCard] Failed to delete custom art {}.{}: {}", artKey, ext, e.toString());
             }
         }
         return deleted;
+    }
+
+    private List<Path> customArtSearchDirs() {
+        ArrayList<Path> dirs = new ArrayList<>();
+        dirs.add(customArtRoot);
+        try (var s = Files.list(customArtRoot)) {
+            s.filter(Files::isDirectory).forEach(dirs::add);
+        } catch (Exception ignored) {
+        }
+        dirs.add(legacyArtDir);
+        return dirs;
+    }
+
+    private void ensureSetArtDir(CardMeta meta) {
+        if (meta == null) return;
+        try {
+            Files.createDirectories(customArtRoot.resolve(MtgCardPaths.sanitizeSetFolder(meta.set)));
+        } catch (Exception ignored) {
+        }
     }
 
     private static String normalizeCustomKey(String key, String customId, int face) {

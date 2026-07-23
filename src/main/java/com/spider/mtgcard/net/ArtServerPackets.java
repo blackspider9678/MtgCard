@@ -1,6 +1,8 @@
 package com.spider.mtgcard.net;
 
 import com.spider.mtgcard.Mtgcard;
+import com.spider.mtgcard.shared.CardArtCommon;
+import com.spider.mtgcard.shared.MtgCardPaths;
 import com.spider.mtgcard.util.ArtImageStorage;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.MinecraftServer;
@@ -34,6 +36,8 @@ public final class ArtServerPackets {
 
             final String artKey = safeKey(payload.artKey());
             final String url = payload.url() == null ? "" : payload.url().trim();
+            final String fallbackKeys = payload.fallbackKeys() == null ? "" : payload.fallbackKeys();
+            final String setCode = payload.setCode() == null ? "" : payload.setCode().trim();
 
             if (artKey.isEmpty()) return;
 
@@ -41,7 +45,9 @@ public final class ArtServerPackets {
             CompletableFuture.runAsync(() -> {
                 try {
                     // 1) Serve from server disk cache first (world scoped)
-                    Path cached = resolveServerCachedFile(server, artKey);
+                    Path cached = url.isEmpty()
+                            ? resolveServerCustomCachedFile(server, artKey, setCode)
+                            : resolveServerMainCachedFile(server, artKey, fallbackKeys);
                     if (Files.exists(cached)) {
                         byte[] bytes = Files.readAllBytes(cached);
                         if (bytes.length > 0) {
@@ -78,7 +84,7 @@ public final class ArtServerPackets {
                         Mtgcard.LOGGER.info("[MTGCard] Art {} from {} stored as .{}", artKey, url, art.ext());
                     }
 
-                    ArtImageStorage.write(serverCacheDir(server), artKey, art);
+                    ArtImageStorage.write(serverMainArtDir(server), artKey, art);
                     sendChunks(server, player, artKey, art.bytes());
 
                 } catch (Throwable t) {
@@ -106,23 +112,63 @@ public final class ArtServerPackets {
         }
     }
 
-    /** <world>/mtgcard/art */
-    private static Path serverCacheDir(MinecraftServer server) {
-        Path root = server.getWorldPath(LevelResource.ROOT);
-        Path dir = root.resolve("mtgcard").resolve("art");
+    /** <world>/mtgcard/mtg/main_art */
+    private static Path serverMainArtDir(MinecraftServer server) {
+        Path dir = MtgCardPaths.mainArtDir(server);
         try { Files.createDirectories(dir); } catch (Exception ignored) {}
         return dir;
     }
 
-    private static Path resolveServerCachedFile(MinecraftServer server, String artKey) {
-        Path dir = serverCacheDir(server);
+    private static Path resolveServerMainCachedFile(MinecraftServer server, String artKey, String fallbackKeys) {
+        Path mainDir = serverMainArtDir(server);
+        Path legacyDir = MtgCardPaths.legacyArtDir(server);
 
-        for (String candidate : artKeyCandidates(artKey)) {
-            Path exact = resolveExactFile(dir, candidate);
+        for (String candidate : artKeyCandidates(artKey, fallbackKeys)) {
+            Path exact = resolveExactFile(mainDir, candidate);
             if (exact != null) return exact;
         }
 
-        return dir.resolve(artKey + ".png");
+        for (String candidate : artKeyCandidates(artKey, fallbackKeys)) {
+            Path legacy = resolveExactFile(legacyDir, candidate);
+            if (legacy != null) return migrateLegacyArt(mainDir, artKey, legacy);
+        }
+
+        return mainDir.resolve(artKey + ".webp");
+    }
+
+    private static Path resolveServerCustomCachedFile(MinecraftServer server, String artKey, String setCode) {
+        Path setDir = MtgCardPaths.customArtDir(server, setCode);
+        Path exact = resolveExactFile(setDir, artKey);
+        if (exact != null) return exact;
+
+        Path customRoot = MtgCardPaths.customArtRoot(server);
+        try (var dirs = Files.list(customRoot)) {
+            for (Path dir : dirs.toList()) {
+                if (!Files.isDirectory(dir) || dir.equals(setDir)) continue;
+                exact = resolveExactFile(dir, artKey);
+                if (exact != null) return exact;
+            }
+        } catch (Exception ignored) {
+        }
+
+        Path legacy = resolveExactFile(MtgCardPaths.legacyArtDir(server), artKey);
+        if (legacy != null) return migrateLegacyArt(setDir, artKey, legacy);
+
+        return setDir.resolve(artKey + ".webp");
+    }
+
+    private static Path migrateLegacyArt(Path targetDir, String artKey, Path legacyFile) {
+        try {
+            Files.createDirectories(targetDir);
+            String ext = extensionOf(legacyFile);
+            Path target = targetDir.resolve(artKey + "." + ext);
+            if (!Files.exists(target)) {
+                Files.copy(legacyFile, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return target;
+        } catch (Exception ignored) {
+            return legacyFile;
+        }
     }
 
     private static Path resolveExactFile(Path dir, String artKey) {
@@ -141,20 +187,25 @@ public final class ArtServerPackets {
         return null;
     }
 
-    private static Iterable<String> artKeyCandidates(String artKey) {
+    private static Iterable<String> artKeyCandidates(String artKey, String fallbackKeys) {
         java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>();
-        if (artKey == null || artKey.isBlank()) return keys;
 
         addArtKeyCandidate(keys, artKey);
 
-        String trimmed = artKey.trim();
-        String lower = trimmed.toLowerCase(Locale.ROOT);
-        addArtKeyCandidate(keys, lower);
+        for (String fallback : CardArtCommon.decodeFallbackKeys(fallbackKeys)) {
+            addArtKeyCandidate(keys, fallback);
+        }
 
-        if (lower.startsWith("custom_")) {
-            addArtKeyCandidate(keys, lower.substring("custom_".length()));
-        } else {
-            addArtKeyCandidate(keys, "custom_" + lower);
+        java.util.LinkedHashSet<String> expanded = new java.util.LinkedHashSet<>(keys);
+        for (String key : expanded) {
+            String lower = key.trim().toLowerCase(Locale.ROOT);
+            addArtKeyCandidate(keys, lower);
+
+            if (lower.startsWith("custom_")) {
+                addArtKeyCandidate(keys, lower.substring("custom_".length()));
+            } else {
+                addArtKeyCandidate(keys, "custom_" + lower);
+            }
         }
 
         return keys;
@@ -190,9 +241,7 @@ public final class ArtServerPackets {
     /** Avoid path traversal / weird filenames. */
     private static String safeKey(String k) {
         if (k == null) return "";
-        String s = k.trim().toLowerCase(Locale.ROOT);
-        s = s.replaceAll("[^a-z0-9_\\-\\.]", "");
-        return s;
+        return CardArtCommon.sanitizeArtKey(k);
     }
 
     private static String extensionOf(Path path) {

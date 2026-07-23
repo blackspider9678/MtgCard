@@ -1,7 +1,9 @@
 package com.spider.mtgcard.db;
 
-import com.spider.mtgcard.item.ModItems;
+import com.spider.mtgcard.api.TcgGameRegistry;
+import com.spider.mtgcard.item.ModItemTags;
 import com.spider.mtgcard.screen.ModScreenHandlers;
+import com.spider.mtgcard.util.TcgCardMeta;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
@@ -57,6 +59,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
     private DeckboxInventoryView deckboxView = null;
     private String activeQuery = "";
+    private String activeGameFilter = TcgGameRegistry.ALL_GAMES;
 
     private final Container windowInv;
 
@@ -80,10 +83,12 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     private static final int PROP_SORT_KEY = 6;
     private static final int PROP_SORT_DIR = 7;
     private static final int PROP_SORT_ENABLED = 8;
+    private static final int PROP_GAME_FILTER = 9;
 
-    private final SimpleContainerData props = new SimpleContainerData(9);
+    private final SimpleContainerData props = new SimpleContainerData(10);
     public static final int BTN_STORE_ALL = 10;
     public static final int BTN_TOGGLE_ROUTE = 11;
+    public static final int GAME_FILTER_BASE = 310_000;
 
     private Inventory playerInvRef;
 
@@ -101,6 +106,12 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     private String activeDir = "asc";
     private boolean sortPinned = false;
 
+    private static final int QUICK_MOVE_FLUSH_SIZE = 64;
+    private static final long QUICK_MOVE_FLUSH_DELAY_NANOS = 50_000_000L;
+    private final java.util.ArrayList<ItemStack> pendingQuickMoveInsertions = new java.util.ArrayList<>();
+    private long pendingQuickMoveStartedAtNanos = 0L;
+    private boolean flushingQuickMoveInsertions = false;
+
     public int getClientRouteMode() { return props.get(PROP_ROUTE_MODE); }
     public int getLastSearchTotal() { return props.get(PROP_SEARCH_TOTAL); }
     public int getClientIntakeCount() { return props.get(PROP_INTAKE_COUNT); }
@@ -110,6 +121,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     public String getClientSortOrder() { return sortKeyFromId(props.get(PROP_SORT_KEY)); }
     public boolean isClientSortAscending() { return props.get(PROP_SORT_DIR) == 0; }
     public boolean isClientSortPinned() { return props.get(PROP_SORT_ENABLED) != 0; }
+    public String getClientGameFilter() { return TcgGameRegistry.filterId(props.get(PROP_GAME_FILTER)); }
 
     public int getClientMaxWindowOffset() {
         return pageAlignedMaxOffset(getClientIntakeCount());
@@ -156,6 +168,33 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         };
     }
 
+    private void setActiveGameFilter(String gameId) {
+        this.activeGameFilter = TcgGameRegistry.normalizeFilterId(gameId);
+        props.set(PROP_GAME_FILTER, TcgGameRegistry.filterIndex(this.activeGameFilter));
+    }
+
+    private boolean isGameFilterActive() {
+        return activeGameFilter != null && !activeGameFilter.isBlank();
+    }
+
+    private boolean matchesActiveGameFilter(ItemStack stack) {
+        if (!isGameFilterActive()) return true;
+        if (stack == null || stack.isEmpty()) return false;
+        return activeGameFilter.equals(TcgGameRegistry.normalizeFilterId(TcgCardMeta.read(stack).game()));
+    }
+
+    private java.util.List<ItemStack> copyIntakeForActiveGame() {
+        if (view == null) return java.util.List.of();
+        java.util.List<ItemStack> all = view.copyIntakeAll();
+        if (!isGameFilterActive()) return all;
+
+        java.util.ArrayList<ItemStack> filtered = new java.util.ArrayList<>();
+        for (ItemStack stack : all) {
+            if (matchesActiveGameFilter(stack)) filtered.add(stack);
+        }
+        return filtered;
+    }
+
     private static int pageAlignedMaxOffset(int totalEntries) {
         int rowsTotal = (int) Math.ceil(Math.max(0, totalEntries) / (double) DB_COLS);
         int startRow = Math.max(0, rowsTotal - DB_ROWS);
@@ -169,7 +208,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     }
 
     private boolean isProjectionActive() {
-        return sortPinned || (activeQuery != null && !activeQuery.isBlank());
+        return sortPinned || isGameFilterActive() || (activeQuery != null && !activeQuery.isBlank());
     }
 
     private int getProjectionTotalCount() {
@@ -240,6 +279,9 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     }
 
     private static String readCustomNameFromCard(ItemStack st) {
+        String name = TcgCardMeta.displayName(st);
+        if (name != null && !name.isBlank()) return name;
+
         var comp = st.getOrDefault(DataComponents.CUSTOM_DATA, null);
         if (comp == null) return "";
         var nbt = comp.copyTag();
@@ -295,6 +337,59 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     }
 
     @Override
+    public void broadcastChanges() {
+        flushPendingQuickMoveInsertions(false);
+        super.broadcastChanges();
+    }
+
+    private void queueQuickMoveInsertion(ItemStack stack) {
+        if (stack == null || stack.isEmpty() || !stack.is(ModItemTags.TCG_CARD)) return;
+        if (!matchesActiveGameFilter(stack)) return;
+
+        ItemStack copy = stack.copy();
+        clearUid(copy);
+        pendingQuickMoveInsertions.add(copy);
+        if (pendingQuickMoveStartedAtNanos == 0L) {
+            pendingQuickMoveStartedAtNanos = System.nanoTime();
+        }
+    }
+
+    private void flushPendingQuickMoveInsertions(boolean force) {
+        if (flushingQuickMoveInsertions || view == null || pendingQuickMoveInsertions.isEmpty()) {
+            return;
+        }
+
+        if (!force && pendingQuickMoveInsertions.size() < QUICK_MOVE_FLUSH_SIZE) {
+            long startedAt = pendingQuickMoveStartedAtNanos;
+            if (startedAt == 0L || System.nanoTime() - startedAt < QUICK_MOVE_FLUSH_DELAY_NANOS) {
+                return;
+            }
+        }
+
+        java.util.ArrayList<ItemStack> batch = new java.util.ArrayList<>(pendingQuickMoveInsertions);
+        pendingQuickMoveInsertions.clear();
+        pendingQuickMoveStartedAtNanos = 0L;
+
+        flushingQuickMoveInsertions = true;
+        try {
+            view.appendAllToIntake(batch);
+            if (isProjectionActive()) {
+                reprojectingNow = true;
+                try {
+                    reprojectCurrentPage();
+                } finally {
+                    reprojectingNow = false;
+                }
+            } else {
+                props.set(PROP_SEARCH_TOTAL, -1);
+                syncPropsFromView();
+            }
+        } finally {
+            flushingQuickMoveInsertions = false;
+        }
+    }
+
+    @Override
     public void clicked(int slotIndex, int button, ContainerInput action, Player player) {
         if (isWindowSlot(slotIndex)) {
             // The visible DB window is a search/result display. Mutating it is only
@@ -307,6 +402,17 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
     private boolean isWindowSlot(int slotIndex) {
         return slotIndex >= 0 && slotIndex < WINDOW_SLOTS;
+    }
+
+    public void handleClientGridAction(int containerId, int slotIndex, int action, Player player) {
+        if (player == null || player.level().isClientSide()) return;
+        if (containerId != this.containerId) return;
+        if (slotIndex < 0 || slotIndex >= WINDOW_SLOTS) return;
+        if (action < 0 || action >= DB_INTERACT_STRIDE) return;
+        if (!(view instanceof CardDBSession sess)) return;
+
+        flushPendingQuickMoveInsertions(true);
+        handleTerminalGridAction(slotIndex, action, player, sess);
     }
 
     private void handleTerminalGridAction(int slotIndex, int action, Player player, CardDBSession sess) {
@@ -326,7 +432,10 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
                 return;
             }
 
-            if (!carried.is(ModItems.CARD)) {
+            if (!carried.is(ModItemTags.TCG_CARD)) {
+                return;
+            }
+            if (!matchesActiveGameFilter(carried)) {
                 return;
             }
 
@@ -409,39 +518,63 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
             return false;
         }
 
-        java.util.ArrayList<ItemStack> toStore = new java.util.ArrayList<>();
         java.util.ArrayList<ItemStack> remaining = new java.util.ArrayList<>();
         boolean movedAny = false;
 
         for (ItemStack entry : contents) {
             if (entry == null || entry.isEmpty()) continue;
 
-            ItemStack copy = entry.copy();
-            if (copy.is(ModItems.CARD) && (dumpAll || !movedAny)) {
-                ItemStack card = copy.copy();
-                int moveCount = dumpAll ? copy.getCount() : 1;
-                card.setCount(moveCount);
-                copy.shrink(moveCount);
-                clearUid(card);
-                toStore.add(card);
-                movedAny = true;
-
-                if (!copy.isEmpty()) {
-                    remaining.add(copy);
+            ItemStack remainder = entry.copy();
+            if (remainder.is(ModItemTags.TCG_CARD) && matchesActiveGameFilter(remainder)) {
+                int requestedMoves = dumpAll ? remainder.getCount() : (movedAny ? 0 : 1);
+                for (int i = 0; i < requestedMoves && !remainder.isEmpty(); i++) {
+                    if (!insertOneBundleCardIntoDatabase(sess, remainder)) {
+                        break;
+                    }
+                    remainder.shrink(1);
+                    movedAny = true;
                 }
-                continue;
             }
 
-            remaining.add(copy);
+            if (!remainder.isEmpty()) {
+                remaining.add(remainder);
+            }
         }
 
-        if (toStore.isEmpty()) {
+        if (!movedAny) {
             return false;
         }
 
-        sess.appendAllToIntake(toStore);
         writeBundleContents(bundle, remaining);
         return true;
+    }
+
+    private boolean insertOneBundleCardIntoDatabase(CardDBSession sess, ItemStack source) {
+        if (sess == null || source == null || source.isEmpty() || !source.is(ModItemTags.TCG_CARD)
+                || !matchesActiveGameFilter(source)) {
+            return false;
+        }
+
+        ItemStack toStore = source.copy();
+        toStore.setCount(1);
+        clearUid(toStore);
+
+        long before = countStoredCardItems(sess);
+        sess.appendToIntake(toStore);
+        long after = countStoredCardItems(sess);
+        return after >= before + 1;
+    }
+
+    private static long countStoredCardItems(CardDBSession sess) {
+        if (sess == null) return 0L;
+
+        long count = 0L;
+        for (ItemStack stack : sess.getIntakeAll()) {
+            if (stack != null && !stack.isEmpty() && stack.is(ModItemTags.TCG_CARD)) {
+                count += stack.getCount();
+            }
+        }
+        return count;
     }
 
     private static java.util.List<ItemStack> readBundleContents(ItemStack bundle) {
@@ -452,33 +585,10 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         BundleContents contents = bundle.getOrDefault(DataComponents.BUNDLE_CONTENTS, BundleContents.EMPTY);
         java.util.ArrayList<ItemStack> out = new java.util.ArrayList<>();
 
-        try {
-            contents.itemCopyStream()
-                    .filter(stack -> stack != null && !stack.isEmpty())
-                    .forEach(stack -> out.add(stack.copy()));
-            if (!out.isEmpty()) {
-                return out;
-            }
-        } catch (Throwable ignored) {
-        }
+        contents.itemCopyStream()
+                .filter(stack -> stack != null && !stack.isEmpty())
+                .forEach(stack -> out.add(stack.copy()));
 
-        try {
-            java.lang.reflect.Method itemsMethod = BundleContents.class.getMethod("items");
-            Object value = itemsMethod.invoke(contents);
-            if (value instanceof Iterable<?> iterable) {
-                for (Object obj : iterable) {
-                    if (obj instanceof ItemStack stack && !stack.isEmpty()) {
-                        out.add(stack.copy());
-                    } else if (obj instanceof ItemStackTemplate template) {
-                        ItemStack stack = template.create();
-                        if (!stack.isEmpty()) {
-                            out.add(stack);
-                        }
-                    }
-                }
-            }
-        } catch (Throwable ignored) {
-        }
         return out;
     }
 
@@ -564,6 +674,33 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         broadcastChanges();
     }
 
+    private void syncGameFilterProps() {
+        props.set(PROP_GAME_FILTER, TcgGameRegistry.filterIndex(activeGameFilter));
+        broadcastChanges();
+    }
+
+    private boolean selectGameFilter(int optionIndex) {
+        var options = TcgGameRegistry.filterOptions();
+        if (optionIndex < 0 || optionIndex >= options.size()) return false;
+
+        setActiveGameFilter(options.get(optionIndex).id());
+        syncGameFilterProps();
+
+        if (view == null) return true;
+        view.setWindowOffset(0);
+        props.set(PROP_WINDOW_OFFSET, 0);
+
+        if (!isProjectionActive()) {
+            view.clearSearchProjection();
+            props.set(PROP_SEARCH_TOTAL, -1);
+            syncPropsFromView();
+            return true;
+        }
+
+        reprojectCurrentPage();
+        return true;
+    }
+
     private void loadSortPreference(Player player) {
         if (!(player instanceof ServerPlayer sp)) {
             syncSortProps();
@@ -644,6 +781,8 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
         props.set(PROP_DECKBOX_COUNT, deckboxPositions.size());
         props.set(PROP_ROUTE_MODE, 0);
+        props.set(PROP_SEARCH_TOTAL, -1);
+        props.set(PROP_GAME_FILTER, TcgGameRegistry.filterIndex(activeGameFilter));
 
         if (deckboxPositions.isEmpty()) props.set(PROP_ROUTE_MODE, 0);
 
@@ -741,7 +880,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
                     this.addSlot(new Slot(deckboxView, idx, sx, sy) {
                         @Override
                         public boolean mayPlace(ItemStack stack) {
-                            return stack.is(ModItems.CARD);
+                            return stack.is(ModItemTags.TCG_CARD) && matchesActiveGameFilter(stack);
                         }
 
                         @Override
@@ -775,7 +914,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
             this.addSlot(new Slot(deckboxView, com.spider.mtgcard.deckbox.DeckboxBlockEntity.SECOND_SIDE_SLOT, sideX, sideY + 18) {
                 @Override
                 public boolean mayPlace(ItemStack stack) {
-                    return stack.is(ModItems.CARD);
+                    return stack.is(ModItemTags.TCG_CARD) && matchesActiveGameFilter(stack);
                 }
 
                 @Override
@@ -787,7 +926,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
             this.addSlot(new Slot(deckboxView, com.spider.mtgcard.deckbox.DeckboxBlockEntity.THIRD_SIDE_SLOT, sideX, sideY + 36) {
                 @Override
                 public boolean mayPlace(ItemStack stack) {
-                    return stack.is(ModItems.CARD);
+                    return stack.is(ModItemTags.TCG_CARD) && matchesActiveGameFilter(stack);
                 }
 
                 @Override
@@ -816,6 +955,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
     public void applySearch(String q, String order, String dir) {
         if (this.view == null) return;
+        flushPendingQuickMoveInsertions(true);
 
         setActiveQuery(q);
         this.activeOrder = normalizeSortKey(order);
@@ -839,14 +979,13 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     @Override
     public boolean clickMenuButton(Player player, int id) {
         if (view == null || player.level().isClientSide()) return false;
+        flushPendingQuickMoveInsertions(true);
 
         if (id >= DB_INTERACT_BASE && id < DB_INTERACT_BASE + WINDOW_SLOTS * DB_INTERACT_STRIDE) {
             int encoded = id - DB_INTERACT_BASE;
             int slot = encoded / DB_INTERACT_STRIDE;
             int action = encoded % DB_INTERACT_STRIDE;
-            if (view instanceof CardDBSession sess) {
-                handleTerminalGridAction(slot, action, player, sess);
-            }
+            handleClientGridAction(this.containerId, slot, action, player);
             return true;
         }
 
@@ -864,6 +1003,10 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
             }
             syncDeckboxProps();
             return true;
+        }
+
+        if (id >= GAME_FILTER_BASE && id < GAME_FILTER_BASE + 1000) {
+            return selectGameFilter(id - GAME_FILTER_BASE);
         }
 
         if (id >= SET_OFFSET_BASE) {
@@ -927,6 +1070,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
             String q,
             com.spider.mtgcard.db.search.PageCursor cursor
     ) {
+        flushPendingQuickMoveInsertions(true);
         var res = new com.spider.mtgcard.db.search.SearchResults();
         if (view == null) {
             res.total = 0;
@@ -941,7 +1085,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         final String dir = activeDir;
 
         var parsed = com.spider.mtgcard.db.search.ScryfallQuery.parse((q == null ? "" : q), limit, offset, order, dir);
-        var page = com.spider.mtgcard.db.search.SearchEngine.search(view.copyIntakeAll(), parsed);
+        var page = com.spider.mtgcard.db.search.SearchEngine.search(copyIntakeForActiveGame(), parsed);
 
         var items = new java.util.ArrayList<com.spider.mtgcard.db.search.IndexRecord>(page.items().size());
         for (var row : page.items()) {
@@ -966,12 +1110,23 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
             java.util.List<ItemStack> base,
             com.spider.mtgcard.db.search.ScryfallQuery q
     ) {
-        var filteredStacks = com.spider.mtgcard.db.search.SearchEngine.filterStacks(base, q);
+        var filteredStacks = com.spider.mtgcard.db.search.SearchEngine.filterStacks(filterByActiveGame(base), q);
         var rows = new java.util.ArrayList<com.spider.mtgcard.db.search.SearchEngine.Row>(filteredStacks.size());
         for (var st : filteredStacks) {
             rows.add(com.spider.mtgcard.db.search.SearchEngine.toRow(st));
         }
         return rows;
+    }
+
+    private java.util.List<ItemStack> filterByActiveGame(java.util.List<ItemStack> base) {
+        if (base == null || base.isEmpty()) return java.util.List.of();
+        if (!isGameFilterActive()) return base;
+
+        java.util.ArrayList<ItemStack> filtered = new java.util.ArrayList<>();
+        for (ItemStack stack : base) {
+            if (matchesActiveGameFilter(stack)) filtered.add(stack);
+        }
+        return filtered;
     }
 
     private void reprojectCurrentPage() {
@@ -983,7 +1138,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         var parsed = com.spider.mtgcard.db.search.ScryfallQuery.parse(
                 (activeQuery == null ? "" : activeQuery), limit, offset, activeOrder, activeDir
         );
-        var page = com.spider.mtgcard.db.search.SearchEngine.search(view.copyIntakeAll(), parsed);
+        var page = com.spider.mtgcard.db.search.SearchEngine.search(copyIntakeForActiveGame(), parsed);
 
         int clampedOffset = clampPageOffset(offset, page.total());
         if (clampedOffset != offset) {
@@ -992,7 +1147,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
             parsed = com.spider.mtgcard.db.search.ScryfallQuery.parse(
                     (activeQuery == null ? "" : activeQuery), limit, offset, activeOrder, activeDir
             );
-            page = com.spider.mtgcard.db.search.SearchEngine.search(view.copyIntakeAll(), parsed);
+            page = com.spider.mtgcard.db.search.SearchEngine.search(copyIntakeForActiveGame(), parsed);
         }
 
         var toShow = new java.util.ArrayList<ItemStack>(Math.min(54, page.items().size()));
@@ -1028,60 +1183,20 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
         final int beEnd = WINDOW_SLOTS;
 
-        CardDBSession sess = (view instanceof CardDBSession) ? (CardDBSession) view : null;
-
         if (slotIndex < beEnd) {
             return empty;
         }
 
-        if (!stackInSlot.is(ModItems.CARD)) return empty;
+        if (!stackInSlot.is(ModItemTags.TCG_CARD)) return empty;
+        if (!matchesActiveGameFilter(stackInSlot)) return empty;
+        if (view == null) return empty;
 
-        if (!player.level().isClientSide() && view != null) {
-            view.appendToIntake(stackInSlot);
-            stackInSlot.setCount(0);
-
-            if (stackInSlot.isEmpty()) slot.set(ItemStack.EMPTY);
-            else slot.setChanged();
-
-            if (sess != null) {
-                sess.compactIntakeAndReprojectSamePage();
-                if (isProjectionActive()) {
-                    reprojectingNow = true;
-                    try {
-                        reprojectCurrentPage();
-                    } finally {
-                        reprojectingNow = false;
-                    }
-                }
-            }
-
-            broadcastChanges();
-            syncPropsFromView();
-            return original;
-        }
-
-        boolean placed = this.moveItemStackTo(stackInSlot, 0, beEnd, false);
-        if (!placed && view != null && !player.level().isClientSide()) {
-            view.appendToIntake(stackInSlot);
-            stackInSlot.setCount(0);
-            placed = true;
-        }
-        if (!placed) return empty;
-
+        queueQuickMoveInsertion(stackInSlot);
+        stackInSlot.setCount(0);
         if (stackInSlot.isEmpty()) slot.set(ItemStack.EMPTY);
         else slot.setChanged();
 
-        if (!player.level().isClientSide()) {
-            if (view instanceof CardDBSession s) {
-                s.compactIntakeAndReprojectSamePage();
-                if (isProjectionActive()) {
-                    reprojectCurrentPage();
-                }
-            }
-            broadcastChanges();
-            if (view != null) syncPropsFromView();
-        }
-
+        flushPendingQuickMoveInsertions(false);
         return original;
     }
 
@@ -1095,6 +1210,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
     public void removed(Player player) {
         super.removed(player);
         if (player.level().isClientSide()) return;
+        flushPendingQuickMoveInsertions(true);
 
         if (this.view instanceof CardDBSession session && player instanceof ServerPlayer sp) {
             var sw = sp.level();
@@ -1190,9 +1306,12 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         for (int i = 0; i < 36; i++) {
             ItemStack st = playerInvRef.getItem(i);
             if (st == null || st.isEmpty()) continue;
-            if (!st.is(ModItems.CARD)) continue;
+            if (!st.is(ModItemTags.TCG_CARD)) continue;
+            if (!matchesActiveGameFilter(st)) continue;
 
-            toStore.add(st.copy());
+            ItemStack copy = st.copy();
+            clearUid(copy);
+            toStore.add(copy);
             playerInvRef.setItem(i, ItemStack.EMPTY);
         }
 

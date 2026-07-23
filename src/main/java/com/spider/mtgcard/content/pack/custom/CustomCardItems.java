@@ -3,6 +3,7 @@ package com.spider.mtgcard.content.pack.custom;
 
 import com.spider.mtgcard.util.StackData;
 import com.spider.mtgcard.util.CardStackBuilders;
+import com.spider.mtgcard.util.TcgCardMeta;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -72,6 +73,7 @@ public final class CustomCardItems {
         CompoundTag root = new CompoundTag();
         root.put("mtg_meta", meta);
         root.putBoolean("mtg_foil", foil);
+        TcgCardMeta.mirrorMtgToTcg(root);
         StackData.writeCustom(stack, root);
         CardStackBuilders.applyColoredNameIfUnset(stack, displayName, m.rarity);
 

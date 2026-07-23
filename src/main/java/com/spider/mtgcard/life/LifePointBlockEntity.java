@@ -39,7 +39,7 @@ public class LifePointBlockEntity extends BlockEntity {
     // ----- appearance -----
     private int playerColor = 0xE8E8E8;       // default light gray
     private String iconKey = "none";
-    private String formatKey = "commander";   // "commander" or "standard"
+    private String formatKey = LifeFormat.DEFAULT.key();
     private int commanderLethal = 21;         // keep >= 1
 
     // ----- counters -----
@@ -145,6 +145,7 @@ public class LifePointBlockEntity extends BlockEntity {
     public int getPlayerColor() { return playerColor; }
     public String getIconKey() { return iconKey; }
     public String getFormatKey() { return formatKey; }
+    public LifeFormat getLifeFormat() { return LifeFormat.fromKey(formatKey); }
     public int getCommanderLethal() { return commanderLethal; }
 
     public Map<String, Integer> getCounters() { return counters; }
@@ -187,8 +188,7 @@ public class LifePointBlockEntity extends BlockEntity {
     }
 
     public void setFormatKey(String k) {
-        formatKey = (k == null ? "standard" : k.trim().toLowerCase(Locale.ROOT));
-        if (formatKey.isEmpty()) formatKey = "standard";
+        formatKey = LifeFormat.normalizeKey(k);
         sync();
     }
 
@@ -202,7 +202,7 @@ public class LifePointBlockEntity extends BlockEntity {
         playerColor = 0xE8E8E8;
         lifeColor = 0xFFFFFF;
         iconKey = "none";
-        formatKey = "commander";
+        formatKey = LifeFormat.DEFAULT.key();
         commanderLethal = 21;
         sync();
     }
@@ -457,7 +457,7 @@ public class LifePointBlockEntity extends BlockEntity {
         // appearance
         view.putInt("PlayerColor", playerColor);
         view.putString("IconKey", iconKey == null ? "none" : iconKey);
-        view.putString("FormatKey", formatKey == null ? "standard" : formatKey);
+        view.putString("FormatKey", LifeFormat.normalizeKey(formatKey));
         view.putInt("CmdLethal", commanderLethal);
 
         view.putInt("IconSwapColor", iconSwapColor);
@@ -535,11 +535,11 @@ public class LifePointBlockEntity extends BlockEntity {
         // appearance
         playerColor = view.getIntOr("PlayerColor", 0xE8E8E8);
         iconKey = view.getStringOr("IconKey", "none");
-        formatKey = view.getStringOr("FormatKey", "standard");
+        formatKey = LifeFormat.normalizeKey(view.getStringOr("FormatKey", LifeFormat.DEFAULT.key()));
         commanderLethal = view.getIntOr("CmdLethal", 21);
 
         if (iconKey == null || iconKey.isBlank()) iconKey = "none";
-        if (formatKey == null || formatKey.isBlank()) formatKey = "standard";
+        if (formatKey == null || formatKey.isBlank()) formatKey = LifeFormat.DEFAULT.key();
         if (commanderLethal < 1) commanderLethal = 1;
 
         // core

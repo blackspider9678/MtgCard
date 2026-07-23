@@ -2,6 +2,8 @@
   "itemGroup.mtgcard": "Mtg Card",
   "item.mtgcard.card": "Magic Card",
   "item.mtgcard.mtg_pack": "Booster Pack",
+  "tcg_game.mtgcard.all": "All",
+  "tcg_game.mtgcard.mtg": "MTG",
   "screen.mtgcard.card_database": "Card Database",
   "block.mtgcard.deckbox": "Spruce Deckbox",
   "item.mtgcard.deckbox": "Spruce Deckbox",

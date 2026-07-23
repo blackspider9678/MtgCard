@@ -2,10 +2,12 @@ package com.spider.mtgcard.deckcontrol;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.registry.ModBlockEntities;
 import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.db.search.CardMeta;
 import com.spider.mtgcard.deckbox.DeckboxBlockEntity;
+import com.spider.mtgcard.item.ModItemTags;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.menu.v1.ExtendedMenuProvider;
 import net.minecraft.core.BlockPos;
@@ -54,6 +56,17 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedMenuP
     private boolean peekActive = false;
     public boolean isPeekActive() { return peekActive; }
     public void setPeekActive(boolean v) { peekActive = v; setChanged(); syncSelf(); }
+
+    private String selectedGame = TcgGameRegistry.MTG;
+    public String getSelectedGame() { return selectedGame; }
+    public void setSelectedGame(String game) {
+        String normalized = TcgGameRegistry.normalizeGameId(game);
+        if (normalized.isBlank()) normalized = TcgGameRegistry.MTG;
+        if (selectedGame.equals(normalized)) return;
+        selectedGame = normalized;
+        setChanged();
+        syncSelf();
+    }
 
     // ----- Resolution / Cascade transaction -----
     private int resolutionId = 0;
@@ -438,7 +451,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedMenuP
         ItemStack st = player.getInventory().getItem(playerInvSlot);
         if (st.isEmpty()) return false;
 
-        if (!st.is(com.spider.mtgcard.item.ModItems.CARD)) return false;
+        if (!st.is(ModItemTags.TCG_CARD)) return false;
 
         int empty = -1;
         for (int i = 0; i < LIBRARY_SLOTS; i++) {
@@ -715,6 +728,8 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedMenuP
 
         lockedLink = view.getBooleanOr("LockedLink", false);
         peekActive = view.getBooleanOr("PeekActive", false);
+        selectedGame = TcgGameRegistry.normalizeGameId(view.getStringOr("SelectedGame", TcgGameRegistry.MTG));
+        if (selectedGame.isBlank()) selectedGame = TcgGameRegistry.MTG;
         wasPowered = view.getBooleanOr("WasPowered", false);
         cooldownTicks = view.getIntOr("Cooldown", 0);
 
@@ -731,6 +746,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedMenuP
         view.putBoolean("LockedLink", lockedLink);
 
         view.putBoolean("PeekActive", peekActive);
+        view.putString("SelectedGame", selectedGame);
         view.putBoolean("WasPowered", wasPowered);
         view.putInt("Cooldown", cooldownTicks);
 

@@ -1,15 +1,15 @@
-// com/spider/mtgcard/command/Art_Command.java
 package com.spider.mtgcard.command;
 
-import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.spider.mtgcard.shared.MtgCardPaths;
 import net.minecraft.commands.CommandSourceStack;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.level.storage.LevelResource;
+import net.minecraft.server.level.ServerPlayer;
 
 import java.io.IOException;
-import java.nio.file.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Locale;
 import java.util.stream.Stream;
 
@@ -18,14 +18,9 @@ import static net.minecraft.commands.Commands.literal;
 
 public final class Art_Command {
 
-    // Change if needed
-    private static final String ART_DIR_NAME = "art"; // <world>/mtgcard/art/
-
     public static LiteralArgumentBuilder<CommandSourceStack> node() {
         return literal("art")
-                // ✅ NEW: /mtg art -> stats
                 .executes(ctx -> stats(ctx.getSource()))
-
                 .then(literal("find")
                         .then(argument("id", StringArgumentType.greedyString())
                                 .executes(ctx -> {
@@ -40,44 +35,40 @@ public final class Art_Command {
     }
 
     private static int stats(CommandSourceStack src) {
-        Path artDir = worldArtDir(src.getServer());
+        Path mainArt = MtgCardPaths.mainArtDir(src.getServer());
+        Path customArt = MtgCardPaths.customArtRoot(src.getServer());
+        Path legacyArt = MtgCardPaths.legacyArtDir(src.getServer());
 
-        if (!Files.exists(artDir)) {
-            src.sendSuccess(() -> Component.literal("§7No art directory found at: §e" + artDir), false);
-            src.sendSuccess(() -> Component.literal("§aCustom Art: §e0§a, Total Art: §e0"), false);
-            return 1;
-        }
+        long main = countImages(mainArt, false);
+        long custom = countImages(customArt, true);
+        long legacy = countImages(legacyArt, false);
 
-        long total = 0;
-        long custom = 0;
-
-        try (Stream<Path> s = Files.list(artDir)) {
-            for (Path p : s.toList()) {
-                if (!Files.isRegularFile(p)) continue;
-                total++;
-                String fn = p.getFileName().toString().toLowerCase(Locale.ROOT);
-                if (fn.startsWith("custom_")) custom++;
-            }
-        } catch (IOException e) {
-            src.sendSuccess(() -> Component.literal("§cFailed to read art dir: §7" + e.getMessage()), false);
-            return 0;
-        }
-
-        long finalTotal = total;
-        long finalCustom = custom;
-        src.sendSuccess(() -> Component.literal("§aCustom Art: §e" + finalCustom + "§a, Total Art: §e" + finalTotal), false);
-        src.sendSuccess(() -> Component.literal("§7Folder: §e" + artDir), false);
+        src.sendSuccess(() -> Component.literal("Main Art: " + main + ", Custom Art: " + custom
+                + ", Total New Art: " + (main + custom)), false);
+        src.sendSuccess(() -> Component.literal("Legacy flat art fallback: " + legacy), false);
+        src.sendSuccess(() -> Component.literal("Main folder: " + mainArt), false);
+        src.sendSuccess(() -> Component.literal("Custom folder: " + customArt), false);
         return 1;
     }
-
-    // existing find/rebuild/purge/isOp/worldArtDir/sanitizeKeyForSearch below...
 
     private static int find(CommandSourceStack src, String id) { /* unchanged */ return 1; }
     private static int rebuild(CommandSourceStack src) { /* unchanged */ return 1; }
     private static int purge(CommandSourceStack src) { /* unchanged */ return 1; }
 
-    private static Path worldArtDir(net.minecraft.server.MinecraftServer server) {
-        return server.getWorldPath(LevelResource.ROOT).resolve("mtgcard").resolve(ART_DIR_NAME);
+    private static long countImages(Path dir, boolean recursive) {
+        if (dir == null || !Files.exists(dir)) return 0;
+        try (Stream<Path> s = recursive ? Files.walk(dir) : Files.list(dir)) {
+            return s.filter(Files::isRegularFile)
+                    .filter(Art_Command::isImageFile)
+                    .count();
+        } catch (IOException e) {
+            return 0;
+        }
+    }
+
+    private static boolean isImageFile(Path path) {
+        String fn = path == null ? "" : path.getFileName().toString().toLowerCase(Locale.ROOT);
+        return fn.endsWith(".webp") || fn.endsWith(".png") || fn.endsWith(".jpg") || fn.endsWith(".jpeg");
     }
 
     private static boolean isOp(CommandSourceStack src) {

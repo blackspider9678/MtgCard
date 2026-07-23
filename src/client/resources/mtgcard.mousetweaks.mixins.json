@@ -1,0 +1,13 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.spider.mtgcard.client.compat.mousetweaks",
+  "compatibilityLevel": "JAVA_21",
+  "plugin": "com.spider.mtgcard.client.compat.mousetweaks.MouseTweaksCompatMixinPlugin",
+  "client": [
+    "MouseTweaksGuiContainerHandlerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

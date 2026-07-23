@@ -1,6 +1,7 @@
 package com.spider.mtgcard.client.life;
 
 import com.spider.mtgcard.life.LifePointPackets;
+import com.spider.mtgcard.life.LifeFormat;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.core.BlockPos;
 import org.jetbrains.annotations.Nullable;
@@ -228,7 +229,78 @@ public final class LifePointClientState {
     public static String getFormatKey(@Nullable BlockPos pos) {
         String s = safe(pos).getString("FormatKey").orElse("commander");
         if (s == null || s.isBlank()) return "commander";
-        return s;
+        return LifeFormat.normalizeKey(s);
+    }
+
+    public static LifeFormat getFormat(@Nullable BlockPos pos) {
+        return LifeFormat.fromKey(getFormatKey(pos));
+    }
+
+    public static @Nullable BlockPos twoHeadedTeammate(@Nullable BlockPos pos) {
+        List<BlockPos> teammates = sharedTeamMembers(pos);
+        return teammates.isEmpty() ? null : teammates.getFirst();
+    }
+
+    public static List<BlockPos> sharedTeamMembers(@Nullable BlockPos pos) {
+        LifeFormat format = getFormat(pos);
+        int teamSize = format.turnGroupSize();
+        if (pos == null || teamSize <= 1) return List.of();
+
+        UUID gid = getGroupIdFor(pos);
+        GroupView g = getGroup(gid);
+        if (g == null || g.order == null || g.order.isEmpty()) return List.of();
+
+        int idx = g.order.indexOf(pos);
+        if (idx < 0) return List.of();
+
+        int teamStart = idx - (idx % teamSize);
+        var out = new ArrayList<BlockPos>(teamSize - 1);
+        for (int i = teamStart; i < teamStart + teamSize && i < g.order.size(); i++) {
+            BlockPos teammate = g.order.get(i);
+            if (!teammate.equals(pos)) out.add(teammate);
+        }
+
+        return out.isEmpty() ? List.of() : List.copyOf(out);
+    }
+
+    public static String displayNameForLife(@Nullable BlockPos pos) {
+        if (pos == null) return "";
+
+        LifeFormat format = getFormat(pos);
+        int teamSize = format.turnGroupSize();
+        if (teamSize > 1) {
+            UUID gid = getGroupIdFor(pos);
+            GroupView g = getGroup(gid);
+            if (g != null && g.order != null && !g.order.isEmpty()) {
+                int idx = g.order.indexOf(pos);
+                if (idx >= 0) {
+                    int teamStart = idx - (idx % teamSize);
+                    var names = new ArrayList<String>(teamSize);
+                    for (int i = teamStart; i < teamStart + teamSize && i < g.order.size(); i++) {
+                        String name = memberDisplayName(gid, g.order.get(i));
+                        if (!name.isBlank()) names.add(name);
+                    }
+                    if (!names.isEmpty()) return String.join(" // ", names);
+                }
+            }
+        }
+
+        return memberDisplayName(getGroupIdFor(pos), pos);
+    }
+
+    private static String memberDisplayName(@Nullable UUID groupId, @Nullable BlockPos pos) {
+        if (pos == null) return "";
+
+        String nm = groupMemberName(groupId, pos);
+        if (nm != null && !nm.isBlank()) return nm;
+
+        CompoundTag st = get(pos);
+        if (st != null) {
+            String n = st.getString("DisplayName").orElse("");
+            if (n != null && !n.isBlank()) return n;
+        }
+
+        return pos.getX() + "," + pos.getY() + "," + pos.getZ();
     }
 
     public static int getCommanderLethal(@Nullable BlockPos pos) {

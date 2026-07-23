@@ -1,54 +1,100 @@
 package com.spider.mtgcard.db.search;
 
+import com.spider.mtgcard.util.TcgCardMeta;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
 
 import java.util.*;
 import java.util.function.Predicate;
 
-import static javax.management.ObjectName.unquote;
-
 public final class SearchEngine {
 
     /** A light row view extracted from ItemStack once for cheap matching. */
-    public static final class Row {
+    public static final class Row implements ScryfallSyntax.CardView {
         public final ItemStack stack;
         public final String name;
         public final String set;
+        public final String collectorNumber;
         public final String rarity;
+        public final String manaCost;
         public final String typeLine;
+        public final String oracleText;
         public final Set<String> colors;
         public final Set<String> colorId;
         public final int mv;
         public final boolean foil;
         public final boolean tokenLike;
+        public final boolean legendary;
+        public final String commanderLegality;
+        public final String layout;
 
         // NEW:
         public final double priceUsd;     // numeric, NaN if missing
         public final String powerRaw;     // "2", "*", "1+*", etc (may be "")
         public final String toughnessRaw;
+        public final String loyaltyRaw;
 
         public Row(ItemStack st, String name, String set, String rarity,
                    String typeLine, Set<String> colors, Set<String> colorId,
                    int mv, boolean foil, boolean tokenLike,
                    double priceUsd, String powerRaw, String toughnessRaw) {
+            this(st, name, set, "", rarity, "", typeLine, "", colors, colorId, mv,
+                    foil, tokenLike, priceUsd, powerRaw, toughnessRaw, "",
+                    "", false, "");
+        }
+
+        public Row(ItemStack st, String name, String set, String collectorNumber,
+                   String rarity, String manaCost, String typeLine, String oracleText,
+                   Set<String> colors, Set<String> colorId, int mv,
+                   boolean foil, boolean tokenLike, double priceUsd,
+                   String powerRaw, String toughnessRaw, String loyaltyRaw,
+                   String layout, boolean legendary, String commanderLegality) {
 
             this.stack = st;
             this.name = name;
             this.set = set;
+            this.collectorNumber = collectorNumber;
             this.rarity = rarity;
+            this.manaCost = manaCost;
             this.typeLine = typeLine;
+            this.oracleText = oracleText;
             this.colors = colors;
             this.colorId = colorId;
             this.mv = mv;
             this.foil = foil;
             this.tokenLike = tokenLike;
+            this.legendary = legendary;
+            this.commanderLegality = commanderLegality;
+            this.layout = layout;
 
             this.priceUsd = priceUsd;
             this.powerRaw = powerRaw;
             this.toughnessRaw = toughnessRaw;
+            this.loyaltyRaw = loyaltyRaw;
         }
+
+        @Override public String name() { return name; }
+        @Override public String set() { return set; }
+        @Override public String collectorNumber() { return collectorNumber; }
+        @Override public String rarity() { return rarity; }
+        @Override public String manaCost() { return manaCost; }
+        @Override public String typeLine() { return typeLine; }
+        @Override public String oracleText() { return oracleText; }
+        @Override public String power() { return powerRaw; }
+        @Override public String toughness() { return toughnessRaw; }
+        @Override public String loyalty() { return loyaltyRaw; }
+        @Override public String layout() { return layout; }
+        @Override public int manaValue() { return mv; }
+        @Override public Set<String> colors() { return colors == null ? Set.of() : colors; }
+        @Override public Set<String> colorIdentity() { return colorId == null ? Set.of() : colorId; }
+        @Override public boolean foil() { return foil; }
+        @Override public boolean tokenLike() { return tokenLike; }
+        @Override public boolean legendary() { return legendary; }
+        @Override public boolean doubleFaced() {
+            String l = layout == null ? "" : layout.toLowerCase(Locale.ROOT);
+            return l.contains("transform") || l.contains("modal_dfc") || l.contains("double");
+        }
+        @Override public String commanderLegality() { return commanderLegality; }
+        @Override public double priceUsd() { return priceUsd; }
     }
 
     public static Page search(
@@ -80,77 +126,69 @@ public final class SearchEngine {
 
     /* ------------ Row extraction from NBT (matches CardNBTUtil) ------------- */
     public static Row toRow(ItemStack st) {
-        var comp = st.getOrDefault(net.minecraft.core.component.DataComponents.CUSTOM_DATA, null);
-        CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
-        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
-
-        String name = meta.getString("name").orElse("");
-        String set  = meta.getString("set").orElse("");
+        TcgCardMeta.Info meta = TcgCardMeta.read(st);
 
         // rarity normalization -> common|uncommon|rare|mythic (your sorter also accepts c/u/r/m)
-        String rarRaw = meta.getString("rarity").orElse("");
-        String rarity = normalizeRarity(rarRaw);
+        String rarity = normalizeRarity(meta.rarity());
 
         // prefer meta.type_line; fall back to first face.type_line if missing
-        String type = meta.getString("type_line").orElse("");
-        if (type.isEmpty()) type = firstFace(meta, "type_line");
+        String type = meta.typeLine();
 
         // mv comes from "cmc" (your writer uses meta.putInt("cmc", ...))
-        int mv = meta.getInt("cmc").orElse(0);
+        int mv = meta.manaValue();
 
         // colors & color_identity are NbtList of strings like "W","U","B","R","G"
-        Set<String> cols = readColors(meta.getList("colors").orElse(null));
-        Set<String> cid  = readColors(meta.getList("color_identity").orElse(null));
+        Set<String> cols = normalizeColors(meta.colors());
+        Set<String> cid  = normalizeColors(meta.colorIdentity());
 
         // flags
-        boolean foil      = root.getBoolean("mtg_foil").orElse(false);
-        boolean tokenLike = meta.getBoolean("is_token").orElse(false);
+        boolean foil      = meta.foil();
+        boolean tokenLike = meta.tokenLike();
 
         // --- price (best-effort) ---
         // Pick ONE canonical storage key in your writer if you can.
         // These reads are defensive so it won’t crash if you change formats.
-        double priceUsd = Double.NaN;
+        double priceUsd = meta.priceUsd();
 
         // common patterns:
-        priceUsd = readDouble(meta, "usd", Double.NaN);              // e.g. meta.usd = "1.23" or 1.23
-        if (Double.isNaN(priceUsd)) priceUsd = readDouble(meta, "price_usd", Double.NaN);
-        if (Double.isNaN(priceUsd)) priceUsd = readDouble(meta, "price", Double.NaN);
-
         // --- power/toughness (prefer meta; fallback to face 0) ---
-        String power = meta.getString("power").orElse("");
-        if (power.isEmpty()) power = firstFace(meta, "power");
+        String power = meta.power();
+        String toughness = meta.toughness();
+        String loyalty = meta.loyalty();
 
-        String toughness = meta.getString("toughness").orElse("");
-        if (toughness.isEmpty()) toughness = firstFace(meta, "toughness");
-
-        return new Row(st, name, set, rarity, type, cols, cid, mv, foil, tokenLike, priceUsd, power, toughness);
+        return new Row(
+                st,
+                meta.name(),
+                meta.set(),
+                meta.collectorNumber(),
+                rarity,
+                meta.manaCost(),
+                type,
+                meta.oracleText(),
+                cols,
+                cid,
+                mv,
+                foil,
+                tokenLike,
+                priceUsd,
+                power,
+                toughness,
+                loyalty,
+                meta.layout(),
+                meta.legendary(),
+                meta.commanderLegality()
+        );
 
     }
 
-    private static Set<String> readColors(ListTag lst) {
+    private static Set<String> normalizeColors(Set<String> colors) {
+        if (colors == null || colors.isEmpty()) return Set.of();
         Set<String> out = new HashSet<>();
-        if (lst == null) return out;
-        for (int i = 0; i < lst.size(); i++) {
-            String s = lst.getString(i).orElse("").trim().toUpperCase(Locale.ROOT);
-            if (!s.isEmpty()) {
-                // store as single-letter tokens "W","U","B","R","G"
-                out.add(String.valueOf(s.charAt(0)));
-            }
+        for (String color : colors) {
+            String value = color == null ? "" : color.trim().toUpperCase(Locale.ROOT);
+            if (!value.isEmpty()) out.add(String.valueOf(value.charAt(0)));
         }
         return out;
-    }
-
-    private static String firstFace(CompoundTag meta, String key) {
-        var facesOpt = meta.getList("card_faces");
-        if (facesOpt.isEmpty()) return "";
-        var faces = facesOpt.get();
-        for (int i = 0; i < faces.size(); i++) {
-            var f = faces.getCompound(i).orElse(null);
-            if (f == null) continue;
-            String v = f.getString(key).orElse("");
-            if (!v.isEmpty()) return v;
-        }
-        return "";
     }
 
     private static String normalizeRarity(String r) {
@@ -331,115 +369,13 @@ public final class SearchEngine {
 
     /* ------------ Predicate building (supports OR groups) ------------- */
     public static Predicate<Row> buildPredicateFromRaw(String raw) {
-        List<List<Term>> groups = parseRaw(raw);
-        if (groups.isEmpty()) return r -> true;
-
-        // OR over groups
-        List<Predicate<Row>> ors = new ArrayList<>();
-        for (var terms : groups) {
-            // AND within each group
-            List<Predicate<Row>> ands = new ArrayList<>();
-            for (var t : terms) {
-                Predicate<Row> p;
-                String f = (t.field == null) ? "free" : t.field;
-                switch (f) {
-                    case "name" -> p = r -> contains(r.name, t.value);
-                    case "set"  -> p = r -> equalsIgnoreCase(r.set, t.value);
-                    case "rarity" -> p = r -> equalsIgnoreCase(r.rarity, t.value)
-                            || equalsIgnoreCase(r.rarity, normalizeRarity(t.value));
-                    case "type" -> p = r -> contains(r.typeLine, t.value);
-                    case "color" -> {
-                        Set<String> need = letters(t.value);
-                        String op = (t.op == null || t.op.isBlank()) ? ":" : t.op;
-                        p = r -> matchColorSet(r.colors, need, op);
-                    }
-                    case "color_id" -> {
-                        Set<String> need = letters(t.value);
-                        String op = (t.op == null || t.op.isBlank()) ? ":" : t.op;
-                        p = r -> matchColorSet(r.colorId, need, op);
-                    }
-                    case "mv" -> {
-                        int n = safeInt(t.value.trim(), Integer.MIN_VALUE);
-                        String op = t.op == null ? "=" : t.op;
-                        p = r -> switch (op) {
-                            case ">"  -> r.mv > n;
-                            case ">=" -> r.mv >= n;
-                            case "<"  -> r.mv < n;
-                            case "<=" -> r.mv <= n;
-                            default   -> r.mv == n;
-                        };
-                    }
-                    case "is" -> {
-                        String v = t.value.toLowerCase(Locale.ROOT);
-                        if (v.equals("foil")) p = r -> r.foil;
-                        else if (v.equals("token")) p = r -> r.tokenLike;
-                        else p = r -> true;
-                    }
-                    default /* free */ -> p = r -> contains(r.name, t.value) || contains(r.typeLine, t.value);
-                }
-                if (t.neg) p = p.negate();
-                ands.add(p);
-            }
-            ors.add(ands.stream().reduce(x -> true, Predicate::and));
-        }
-        return ors.stream().reduce(x -> false, Predicate::or);
+        ScryfallSyntax.Parsed parsed = ScryfallSyntax.parse(raw);
+        return parsed::matches;
     }
 
     public static Predicate<Row> buildPredicate(ScryfallQuery q) {
-        List<Predicate<Row>> ands = new ArrayList<>();
-
-        for (var t : q.terms) {
-            Predicate<Row> p;
-            switch (t.field) {
-                case NAME -> p = r -> t.exact
-                        ? equalsIgnoreCase(r.name, t.value)
-                        : contains(r.name, t.value);
-                case SET  -> p = r -> equalsIgnoreCase(r.set, t.value);
-                case RARITY -> p = r -> equalsIgnoreCase(r.rarity, t.value)
-                        || equalsIgnoreCase(r.rarity, normalizeRarity(t.value));
-                case TYPE -> p = r -> t.exact
-                        ? equalsIgnoreCase(r.typeLine, t.value)
-                        : contains(r.typeLine, t.value);
-                case COLOR -> {
-                    var need = letters(t.value);
-                    String op = (t.op == null || t.op.isBlank()) ? ":" : t.op;
-                    p = r -> r.colors != null && matchColorSet(r.colors, need, op);
-                }
-                case COLOR_ID -> {
-                    var need = letters(t.value);
-                    String op = (t.op == null || t.op.isBlank()) ? ":" : t.op;
-                    p = r -> r.colorId != null && matchColorSet(r.colorId, need, op);
-                }
-                case MV -> {
-                    String v = (t.value == null ? "" : t.value.trim());
-                    String op = (t.op == null || t.op.isBlank()) ? "=" : t.op;
-                    int n = safeInt(v, Integer.MIN_VALUE);
-                    final String fop = op; final int fn = n;
-                    p = r -> switch (fop) {
-                        case ">"  -> r.mv >  fn;
-                        case ">=" -> r.mv >= fn;
-                        case "<"  -> r.mv <  fn;
-                        case "<=" -> r.mv <= fn;
-                        default   -> r.mv == fn;
-                    };
-                }
-                case IS -> {
-                    String v = (t.value == null ? "" : t.value).toLowerCase(Locale.ROOT);
-                    if (v.equals("foil"))      p = r -> r.foil;
-                    else if (v.equals("token")) p = r -> r.tokenLike;
-                    else                        p = r -> true; // unknown is: ignored
-                }
-
-                case FREE -> p = r -> t.exact
-                        ? equalsIgnoreCase(r.name, t.value) || equalsIgnoreCase(r.typeLine, t.value)
-                        : contains(r.name, t.value) || contains(r.typeLine, t.value);
-                default -> p = r -> true;
-            }
-            if (t.negated) p = p.negate();
-            ands.add(p);
-        }
-
-        return ands.stream().reduce(x -> true, Predicate::and);
+        if (q == null) return r -> true;
+        return q::matches;
     }
 
     /* ------------ Sorting ------------- */
@@ -664,24 +600,4 @@ public final class SearchEngine {
         return out;
     }
 
-    private static double readDouble(CompoundTag nbt, String key, double def) {
-        if (nbt == null || key == null) return def;
-
-        // If stored as string
-        var sOpt = nbt.getString(key);
-        if (sOpt.isPresent()) {
-            String s = sOpt.get().trim();
-            if (s.isEmpty()) return def;
-            try { return Double.parseDouble(s); } catch (Exception ignore) {}
-        }
-
-        // If stored as number (int/float/double)
-        var dOpt = nbt.getDouble(key);
-        if (dOpt.isPresent()) return dOpt.get();
-
-        var iOpt = nbt.getInt(key);
-        if (iOpt.isPresent()) return (double) iOpt.get();
-
-        return def;
-    }
 }

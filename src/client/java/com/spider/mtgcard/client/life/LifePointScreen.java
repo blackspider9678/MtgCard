@@ -1,6 +1,8 @@
 package com.spider.mtgcard.client.life;
 
 import com.spider.mtgcard.client.compat.LegacyScreen;
+import com.spider.mtgcard.api.LifeFormatRegistry;
+import com.spider.mtgcard.life.LifeFormat;
 import com.spider.mtgcard.life.LifePointPackets;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
@@ -126,6 +128,7 @@ public final class LifePointScreen extends LegacyScreen {
 
     private int lifeButtonsY = -1;
     private int lifeButtonsCenterX = -1;
+    private Rect lifeFormatLabelRect = null;
 
     // LIFE tab: other players list
     private Rect otherPlayersViewport = null;
@@ -189,6 +192,7 @@ public final class LifePointScreen extends LegacyScreen {
     private final Map<String, Rect> editIconRects = new HashMap<>();
     private final List<Rect> editPaletteRectsPlayer = new ArrayList<>();
     private final List<Rect> editPaletteRectsLife = new ArrayList<>();
+    private final List<Rect> editPaletteRectsIcon = new ArrayList<>();
 
     private EditBox editPresetNameField;
     private String selectedPresetKey = null;
@@ -233,16 +237,16 @@ public final class LifePointScreen extends LegacyScreen {
     // I like 960x540 (16:9) or 854x480. Choose what matches your â€œGUI Scale 5â€ look.
     private static final int DESIGN_W = 960;
     private static final int DESIGN_H = 540;
+    private static final float MAX_UI_SCALE = 1.6f;
 
     private float uiScale = 1f;
     private int uiX = 0, uiY = 0;      // top-left of scaled design area in actual screen coords
     private int uiW = DESIGN_W, uiH = DESIGN_H;
 
     private void recomputeLayoutScale() {
-        // Grow into larger screens, but stop at 2x so the HUD does not become oversized.
         float sx = this.width  / (float) DESIGN_W;
         float sy = this.height / (float) DESIGN_H;
-        uiScale = Math.min(2f, Math.min(sx, sy));
+        uiScale = Math.min(MAX_UI_SCALE, Math.min(sx, sy));
 
         uiW = Math.round(DESIGN_W * uiScale);
         uiH = Math.round(DESIGN_H * uiScale);
@@ -408,8 +412,6 @@ public final class LifePointScreen extends LegacyScreen {
         return yourPresetId;
     }
 
-    private static final List<String> FORMAT_KEYS = List.of("commander", "standard", "brawl", "twoheaded");
-
     private static final class Palette {
         final String label; final int rgb;
         Palette(String label, int rgb) { this.label = label; this.rgb = rgb & 0xFFFFFF; }
@@ -541,6 +543,7 @@ public final class LifePointScreen extends LegacyScreen {
         editIconRects.clear();
         editPaletteRectsPlayer.clear();
         editPaletteRectsLife.clear();
+        editPaletteRectsIcon.clear();
         editIncludeCountersRect = null;
         editSaveToWorldRect = null;
         editPlayerBarRect = null;
@@ -559,6 +562,7 @@ public final class LifePointScreen extends LegacyScreen {
 
         lifeButtonsY = -1;
         lifeButtonsCenterX = -1;
+        lifeFormatLabelRect = null;
 
         // cache icon sizes once
         cacheDims(ICON_POISON);
@@ -577,7 +581,7 @@ public final class LifePointScreen extends LegacyScreen {
         editPlayerColor = st.getInt("PlayerColor").orElse(0xE8E8E8);
         editLifeColor   = st.getInt("LifeColor").orElse(0xFFFFFF);
         editIconKey     = st.getString("IconKey").orElse("none");
-        editFormatKey   = st.getString("FormatKey").orElse("commander");
+        editFormatKey   = LifeFormat.normalizeKey(st.getString("FormatKey").orElse(LifeFormat.DEFAULT.key()));
         editCmdLethal   = st.getInt("CmdLethal").orElse(21);
         editIconSwapColor = st.getInt("IconSwapColor").orElse(0xFF0000);
         editIconHexField = null;
@@ -901,6 +905,8 @@ public final class LifePointScreen extends LegacyScreen {
                 new Rect(rightX, y0, colW, h0),
         };
 
+        LifeFormat format = LifeFormat.fromKey(st.getString("FormatKey").orElse(LifeFormat.DEFAULT.key()));
+
         addHeader(leftX, y0, colW, "Your Player Info");
         addHeader(midX,  y0, colW, "Other Players");
         addHeader(rightX,y0, colW, "Commander Damage");
@@ -909,13 +915,34 @@ public final class LifePointScreen extends LegacyScreen {
         int life = st.getInt("Life").orElse(40);
 
         int box = ps(72);
-        int boxX = leftX + 10;
+        int boxX = leftX + ps(10);
         int boxY = y0 + 26;
+        int hintY = boxY + box + ps(10);
+        int hintRowGap = ps(16);
+        int hintRowH = 18;
+        int countersStartY = hintY + hintRowGap + hintRowH + ps(8);
 
-        // Health sub-panel (behind life square + life controls)
+        // Health sub-panel (behind life square + buttons)
         int healthPanelX = leftX + 6;
         int healthPanelY = y0 + 22;
         int healthPanelW = colW - 12;
+
+        int healthPanelBottom = countersStartY - ps(8);
+
+        lifeHealthPanel = new Rect(
+                healthPanelX,
+                healthPanelY,
+                healthPanelW,
+                Math.max(30, healthPanelBottom - healthPanelY)
+        );
+
+        // Counters viewport under health panel
+        int vpX = leftX + 6;
+        int vpY = countersStartY;
+        int vpW = colW - 12;
+        int vpBottom = y0 + h0 - 10;
+        int vpH = Math.max(40, vpBottom - vpY);
+        lifeCounterViewport = new Rect(vpX, vpY, vpW, vpH);
 
         valueField = new EditBox(font, boxX, boxY, box, box, Component.literal(""));
         valueField.setValue(Integer.toString(life));
@@ -946,6 +973,7 @@ public final class LifePointScreen extends LegacyScreen {
         int stripW = (btnW + 10) + 4 + btnW + 4 + btnW + 4 + (btnW + 10);
         lifeButtonsY = by;
         lifeButtonsCenterX = startBx + (stripW / 2);
+        lifeFormatLabelRect = new Rect(startBx, by + btnH + ps(6), stripW, ps(12));
 
         addRenderableWidget(Button.builder(Component.literal("--"), b ->
                 ClientPlayNetworking.send(new LifePointPackets.AddLifeC2S(pos, -10))
@@ -966,28 +994,9 @@ public final class LifePointScreen extends LegacyScreen {
                 ClientPlayNetworking.send(new LifePointPackets.AddLifeC2S(pos, +10))
         ).bounds(bx, by, btnW + 10, btnH).build());
 
-        int hintY = boxY + box + ps(10);
-        int hintW = healthPanelW - ps(20);
+        int hintW = (lifeHealthPanel != null) ? (lifeHealthPanel.w - ps(20)) : (colW - ps(20));
         addHintLabel(leftX + ps(10), hintY, hintW, "Scroll Â±1");
         addHintLabel(leftX + ps(10), hintY + ps(16), hintW, "Shift Ã—10");
-
-        int hintBottom = hintY + ps(16) + 18;
-        int healthPanelBottom = Math.max(by + btnH, hintBottom) + ps(8);
-
-        lifeHealthPanel = new Rect(
-                healthPanelX,
-                healthPanelY,
-                healthPanelW,
-                Math.max(30, healthPanelBottom - healthPanelY)
-        );
-
-        // Counters viewport under health panel
-        int vpX = leftX + 6;
-        int vpY = lifeHealthPanel.y + lifeHealthPanel.h + ps(8);
-        int vpW = colW - 12;
-        int vpBottom = y0 + h0 - ps(10);
-        int vpH = Math.max(40, vpBottom - vpY);
-        lifeCounterViewport = new Rect(vpX, vpY, vpW, vpH);
 
         // MIDDLE: Other players flat list
         int listY = y0 + 26;
@@ -1005,10 +1014,19 @@ public final class LifePointScreen extends LegacyScreen {
         }
 
         // RIGHT: commander damage editor for selected target
-        buildCommanderDamageWireframe(st, rightX, y0 + 26, colW, h0 - 26);
+        if (format.hasCommanderDamage()) {
+            buildCommanderDamageWireframe(st, rightX, y0 + 26, colW, h0 - 26);
+        } else {
+            addHintLabel(rightX + ps(10), y0 + 26, colW - ps(20), "Off for " + format.displayName());
+        }
     }
 
     private void buildCommanderDamageWireframe(CompoundTag st, int x, int y, int w, int h) {
+        if (!LifeFormat.fromKey(st.getString("FormatKey").orElse(LifeFormat.DEFAULT.key())).hasCommanderDamage()) {
+            addHintLabel(x + 10, y, w - 20, "Commander only");
+            return;
+        }
+
         UUID gid = LifePointClientState.getGroupIdFor(pos);
         if (gid == null) { addHintLabel(x + 10, y, "No Pod linked"); return; }
 
@@ -1075,7 +1093,6 @@ public final class LifePointScreen extends LegacyScreen {
             applyCommanderLethalStyle(field, newV);
 
             int delta = newV - oldV;
-            ClientPlayNetworking.send(new LifePointPackets.AddLifeC2S(pos, -delta));
             ClientPlayNetworking.send(new LifePointPackets.AddCommanderDamageC2S(pos, selectedCmdTarget, delta));
         });
 
@@ -1097,7 +1114,6 @@ public final class LifePointScreen extends LegacyScreen {
 
             applyCommanderLethalStyle(field, newV);
 
-            ClientPlayNetworking.send(new LifePointPackets.AddLifeC2S(pos, +1));
             ClientPlayNetworking.send(new LifePointPackets.AddCommanderDamageC2S(pos, selectedCmdTarget, -1));
         }).bounds(minusX, fy, btnW, 18).build());
 
@@ -1112,7 +1128,6 @@ public final class LifePointScreen extends LegacyScreen {
 
             applyCommanderLethalStyle(field, newV);
 
-            ClientPlayNetworking.send(new LifePointPackets.AddLifeC2S(pos, -1));
             ClientPlayNetworking.send(new LifePointPackets.AddCommanderDamageC2S(pos, selectedCmdTarget, +1));
         }).bounds(plusX, fy, btnW, 18).build());
     }
@@ -1565,7 +1580,7 @@ public final class LifePointScreen extends LegacyScreen {
         editCounterIncludeVp = new Rect(leftX + pad, includeListY, colW - pad * 2, includeListH);
 
         // --- Footer buttons (sticky) ---
-        int btnW = ps((colW - pad * 2 - 8 * 2) / 3);
+        int btnW = Math.max(24, (colW - pad * 2 - 8 * 2) / 3);
         int bx = leftX + pad;
 
         addRenderableWidget(Button.builder(Component.literal("Apply"), b -> {
@@ -1576,12 +1591,19 @@ public final class LifePointScreen extends LegacyScreen {
             editPlayerColor = p.playerColor & 0xFFFFFF;
             editLifeColor   = p.lifeColor & 0xFFFFFF;
             editIconKey     = (p.iconKey == null || p.iconKey.isBlank()) ? "none" : p.iconKey;
-            editFormatKey   = (p.formatKey == null || p.formatKey.isBlank()) ? "commander" : p.formatKey;
+            editIconSwapColor = p.iconSwapColor & 0xFFFFFF;
+            boolean applyFormat = canEditFormat();
+            if (applyFormat) {
+                editFormatKey = LifeFormat.normalizeKey(p.formatKey);
+            }
 
             ClientPlayNetworking.send(new LifePointPackets.SetPlayerColorC2S(pos, editPlayerColor));
             ClientPlayNetworking.send(new LifePointPackets.SetColorC2S(pos, editLifeColor));
             ClientPlayNetworking.send(new LifePointPackets.SetIconKeyC2S(pos, editIconKey));
-            ClientPlayNetworking.send(new LifePointPackets.SetFormatKeyC2S(pos, editFormatKey));
+            ClientPlayNetworking.send(new LifePointPackets.SetIconSwapColorC2S(pos, editIconSwapColor));
+            if (applyFormat) {
+                ClientPlayNetworking.send(new LifePointPackets.SetFormatKeyC2S(pos, editFormatKey));
+            }
 
             if (includeCustomCounters && p.customCounters != null) {
                 for (var e : p.customCounters.entrySet()) {
@@ -1612,6 +1634,8 @@ public final class LifePointScreen extends LegacyScreen {
                     editLifeColor,
                     (editIconKey == null ? "none" : editIconKey),
                     (editFormatKey == null ? "commander" : editFormatKey),
+                    editCmdLethal,
+                    editIconSwapColor,
                     custom
             ));
 
@@ -1763,6 +1787,17 @@ public final class LifePointScreen extends LegacyScreen {
         ctx.fill(x, y + h - 1, x + w, y + h, edge);
         ctx.fill(x, y, x + 1, y + h, edge);
         ctx.fill(x + w - 1, y, x + w, y + h, edge);
+
+        if (lifeFormatLabelRect != null) {
+            String label = "Format: " + LifeFormat.displayName(LifePointClientState.getFormatKey(pos));
+            ctx.drawCenteredString(
+                    font,
+                    Component.literal(label),
+                    lifeFormatLabelRect.x + lifeFormatLabelRect.w / 2,
+                    lifeFormatLabelRect.y,
+                    0xFFB0B0B0
+            );
+        }
     }
 
     private void drawBigLifeBox(GuiGraphics ctx) {
@@ -1798,6 +1833,40 @@ public final class LifePointScreen extends LegacyScreen {
         int bg = selected ? 0xFF1B1B1B : (hovered ? 0xFF161616 : 0xFF141414);
         ctx.fill(r.x, r.y, r.x + r.w, r.y + r.h, bg);
         ctx.fill(r.x, r.y, r.x + r.w, r.y + 1, 0xFF2C2C2C);
+    }
+
+    private void drawFormatRow(GuiGraphics ctx, Rect r, boolean selected, boolean hovered, boolean enabled) {
+        int bg;
+        int edge;
+        if (!enabled) {
+            bg = selected ? 0xFF24211A : 0xFF111111;
+            edge = selected ? 0xFF7A6422 : 0xFF252525;
+        } else if (selected) {
+            bg = 0xFF1E3A2F;
+            edge = 0xFF55C782;
+        } else {
+            bg = hovered ? 0xFF18221E : 0xFF141414;
+            edge = 0xFF2C2C2C;
+        }
+
+        ctx.fill(r.x, r.y, r.x + r.w, r.y + r.h, bg);
+        ctx.fill(r.x, r.y, r.x + r.w, r.y + 1, edge);
+        if (selected) ctx.fill(r.x, r.y, r.x + 2, r.y + r.h, edge);
+    }
+
+    private String fitText(String text, int maxWidth) {
+        String s = sanitizeUiText(text);
+        if (font.width(s) <= maxWidth) return s;
+
+        String dots = "...";
+        int dotsW = font.width(dots);
+        return font.plainSubstrByWidth(s, Math.max(1, maxWidth - dotsW)) + dots;
+    }
+
+    private boolean canEditFormat() {
+        UUID gid = LifePointClientState.getGroupIdFor(pos);
+        var gv = (gid != null) ? LifePointClientState.getGroup(gid) : null;
+        return gv == null || !gv.started;
     }
 
     // texture dims
@@ -2212,6 +2281,7 @@ public final class LifePointScreen extends LegacyScreen {
         ctx.enableScissor(vp.x, vp.y, vp.x + vp.w, vp.y + vp.h);
 
         UUID gid = LifePointClientState.getGroupIdFor(pos);
+        List<BlockPos> teammates = LifePointClientState.sharedTeamMembers(pos);
 
         for (int i = 0; i < otherPlayersOrdered.size(); i++) {
             BlockPos other = otherPlayersOrdered.get(i);
@@ -2224,13 +2294,20 @@ public final class LifePointScreen extends LegacyScreen {
             boolean sel = (selectedCmdTarget != null && selectedCmdTarget.equals(other));
             boolean hov = mouseX >= r.x && mouseX < r.x + r.w && mouseY >= r.y && mouseY < r.y + r.h;
             drawFlatRow(ctx, r, sel, hov);
+            boolean teammateRow = teammates.contains(other);
+            if (teammateRow) {
+                ctx.fill(r.x, r.y, r.x + r.w, r.y + 1, 0xFFFFD54F);
+                ctx.fill(r.x, r.y + r.h - 1, r.x + r.w, r.y + r.h, 0xFFFFD54F);
+                ctx.fill(r.x, r.y, r.x + 2, r.y + r.h, 0xFFFFD54F);
+            }
 
             String nm = (gid != null) ? LifePointClientState.groupMemberName(gid, other) : "";
             if (nm == null || nm.isBlank()) nm = LifePointClientState.get(other).getString("DisplayName").orElse("");
             if (nm == null || nm.isBlank()) nm = shortPos(other);
 
             String rowLabel = sanitizeUiText((sel ? "â–¶ " : "  ") + nm);
-            ctx.drawString(font, Component.literal(rowLabel), r.x + 6, r.y + 5, 0xFFFFFFFF);
+            int textColor = teammateRow ? 0xFFFFD54F : 0xFFFFFFFF;
+            ctx.drawString(font, Component.literal(rowLabel), r.x + 6, r.y + 5, textColor);
         }
 
         ctx.disableScissor();
@@ -2372,6 +2449,10 @@ public final class LifePointScreen extends LegacyScreen {
     }
 
     private int drawPaletteTiles(GuiGraphics ctx, int x, int y, int w, boolean forPlayer) {
+        return drawPaletteTiles(ctx, x, y, w, forPlayer ? editPaletteRectsPlayer : editPaletteRectsLife);
+    }
+
+    private int drawPaletteTiles(GuiGraphics ctx, int x, int y, int w, List<Rect> out) {
         int tile = 18;
         int gap = 6;
 
@@ -2380,8 +2461,6 @@ public final class LifePointScreen extends LegacyScreen {
 
         int totalW = cols * tile + (cols - 1) * gap;
         int startX = x + Math.max(0, (w - totalW) / 2);
-
-        List<Rect> out = forPlayer ? editPaletteRectsPlayer : editPaletteRectsLife;
 
         int idx = 0;
         for (int r = 0; r < rows; r++) {
@@ -2521,6 +2600,7 @@ public final class LifePointScreen extends LegacyScreen {
         // ---- scrolling content ----
         editPaletteRectsPlayer.clear();
         editPaletteRectsLife.clear();
+        editPaletteRectsIcon.clear();
         editFormatRects.clear();
         editIconRects.clear();
 
@@ -2612,8 +2692,11 @@ public final class LifePointScreen extends LegacyScreen {
         int cellGap = 6;
         int cellW = (innerW - cellGap) / 2;
 
-        for (int i = 0; i < FORMAT_KEYS.size(); i++) {
-            String fk = FORMAT_KEYS.get(i);
+        boolean formatEditable = canEditFormat();
+        List<LifeFormat> formats = LifeFormatRegistry.entries();
+        for (int i = 0; i < formats.size(); i++) {
+            LifeFormat format = formats.get(i);
+            String fk = format.key();
             int cx = innerX + (i % gridCols) * (cellW + cellGap);
             int cy = y + (i / gridCols) * (cellH + cellGap);
 
@@ -2621,12 +2704,14 @@ public final class LifePointScreen extends LegacyScreen {
             editFormatRects.put(fk, r);
 
             boolean sel = Objects.equals(editFormatKey, fk);
-            boolean hov = mouseX >= r.x && mouseX < r.x + r.w && mouseY >= r.y && mouseY < r.y + r.h;
+            boolean hov = formatEditable && mouseX >= r.x && mouseX < r.x + r.w && mouseY >= r.y && mouseY < r.y + r.h;
 
-            drawFlatRow(ctx, r, sel, hov);
-            ctx.drawString(font, Component.literal(fk), r.x + 6, r.y + 5, 0xFFFFFFFF);
+            drawFormatRow(ctx, r, sel, hov, formatEditable);
+            String label = fitText(format.displayName(), r.w - 10);
+            int textColor = formatEditable ? 0xFFFFFFFF : 0xFF777777;
+            ctx.drawString(font, Component.literal(label), r.x + 6, r.y + 5, textColor);
         }
-        y += (int) Math.ceil(FORMAT_KEYS.size() / 2.0) * (cellH + cellGap);
+        y += (int) Math.ceil(formats.size() / 2.0) * (cellH + cellGap);
         y += 10;
 
         // ---- Icon Key ----
@@ -2647,6 +2732,12 @@ public final class LifePointScreen extends LegacyScreen {
 
         // âœ… move y BELOW the preview block before drawing hex stuff
         y += prevH + 8;
+
+        ctx.drawString(font, Component.literal("Icon Color"), innerX, y, 0xFF707070);
+        y += 14;
+
+        y = drawPaletteTiles(ctx, innerX, y, innerW, editPaletteRectsIcon);
+        y += 6;
 
         // Hex label + field below preview
         ctx.drawString(font, Component.literal("Hex"), innerX, y, 0xFF707070);
@@ -2964,7 +3055,6 @@ public final class LifePointScreen extends LegacyScreen {
 
                         applyCommanderLethalStyle(w, newV);
 
-                        ClientPlayNetworking.send(new LifePointPackets.AddLifeC2S(pos, -delta));
                         ClientPlayNetworking.send(new LifePointPackets.AddCommanderDamageC2S(pos, other, delta));
                     }
                     return true;
@@ -3554,6 +3644,7 @@ public final class LifePointScreen extends LegacyScreen {
             // Format clicks
             for (var e : editFormatRects.entrySet()) {
                 if (ptIn(e.getValue(), mouseX, mouseY)) {
+                    if (!canEditFormat()) return true;
                     editFormatKey = e.getKey();
                     ClientPlayNetworking.send(new LifePointPackets.SetFormatKeyC2S(pos, editFormatKey));
                     return true;
@@ -3584,6 +3675,21 @@ public final class LifePointScreen extends LegacyScreen {
                         settingHexProgrammatically = true;
                         editLifeHexField.setValue(String.format("#%06X", editLifeColor & 0xFFFFFF));
                         editLifeHexField.moveCursorToEnd(false);
+                        settingHexProgrammatically = false;
+                    }
+                    return true;
+                }
+            }
+
+            // Icon color palette
+            for (int i = 0; i < editPaletteRectsIcon.size() && i < MANA_PALETTE.size(); i++) {
+                if (ptIn(editPaletteRectsIcon.get(i), mouseX, mouseY)) {
+                    editIconSwapColor = MANA_PALETTE.get(i).rgb;
+                    ClientPlayNetworking.send(new LifePointPackets.SetIconSwapColorC2S(pos, editIconSwapColor));
+                    if (editIconHexField != null) {
+                        settingHexProgrammatically = true;
+                        editIconHexField.setValue(String.format("#%06X", editIconSwapColor & 0xFFFFFF));
+                        editIconHexField.moveCursorToEnd(false);
                         settingHexProgrammatically = false;
                     }
                     return true;

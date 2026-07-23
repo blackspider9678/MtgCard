@@ -158,6 +158,7 @@ public final class ScryfallCache {
     private static final class QueryPool {
         private final ArrayList<ScryfallModels.Card> cards = new ArrayList<>();
         private CompletableFuture<List<ScryfallModels.Card>> refill;
+        private boolean noRemoteMatches;
     }
 
     private static PersistentCardStore store(ServerLevel w) {
@@ -189,7 +190,7 @@ public final class ScryfallCache {
             ServerLevel world, Context ctx, Query q, boolean foil, boolean allowVariant
     ) {
         final String query = buildQuery(ctx, q, foil, allowVariant);
-        return fetchRandomRemoteAsync(world, ctx, q, query)
+        return pickFromPoolAsync(world, ctx, q, query)
                 .handle((card, ex) -> {
                     if (card != null) return card;
 
@@ -223,6 +224,10 @@ public final class ScryfallCache {
                 if (poolSize(pool) < QUERY_POOL_LOW_WATER) ensurePoolRefill(world, query, pool);
                 return CompletableFuture.completedFuture(seeded);
             }
+        }
+
+        synchronized (pool) {
+            if (pool.noRemoteMatches) return CompletableFuture.completedFuture(null);
         }
 
         return ensurePoolRefill(world, query, pool)
@@ -260,12 +265,20 @@ public final class ScryfallCache {
     ) {
         synchronized (pool) {
             if (pool.refill != null && !pool.refill.isDone()) return pool.refill;
+            if (pool.noRemoteMatches) return CompletableFuture.completedFuture(List.of());
 
             CompletableFuture<List<ScryfallModels.Card>> refill = refillPoolAsync(world, query);
             pool.refill = refill;
             refill.whenComplete((cards, ex) -> {
                 synchronized (pool) {
-                    if (ex == null && cards != null && !cards.isEmpty()) addToPool(pool, cards);
+                    if (ex == null) {
+                        if (cards != null && !cards.isEmpty()) {
+                            addToPool(pool, cards);
+                            pool.noRemoteMatches = false;
+                        } else {
+                            pool.noRemoteMatches = true;
+                        }
+                    }
                     if (pool.refill == refill) pool.refill = null;
                 }
             });
@@ -364,6 +377,7 @@ public final class ScryfallCache {
             if (card == null || card.id == null || card.id.isBlank()) continue;
             if (existing.add(card.id)) pool.cards.add(card);
         }
+        if (!pool.cards.isEmpty()) pool.noRemoteMatches = false;
         while (pool.cards.size() > QUERY_POOL_TARGET * 2) {
             pool.cards.remove(RNG.nextInt(pool.cards.size()));
         }

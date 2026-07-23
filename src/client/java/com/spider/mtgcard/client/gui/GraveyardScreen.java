@@ -5,11 +5,11 @@ import com.spider.mtgcard.client.compat.MtgGuiScaleHelper;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.graveyard.GraveyardScreenHandler;
 import com.spider.mtgcard.net.payload.GraveyardActionPayload;
+import com.spider.mtgcard.util.TcgCardMeta;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.inventory.Slot;
@@ -149,10 +149,7 @@ public class GraveyardScreen extends LegacyContainerScreen<GraveyardScreenHandle
     }
 
     private static int readFaceIndex(ItemStack st) {
-        var comp = st.get(DataComponents.CUSTOM_DATA);
-        var root = (comp == null) ? new net.minecraft.nbt.CompoundTag() : comp.copyTag();
-        var meta = root.getCompound("mtg_meta").orElseGet(net.minecraft.nbt.CompoundTag::new);
-        return meta.getInt("mtg_face").orElse(0);
+        return TcgCardMeta.read(st).face();
     }
 
     private boolean isFoil(ItemStack st) {
@@ -173,7 +170,7 @@ public class GraveyardScreen extends LegacyContainerScreen<GraveyardScreenHandle
         }
 
         ItemStack st = slot.getItem();
-        if (!st.is(com.spider.mtgcard.item.ModItems.CARD)) {
+        if (!st.is(com.spider.mtgcard.item.ModItemTags.TCG_CARD)) {
             lastHoverStack = ItemStack.EMPTY;
             lastTexRef = null;
             return;

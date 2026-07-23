@@ -1,7 +1,8 @@
 package com.spider.mtgcard.client.input;
 
-import com.spider.mtgcard.item.ModItems;
+import com.spider.mtgcard.item.ModItemTags;
 import com.spider.mtgcard.net.payload.SetMenuSlotFacePayload;
+import com.spider.mtgcard.util.TcgCardMeta;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -56,27 +57,23 @@ public final class GuiCardFaceFlipper {
     }
 
     public static boolean isDoubleFaced(ItemStack stack) {
-        return stack != null && !stack.isEmpty() && stack.is(ModItems.CARD) && getFaceCount(stack) > 1;
+        return stack != null && !stack.isEmpty() && stack.is(ModItemTags.TCG_CARD) && getFaceCount(stack) > 1;
     }
 
     public static int getFaceCount(ItemStack stack) {
-        CompoundTag meta = readMeta(stack);
-        var el = meta.get("card_faces");
-        return (el instanceof ListTag list) ? list.size() : 1;
+        return TcgCardMeta.faceCount(stack);
     }
 
     public static int readFaceIndex(ItemStack stack) {
-        return readMeta(stack).getInt("mtg_face").orElse(0);
+        return TcgCardMeta.read(stack).face();
     }
 
     public static void writeFaceIndex(ItemStack stack, int face) {
         if (stack == null || stack.isEmpty()) return;
         CustomData comp = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY);
         CompoundTag root = comp.copyTag();
-        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
         int max = Math.max(0, getFaceCount(stack) - 1);
-        meta.putInt("mtg_face", Math.max(0, Math.min(face, max)));
-        root.put("mtg_meta", meta);
+        TcgCardMeta.writeFace(root, Math.max(0, Math.min(face, max)));
         stack.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
     }
 

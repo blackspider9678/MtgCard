@@ -852,21 +852,22 @@ public final class PackGenerator {
                 @org.jetbrains.annotations.Nullable String preferredSet,
                 boolean foilVisual
         ) {
-                return fetchOneCardAsync(world, preferredSet, q, slot)
-                        .thenCompose(card -> {
-                                ItemStack built = buildResolvedScryfallStack(card, slot, foilVisual);
-                                if (isResolvedPackCard(built)) {
-                                        return CompletableFuture.completedFuture(built);
-                                }
+                CompletableFuture<ItemStack> preferred = fetchOneCardAsync(world, preferredSet, q, slot)
+                        .thenApply(card -> buildResolvedScryfallStack(card, slot, foilVisual));
 
-                                boolean alreadyGlobal = preferredSet == null || preferredSet.isBlank();
-                                if (alreadyGlobal) {
-                                        return CompletableFuture.failedFuture(new IllegalStateException("Could not build " + slot + " card from Scryfall"));
-                                }
+                boolean alreadyGlobal = preferredSet == null || preferredSet.isBlank();
+                if (alreadyGlobal) {
+                        return preferred.thenApply(st -> requireResolvedCard(slot, st));
+                }
 
-                                return fetchOneCardAsync(world, null, q, slot)
-                                        .thenApply(globalCard -> requireResolvedCard(slot, buildResolvedScryfallStack(globalCard, slot, foilVisual)));
-                        });
+                return preferred.handle((st, ex) -> {
+                        if (ex == null && isResolvedPackCard(st)) {
+                                return CompletableFuture.completedFuture(st);
+                        }
+
+                        return fetchOneCardAsync(world, null, q, slot)
+                                .thenApply(globalCard -> requireResolvedCard(slot, buildResolvedScryfallStack(globalCard, slot, foilVisual)));
+                }).thenCompose(future -> future);
         }
 
         private static ItemStack buildResolvedScryfallStack(

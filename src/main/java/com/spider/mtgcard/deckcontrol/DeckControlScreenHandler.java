@@ -1,5 +1,7 @@
 package com.spider.mtgcard.deckcontrol;
 
+import com.spider.mtgcard.api.TcgGameRegistry;
+import com.spider.mtgcard.item.ModItemTags;
 import com.spider.mtgcard.screen.ModScreenHandlers;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.player.Inventory;
@@ -17,6 +19,7 @@ import java.util.List;
 public class DeckControlScreenHandler extends AbstractContainerMenu {
 
     public static final int P_LINKED  = 0;
+    public static final int P_GAME    = 1;
     public static final int P_LIBRARY = 2;
     public static final int PROP_COUNT = 3;
 
@@ -60,6 +63,7 @@ public class DeckControlScreenHandler extends AbstractContainerMenu {
                     if (!(world.getBlockEntity(p) instanceof DeckControlBlockEntity dc)) return;
                     out[0] = switch (index) {
                         case P_LINKED  -> dc.hasLinkedDeckbox() ? 1 : 0;
+                        case P_GAME    -> TcgGameRegistry.gameIndex(dc.getSelectedGame());
                         case P_LIBRARY -> dc.getLibraryCount();
                         default -> 0;
                     };
@@ -128,7 +132,7 @@ public class DeckControlScreenHandler extends AbstractContainerMenu {
 
     public boolean isCardItem(ItemStack st) {
         return st != null && !st.isEmpty()
-                && st.is(com.spider.mtgcard.item.ModItems.CARD);
+                && st.is(ModItemTags.TCG_CARD);
     }
 
     public BlockPos getPos() {
@@ -141,6 +145,10 @@ public class DeckControlScreenHandler extends AbstractContainerMenu {
 
     public int getLibraryCount() {
         return this.props.get(P_LIBRARY);
+    }
+
+    public String getSelectedGame() {
+        return TcgGameRegistry.gameId(this.props.get(P_GAME));
     }
 
     public boolean isPlayerInventorySlot(Slot slot) {

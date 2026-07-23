@@ -2,7 +2,7 @@ package com.spider.mtgcard.client.render;
 
 import com.mojang.serialization.MapCodec;
 import com.spider.mtgcard.client.java.CardArtManager;
-import com.spider.mtgcard.util.StackData;
+import com.spider.mtgcard.util.TcgCardMeta;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.SubmitNodeCollector;
@@ -27,9 +27,7 @@ public class CardItemRenderer implements SpecialModelRenderer<CardItemRenderer.D
     private static final Identifier FALLBACK_BACK  = Identifier.fromNamespaceAndPath("mtgcard", "textures/item/card_back.png");
 
     private static int readFaceIndex(ItemStack st) {
-        CompoundTag root = StackData.readCustom(st);
-        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
-        return meta.getInt("mtg_face").orElse(0);
+        return TcgCardMeta.read(st).face();
     }
 
     @Override

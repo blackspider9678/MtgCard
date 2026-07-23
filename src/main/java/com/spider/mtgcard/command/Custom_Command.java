@@ -173,7 +173,7 @@ public final class Custom_Command {
         }
 
         if (!result.saved()) {
-            src.sendFailure(Component.literal("Card metadata was removed in memory, but saving cards.json failed. Check server logs."));
+            src.sendFailure(Component.literal("Card metadata was removed in memory, but saving custom_cards.json failed. Check server logs."));
             return 0;
         }
 

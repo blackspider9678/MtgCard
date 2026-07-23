@@ -1,6 +1,7 @@
 // com/spider/mtgcard/graveyard/GraveyardScreenHandler.java
 package com.spider.mtgcard.graveyard;
 
+import com.spider.mtgcard.item.ModItemTags;
 import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.screen.ModScreenHandlers;
 import net.minecraft.world.entity.player.Player;
@@ -179,7 +180,7 @@ public class GraveyardScreenHandler extends AbstractContainerMenu {
 
         @Override
         public boolean mayPlace(ItemStack stack) {
-            return stack != null && stack.is(com.spider.mtgcard.item.ModItems.CARD);
+            return stack != null && stack.is(ModItemTags.TCG_CARD);
         }
     }
 

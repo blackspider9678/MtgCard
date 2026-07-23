@@ -71,6 +71,7 @@ public final class CardStackFactory {
 
         // Root foil flag (CardMeta.read uses this)
         root.putBoolean("mtg_foil", foil);
+        TcgCardMeta.mirrorMtgToTcg(root);
 
         StackData.writeCustom(st, root);
         return st;

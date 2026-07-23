@@ -3,6 +3,7 @@ package com.spider.mtgcard.cardstore;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.screen.ModScreenHandlers;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -20,29 +21,34 @@ public class CardStoreScreenHandler extends AbstractContainerMenu {
 
     public final BlockPos blockPos;
     private final List<CartEntryData> initialCart;
+    private final String priceItemId;
+    private final String priceBasis;
 
     // Layout constants (must match what your Screen expects visually)
     public static final int MARGIN = 10;
     public static final int INV_BLOCK_H = (3 * 18) + 4 + 18; // 3 rows + gap + hotbar
 
     public CardStoreScreenHandler(int syncId, Inventory playerInv) {
-        this(syncId, playerInv, BlockPos.ZERO, List.of());
-    }
-
-    public CardStoreScreenHandler(int syncId, Inventory playerInv, OpenData openData) {
-        this(syncId, playerInv,
-                openData == null ? BlockPos.ZERO : openData.blockPos(),
-                openData == null ? List.of() : openData.cartEntries());
+        this(syncId, playerInv, new OpenData(BlockPos.ZERO, List.of(), defaultPriceItemId(), defaultPriceBasis()));
     }
 
     public CardStoreScreenHandler(int syncId, Inventory playerInv, BlockPos blockPos) {
-        this(syncId, playerInv, blockPos, List.of());
+        this(syncId, playerInv, new OpenData(blockPos, List.of(), defaultPriceItemId(), defaultPriceBasis()));
     }
 
     public CardStoreScreenHandler(int syncId, Inventory playerInv, BlockPos blockPos, List<CartEntryData> initialCart) {
+        this(syncId, playerInv, new OpenData(blockPos, initialCart, defaultPriceItemId(), defaultPriceBasis()));
+    }
+
+    public CardStoreScreenHandler(int syncId, Inventory playerInv, OpenData openData) {
         super(ModScreenHandlers.CARD_STORE, syncId);
-        this.blockPos = blockPos == null ? BlockPos.ZERO : blockPos;
-        this.initialCart = sanitizeCart(initialCart);
+        OpenData data = openData == null
+                ? new OpenData(BlockPos.ZERO, List.of(), defaultPriceItemId(), defaultPriceBasis())
+                : openData;
+        this.blockPos = data.blockPos();
+        this.initialCart = data.cartEntries();
+        this.priceItemId = data.priceItemId();
+        this.priceBasis = data.priceBasis();
 
         // Put inventory at the bottom of a fixed virtual fullscreen GUI.
         int guiW = 426;
@@ -57,6 +63,14 @@ public class CardStoreScreenHandler extends AbstractContainerMenu {
 
     public List<CartEntryData> initialCart() {
         return initialCart;
+    }
+
+    public String priceItemId() {
+        return priceItemId;
+    }
+
+    public String priceBasis() {
+        return priceBasis;
     }
 
     @Override
@@ -92,6 +106,24 @@ public class CardStoreScreenHandler extends AbstractContainerMenu {
             out.add(entry);
         }
         return out.isEmpty() ? List.of() : List.copyOf(out);
+    }
+
+    public static String defaultPriceItemId() {
+        MtgcardConfig cfg = MtgcardConfig.get();
+        return sanitizePriceItemId(cfg == null ? null : cfg.Price_Item);
+    }
+
+    public static String defaultPriceBasis() {
+        MtgcardConfig cfg = MtgcardConfig.get();
+        return sanitizePriceBasis(cfg == null ? null : cfg.Price_Basis);
+    }
+
+    public static String sanitizePriceItemId(String raw) {
+        return raw == null || raw.isBlank() ? "minecraft:diamond" : raw.trim();
+    }
+
+    public static String sanitizePriceBasis(String raw) {
+        return raw == null || raw.isBlank() ? "USD" : raw.trim();
     }
 
     public record CartEntryData(String set, String cn, ItemStack stack, long priceItems, int qty) {
@@ -139,11 +171,13 @@ public class CardStoreScreenHandler extends AbstractContainerMenu {
         }
     }
 
-    public record OpenData(BlockPos blockPos, List<CartEntryData> cartEntries) {
+    public record OpenData(BlockPos blockPos, List<CartEntryData> cartEntries, String priceItemId, String priceBasis) {
         public static final StreamCodec<RegistryFriendlyByteBuf, OpenData> STREAM_CODEC =
                 StreamCodec.of(
                         (buf, data) -> {
                             buf.writeBlockPos(data.blockPos());
+                            buf.writeUtf(data.priceItemId());
+                            buf.writeUtf(data.priceBasis());
                             buf.writeVarInt(data.cartEntries().size());
                             for (var entry : data.cartEntries()) {
                                 CartEntryData.STREAM_CODEC.encode(buf, entry);
@@ -151,18 +185,22 @@ public class CardStoreScreenHandler extends AbstractContainerMenu {
                         },
                         (buf) -> {
                             BlockPos pos = buf.readBlockPos();
+                            String priceItemId = buf.readUtf();
+                            String priceBasis = buf.readUtf();
                             int count = buf.readVarInt();
                             ArrayList<CartEntryData> entries = new ArrayList<>(count);
                             for (int i = 0; i < count; i++) {
                                 entries.add(CartEntryData.STREAM_CODEC.decode(buf));
                             }
-                            return new OpenData(pos, entries);
+                            return new OpenData(pos, entries, priceItemId, priceBasis);
                         }
                 );
 
         public OpenData {
             blockPos = blockPos == null ? BlockPos.ZERO : blockPos.immutable();
             cartEntries = sanitizeCart(cartEntries);
+            priceItemId = sanitizePriceItemId(priceItemId);
+            priceBasis = sanitizePriceBasis(priceBasis);
         }
     }
 }

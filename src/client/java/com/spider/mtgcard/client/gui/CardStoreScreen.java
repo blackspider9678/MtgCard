@@ -407,6 +407,8 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     public CardStoreScreen(CardStoreScreenHandler handler, Inventory inv, Component title) {
         super(handler, inv, title, GUI_W, GUI_H);
         this.inventoryLabelY = this.imageHeight - 94;
+        this.priceItemId = handler.priceItemId();
+        this.priceBasis = handler.priceBasis();
         loadSavedCart(handler.initialCart());
     }
 
@@ -689,8 +691,8 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         int fieldW = rightW - (rightPad * 2);
 
         searchField = new EditBox(this.font, fieldX, fieldY, fieldW, ui(18), Component.literal(""));
-        searchField.setMaxLength(128);
-        searchField.setHint(Component.literal("Search Name"));
+        searchField.setMaxLength(512);
+        searchField.setHint(Component.literal("Scryfall syntax"));
         this.addWidget(searchField);
 
         // Add-to-cart sits ABOVE the inventory block, aligned to right panel

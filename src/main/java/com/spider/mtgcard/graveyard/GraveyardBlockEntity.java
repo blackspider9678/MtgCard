@@ -3,6 +3,7 @@ package com.spider.mtgcard.graveyard;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import com.spider.mtgcard.item.ModItemTags;
 import com.spider.mtgcard.registry.ModBlockEntities; // or ModBlocks.GRAVEYARD_BE if you kept it there
 
 import net.fabricmc.fabric.api.menu.v1.ExtendedMenuProvider;
@@ -76,7 +77,7 @@ public class GraveyardBlockEntity extends BlockEntity implements ExtendedMenuPro
     public boolean canPlaceItemThroughFace(int slot, ItemStack stack, @Nullable Direction dir) {
         if (slot < 0 || slot >= TOTAL) return false;
         // only allow CARD items (both sides are “card-only”)
-        return !stack.isEmpty() && stack.is(com.spider.mtgcard.item.ModItems.CARD);
+        return !stack.isEmpty() && stack.is(ModItemTags.TCG_CARD);
     }
 
     @Override

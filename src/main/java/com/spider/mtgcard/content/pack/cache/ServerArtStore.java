@@ -2,8 +2,9 @@
 package com.spider.mtgcard.content.pack.cache;
 
 import com.spider.mtgcard.Mtgcard;
+import com.spider.mtgcard.shared.CardArtCommon;
+import com.spider.mtgcard.shared.MtgCardPaths;
 import com.spider.mtgcard.util.ArtImageStorage;
-import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.server.MinecraftServer;
 
 import java.io.InputStream;
@@ -15,23 +16,34 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class ServerArtStore {
     private final Path dir;
+    private final Path legacyDir;
     private final Map<String, Boolean> inFlight = new ConcurrentHashMap<>();
 
     public ServerArtStore(MinecraftServer server) {
-        this.dir = server.getWorldPath(LevelResource.ROOT).resolve("mtgcard").resolve("art");
+        this.dir = MtgCardPaths.mainArtDir(server);
+        this.legacyDir = MtgCardPaths.legacyArtDir(server);
         try { Files.createDirectories(dir); } catch (Exception ignored) {}
     }
 
     public Path file(String artKey) {
-        // new
-        Path webp = dir.resolve(artKey + ".webp");
+        String safeKey = CardArtCommon.sanitizeArtKey(artKey);
+        if (safeKey.isBlank()) safeKey = "missing_art";
+
+        Path webp = dir.resolve(safeKey + ".webp");
         if (Files.exists(webp)) return webp;
 
-        // optional legacy fallback
-        Path png = dir.resolve(artKey + ".png");
+        Path png = dir.resolve(safeKey + ".png");
         if (Files.exists(png)) return png;
 
-        // default target
+        Path jpg = dir.resolve(safeKey + ".jpg");
+        if (Files.exists(jpg)) return jpg;
+
+        Path jpeg = dir.resolve(safeKey + ".jpeg");
+        if (Files.exists(jpeg)) return jpeg;
+
+        Path legacy = resolveExactFile(legacyDir, safeKey);
+        if (legacy != null) return migrateLegacyArt(safeKey, legacy);
+
         return webp;
     }
 
@@ -102,5 +114,42 @@ public final class ServerArtStore {
             return dot > 0 ? fileName.substring(0, dot) : fileName;
         }
         return fileName;
+    }
+
+    private Path migrateLegacyArt(String artKey, Path legacyFile) {
+        try {
+            String ext = extensionOf(legacyFile);
+            Path target = dir.resolve(artKey + "." + ext);
+            if (!Files.exists(target)) {
+                Files.copy(legacyFile, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return target;
+        } catch (Exception ignored) {
+            return legacyFile;
+        }
+    }
+
+    private static Path resolveExactFile(Path dir, String artKey) {
+        if (dir == null || artKey == null || artKey.isBlank()) return null;
+
+        Path webp = dir.resolve(artKey + ".webp");
+        if (Files.exists(webp)) return webp;
+
+        Path png = dir.resolve(artKey + ".png");
+        if (Files.exists(png)) return png;
+
+        Path jpg = dir.resolve(artKey + ".jpg");
+        if (Files.exists(jpg)) return jpg;
+
+        Path jpeg = dir.resolve(artKey + ".jpeg");
+        if (Files.exists(jpeg)) return jpeg;
+
+        return null;
+    }
+
+    private static String extensionOf(Path path) {
+        String name = path.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        return dot >= 0 ? name.substring(dot + 1).toLowerCase(Locale.ROOT) : "webp";
     }
 }
