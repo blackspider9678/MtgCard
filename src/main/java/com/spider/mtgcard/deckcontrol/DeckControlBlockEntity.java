@@ -349,6 +349,64 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedMenuP
         syncSelf();
     }
 
+    public List<ItemStack> takeTopCards(int n) {
+        if (level == null || level.isClientSide()) return List.of();
+
+        DeckboxBlockEntity deckbox = findOrLinkDeckbox();
+        if (deckbox == null) return List.of();
+
+        ensureLinkedAndBuilt();
+        n = Math.min(Math.max(0, n), libraryOrder.size());
+        if (n <= 0) return List.of();
+
+        List<ItemStack> removedStacks = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            if (libraryOrder.isEmpty()) break;
+
+            DeckRef ref = libraryOrder.remove(0);
+            ItemStack stack = deckbox.getStack(ref.slot());
+            if (stack.isEmpty() || !computeKey(stack).equals(ref.key())) {
+                reconcileLibraryOrder(deckbox);
+                if (!isLibraryOrderConsistent(deckbox)) rebuildLibraryOrder(deckbox);
+                break;
+            }
+
+            ItemStack removed = deckbox.removeStack(ref.slot());
+            if (!removed.isEmpty()) removedStacks.add(removed);
+        }
+
+        deckbox.sync();
+        setChanged();
+        syncSelf();
+        return List.copyOf(removedStacks);
+    }
+
+    public void putCardsOnBottom(List<ItemStack> stacks) {
+        if (level == null || level.isClientSide()) return;
+        if (stacks == null || stacks.isEmpty()) return;
+
+        DeckboxBlockEntity deckbox = findOrLinkDeckbox();
+        if (deckbox == null) return;
+
+        List<ItemStack> copies = new ArrayList<>();
+        for (ItemStack stack : stacks) {
+            if (stack == null || stack.isEmpty()) continue;
+            copies.add(stack.copy());
+        }
+        if (copies.isEmpty()) return;
+
+        putStacksOnBottom(deckbox, copies);
+        deckbox.sync();
+        setChanged();
+        syncSelf();
+    }
+
+    public @Nullable BlockPos getLinkedDeckboxPos() {
+        DeckboxBlockEntity deckbox = findOrLinkDeckbox();
+        if (deckbox == null) return null;
+        return linkedDeckboxPos == null ? null : linkedDeckboxPos.immutable();
+    }
+
     public List<ItemStack> peekTopCopies(int n) {
         DeckboxBlockEntity db = findOrLinkDeckbox();
         if (db == null) return List.of();

@@ -1,5 +1,7 @@
 package com.spider.mtgcard;
 
+import com.spider.mtgcard.api.CardItemRegistry;
+import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.cardstore.CardStorePackets;
 import com.spider.mtgcard.command.MtgRootCommand;
 import com.spider.mtgcard.config.MtgcardConfig;
@@ -66,6 +68,7 @@ public final class Mtgcard implements ModInitializer {
         // Entities/items/registry
         ModEntities.init();
         ModItems.initialize();
+        CardItemRegistry.register(TcgGameRegistry.MTG, ModItems.CARD);
         ModTrades.init();
         ModItemGroup.register();
 
