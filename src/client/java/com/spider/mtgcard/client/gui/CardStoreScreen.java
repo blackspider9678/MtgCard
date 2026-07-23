@@ -80,7 +80,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     private EditBox searchField;
     private Button addToCartBtn;
     private Button gameBtn;
-    private String selectedGame = TcgGameRegistry.MTG;
+    private String selectedGame = TcgGameRegistry.ALL_GAMES;
     private boolean gameMenuOpen = false;
     private final ArrayList<Button> gameMenuButtons = new ArrayList<>();
 
@@ -222,23 +222,30 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     }
 
     private String normalizeClientGame(String game) {
-        String normalized = CardStoreProviderRegistry.sanitizeGameId(game);
-        return CardStoreProviderRegistry.containsProvider(normalized) ? normalized : TcgGameRegistry.MTG;
+        String normalized = CardStoreProviderRegistry.sanitizeFilterId(game);
+        if (normalized.isBlank()) return TcgGameRegistry.ALL_GAMES;
+        return CardStoreProviderRegistry.containsProvider(normalized) ? normalized : TcgGameRegistry.ALL_GAMES;
     }
 
     private boolean sameGame(String game) {
+        if (selectedGame.isBlank()) return true;
         return selectedGame.equals(CardStoreProviderRegistry.sanitizeGameId(game));
     }
 
     private String gameButtonText(String game) {
-        String label = TcgGameRegistry.labelForGame(game).getString().trim();
+        String label = TcgGameRegistry.labelForFilter(game).getString().trim();
         if (label.isEmpty()) label = TcgGameRegistry.shortLabel(game);
         return label.length() <= 10 ? label : label.substring(0, 10);
     }
 
     private void updateSearchHint() {
         if (searchField == null) return;
-        searchField.setHint(Component.literal(TcgGameRegistry.MTG.equals(selectedGame) ? "Scryfall syntax" : "Search cards"));
+        searchField.setHint(Component.literal(isMtgSearchContext() ? "Scryfall syntax" : "Search cards"));
+    }
+
+    private boolean isMtgSearchContext() {
+        return TcgGameRegistry.MTG.equals(selectedGame)
+                || (selectedGame.isBlank() && !CardStoreProviderRegistry.hasMultipleProviders());
     }
 
     private void toggleGameMenu() {
@@ -250,7 +257,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         if (gameBtn == null) return;
         closeGameMenu();
 
-        List<TcgGameRegistry.Entry> options = CardStoreProviderRegistry.gameEntriesWithProviders();
+        List<TcgGameRegistry.Entry> options = CardStoreProviderRegistry.filterOptionsWithProviders();
         if (options.size() <= 1) return;
 
         int rowH = 18;
@@ -318,7 +325,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         previewTex = null;
         previewFace = 0;
         if (searchField != null) searchField.setValue("");
-        status = "Selected " + TcgGameRegistry.labelForGame(selectedGame).getString();
+        status = "Selected " + TcgGameRegistry.labelForFilter(selectedGame).getString();
     }
 
     private void setSortMode(SortMode mode) {
@@ -724,17 +731,28 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         // Tabs
         int tabX = topX + 2;
         int tabY = topY + 2;
+        int cursorX = tabX;
 
         this.addRenderableWidget(Button.builder(Component.literal("Store"), b -> {
             tab = Tab.STORE;
             closeSortMenu();
             updateWidgetVisibility();
-        }).bounds(tabX, tabY, 64, 18).build());
+        }).bounds(cursorX, tabY, 64, 18).build());
+        cursorX += 68;
+
+        if (CardStoreProviderRegistry.hasMultipleProviders()) {
+            int gameW = 72;
+            gameBtn = this.addRenderableWidget(Button.builder(
+                    Component.literal(gameButtonText(selectedGame)),
+                    b -> toggleGameMenu()
+            ).bounds(cursorX, tabY, gameW, 18).build());
+            cursorX += gameW + 4;
+        }
 
         this.addRenderableWidget(Button.builder(Component.literal("Cart"), b -> {
             tab = Tab.CART;
             updateWidgetVisibility();
-        }).bounds(tabX + 68, tabY, 64, 18).build());
+        }).bounds(cursorX, tabY, 64, 18).build());
 
         // --- NOW that leftX/leftY exist, compute previewBox coords ---
         int sortX = previewBoxX() + 6;
@@ -758,16 +776,6 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         int fieldW = rightW - (RIGHT_PAD * 2);
         int searchX = fieldX;
         int searchW = fieldW;
-
-        if (CardStoreProviderRegistry.hasMultipleProviders()) {
-            int gameW = 72;
-            gameBtn = this.addRenderableWidget(Button.builder(
-                    Component.literal(gameButtonText(selectedGame)),
-                    b -> toggleGameMenu()
-            ).bounds(fieldX, fieldY, gameW, 18).build());
-            searchX = fieldX + gameW + 4;
-            searchW = Math.max(40, fieldW - gameW - 4);
-        }
 
         searchField = new EditBox(this.font, searchX, fieldY, searchW, 18, Component.literal(""));
         searchField.setMaxLength(512);
@@ -1090,27 +1098,21 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     @Override
     public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent click, boolean bl) {
+        int mx = (int) click.x();
+        int my = (int) click.y();
+
+        if (gameMenuOpen && handleGameMenuClick(click, bl, mx, my)) {
+            return true;
+        }
+
         boolean handled = super.mouseClicked(click, bl);
 
         // If tabs were clicked (buttons), visibility should update right away
         updateWidgetVisibility();
 
-        if (gameMenuOpen) {
-            int mx = (int) click.x();
-            int my = (int) click.y();
-            if (isMouseOverGameButton(mx, my) || isMouseOverGameMenuButton(mx, my)) {
-                return true;
-            }
-            closeGameMenu();
-            return true;
-        }
-
         // If dropdown open, consume clicks for it first
         // If dropdown open, consume clicks for it first
         if (sortMenuOpen) {
-            int mx = (int) click.x();
-            int my = (int) click.y();
-
             // IMPORTANT: clicking the sort button should NOT close the menu
             if (isMouseOverSortButton(mx, my)) {
                 return true; // let the button's onPress toggle it (super already did)
@@ -1168,6 +1170,24 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         }
 
         return handled;
+    }
+
+    private boolean handleGameMenuClick(net.minecraft.client.input.MouseButtonEvent click, boolean bl, int mx, int my) {
+        for (int i = gameMenuButtons.size() - 1; i >= 0; i--) {
+            Button button = gameMenuButtons.get(i);
+            if (button.visible && button.mouseClicked(click, bl)) {
+                updateWidgetVisibility();
+                return true;
+            }
+        }
+
+        if (isMouseOverGameButton(mx, my)) {
+            closeGameMenu();
+            return true;
+        }
+
+        closeGameMenu();
+        return true;
     }
 
     @Override
@@ -1409,7 +1429,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             int wrapW = searchField.getWidth() - 4;
 
             String q = (searchField != null) ? searchField.getValue() : "";
-            if (TcgGameRegistry.MTG.equals(selectedGame) && isAdvancedQuery(q)) {
+            if (isMtgSearchContext() && isAdvancedQuery(q)) {
                 ctx.drawWordWrap(this.font, SCRY_HELP, hx, hy, wrapW, TEXT_FAINT, false);
             }
 
@@ -1457,8 +1477,19 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         // draw dropdown on top of everything
         if (tab == Tab.STORE) {
             renderSortMenu(ctx, mouseX, mouseY);
+            if (gameMenuOpen) {
+                renderGameMenu(ctx, mouseX, mouseY, delta);
+            }
         }
         this.renderTooltip(ctx, mouseX, mouseY);
+    }
+
+    private void renderGameMenu(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
+        for (Button button : gameMenuButtons) {
+            if (button.visible) {
+                button.render(ctx, mouseX, mouseY, delta);
+            }
+        }
     }
 
     private boolean isMouseOverSortButton(int mx, int my) {

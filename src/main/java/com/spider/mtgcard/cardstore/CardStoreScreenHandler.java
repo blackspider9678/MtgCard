@@ -32,21 +32,21 @@ public class CardStoreScreenHandler extends AbstractContainerMenu {
     public static final int INV_BLOCK_H = (3 * 18) + 4 + 18; // 3 rows + gap + hotbar
 
     public CardStoreScreenHandler(int syncId, Inventory playerInv) {
-        this(syncId, playerInv, new OpenData(BlockPos.ZERO, List.of(), defaultPriceItemId(), defaultPriceBasis(), TcgGameRegistry.MTG));
+        this(syncId, playerInv, new OpenData(BlockPos.ZERO, List.of(), defaultPriceItemId(), defaultPriceBasis(), TcgGameRegistry.ALL_GAMES));
     }
 
     public CardStoreScreenHandler(int syncId, Inventory playerInv, BlockPos blockPos) {
-        this(syncId, playerInv, new OpenData(blockPos, List.of(), defaultPriceItemId(), defaultPriceBasis(), TcgGameRegistry.MTG));
+        this(syncId, playerInv, new OpenData(blockPos, List.of(), defaultPriceItemId(), defaultPriceBasis(), TcgGameRegistry.ALL_GAMES));
     }
 
     public CardStoreScreenHandler(int syncId, Inventory playerInv, BlockPos blockPos, List<CartEntryData> initialCart) {
-        this(syncId, playerInv, new OpenData(blockPos, initialCart, defaultPriceItemId(), defaultPriceBasis(), TcgGameRegistry.MTG));
+        this(syncId, playerInv, new OpenData(blockPos, initialCart, defaultPriceItemId(), defaultPriceBasis(), TcgGameRegistry.ALL_GAMES));
     }
 
     public CardStoreScreenHandler(int syncId, Inventory playerInv, OpenData openData) {
         super(ModScreenHandlers.CARD_STORE, syncId);
         OpenData data = openData == null
-                ? new OpenData(BlockPos.ZERO, List.of(), defaultPriceItemId(), defaultPriceBasis(), TcgGameRegistry.MTG)
+                ? new OpenData(BlockPos.ZERO, List.of(), defaultPriceItemId(), defaultPriceBasis(), TcgGameRegistry.ALL_GAMES)
                 : openData;
         this.blockPos = data.blockPos();
         this.initialCart = data.cartEntries();
@@ -215,7 +215,7 @@ public class CardStoreScreenHandler extends AbstractContainerMenu {
                 );
 
         public OpenData(BlockPos blockPos, List<CartEntryData> cartEntries, String priceItemId, String priceBasis) {
-            this(blockPos, cartEntries, priceItemId, priceBasis, TcgGameRegistry.MTG);
+            this(blockPos, cartEntries, priceItemId, priceBasis, TcgGameRegistry.ALL_GAMES);
         }
 
         public OpenData {
@@ -223,7 +223,7 @@ public class CardStoreScreenHandler extends AbstractContainerMenu {
             cartEntries = sanitizeCart(cartEntries);
             priceItemId = sanitizePriceItemId(priceItemId);
             priceBasis = sanitizePriceBasis(priceBasis);
-            selectedGame = CardStoreProviderRegistry.sanitizeGameId(selectedGame);
+            selectedGame = CardStoreProviderRegistry.sanitizeFilterId(selectedGame);
         }
     }
 }

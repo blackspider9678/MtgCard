@@ -54,24 +54,26 @@ public final class ArtClientPackets {
                 ArtPackets.ArtChunk.ID,
                 (payload, ctx) -> {
                     final String key = payload.artKey();
+                    final String game = payload.game();
                     if (key == null || key.isBlank()) return;
 
                     ctx.client().execute(() -> {
+                        String incomingKey = (game == null || game.isBlank() ? "mtg" : game.trim().toLowerCase(java.util.Locale.ROOT)) + ":" + key;
                         // get/create accumulator for this key
-                        IncomingArt acc = INCOMING.get(key);
+                        IncomingArt acc = INCOMING.get(incomingKey);
                         if (acc == null || acc.total != payload.total()) {
                             acc = new IncomingArt(payload.total());
-                            INCOMING.put(key, acc);
+                            INCOMING.put(incomingKey, acc);
                         }
 
                         boolean done = acc.add(payload.index(), payload.data());
                         if (done) {
-                            INCOMING.remove(key);
+                            INCOMING.remove(incomingKey);
 
                             byte[] bytes = acc.join();
 
                             // Reuse your old path exactly
-                            CardArtManager.onArtResponse(key, bytes);
+                            CardArtManager.onArtResponse(game, key, bytes);
                         }
                     });
                 }

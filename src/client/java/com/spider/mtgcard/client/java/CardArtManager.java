@@ -5,6 +5,7 @@ import com.google.gson.reflect.TypeToken;
 import com.spider.mtgcard.shared.CardArtCommon;
 import com.spider.mtgcard.shared.MtgCardPaths;
 import com.spider.mtgcard.util.StackData;
+import com.spider.mtgcard.util.TcgCardMeta;
 import net.minecraft.client.Minecraft;
 import com.mojang.blaze3d.platform.NativeImage;
 import net.minecraft.client.renderer.texture.DynamicTexture;
@@ -60,7 +61,7 @@ public final class CardArtManager {
     // -----------------------
     // NEW: request queue
     // -----------------------
-    private record PendingReq(String artKey, String url, String fileName, String fallbackKeys, String setCode) {}
+    private record PendingReq(String requestKey, String game, String artKey, String url, String fileName, String fallbackKeys, String setCode) {}
 
     private static final ConcurrentLinkedQueue<PendingReq> PENDING = new ConcurrentLinkedQueue<>();
     private static final Set<String> QUEUED = ConcurrentHashMap.newKeySet();
@@ -85,31 +86,40 @@ public final class CardArtManager {
 
     /** Enqueue a request (deduped). The actual packet send happens in pumpQueue(). */
     private static void enqueueRequest(String artKey, String url, String fileName) {
-        enqueueRequest(artKey, url, fileName, "", "");
+        enqueueRequest(MtgCardPaths.GAME_MTG, artKey, url, fileName, "", "");
     }
 
     /** Enqueue a request (deduped). The actual packet send happens in pumpQueue(). */
     private static void enqueueRequest(String artKey, String url, String fileName, String fallbackKeys) {
-        enqueueRequest(artKey, url, fileName, fallbackKeys, "");
+        enqueueRequest(MtgCardPaths.GAME_MTG, artKey, url, fileName, fallbackKeys, "");
     }
 
     /** Enqueue a request (deduped). The actual packet send happens in pumpQueue(). */
     private static void enqueueRequest(String artKey, String url, String fileName, String fallbackKeys, String setCode) {
+        enqueueRequest(MtgCardPaths.GAME_MTG, artKey, url, fileName, fallbackKeys, setCode);
+    }
+
+    /** Enqueue a request (deduped). The actual packet send happens in pumpQueue(). */
+    private static void enqueueRequest(String game, String artKey, String url, String fileName, String fallbackKeys, String setCode) {
         if (artKey == null || artKey.isBlank()) return;
+        String safeGame = MtgCardPaths.sanitizeGameFolder(game);
+        String requestKey = scopedArtKey(safeGame, artKey);
 
         // If it's already queued, do nothing
-        if (!QUEUED.add(artKey)) return;
+        if (!QUEUED.add(requestKey)) return;
 
         // Store filename mapping early (so resolveCachedFile() has something)
         if (fileName != null && !fileName.isBlank()) {
             DISK_INDEX.putIfAbsent(artKey, fileName);
-            saveIndexAsync();
+            saveIndexAsync(safeGame);
         }
         if (setCode != null && !setCode.isBlank()) {
-            ART_SET_INDEX.put(artKey, MtgCardPaths.sanitizeSetFolder(setCode));
+            ART_SET_INDEX.put(requestKey, MtgCardPaths.sanitizeSetFolder(setCode));
         }
 
         PENDING.add(new PendingReq(
+                requestKey,
+                safeGame,
                 artKey,
                 url == null ? "" : url,
                 fileName == null ? "" : fileName,
@@ -136,16 +146,16 @@ public final class CardArtManager {
             if (req == null) break;
 
             // Allow it to be queued again in the future if needed
-            QUEUED.remove(req.artKey());
+            QUEUED.remove(req.requestKey());
 
             // cooldown gate (prevents hammering one bad key)
-            if (!shouldRequestNow(req.artKey())) {
+            if (!shouldRequestNow(req.requestKey())) {
                 continue;
             }
 
             // send request packet (server will fetch & respond)
             net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(
-                    new com.spider.mtgcard.net.ArtPackets.ArtRequest(req.artKey(), req.url(), req.fallbackKeys(), req.setCode())
+                    new com.spider.mtgcard.net.ArtPackets.ArtRequest(req.artKey(), req.url(), req.fallbackKeys(), req.setCode(), req.game())
             );
 
             started++;
@@ -169,39 +179,53 @@ public final class CardArtManager {
      * - Remote MP client: <runDir>/mtgcard/mtg/main_art/<server-address or level-name>
      */
     public static Path cacheDir() {
-        return mainArtCacheDir();
+        return mainArtCacheDir(MtgCardPaths.GAME_MTG);
     }
 
     private static Path mainArtCacheDir() {
+        return mainArtCacheDir(MtgCardPaths.GAME_MTG);
+    }
+
+    private static Path mainArtCacheDir(String game) {
+        String safeGame = MtgCardPaths.sanitizeGameFolder(game);
         var mc = Minecraft.getInstance();
         if (isIntegrated(mc)) {
             Path root = mc.getSingleplayerServer().getWorldPath(LevelResource.ROOT);
-            Path dir = root.resolve("mtgcard").resolve("mtg").resolve("main_art");
+            Path dir = root.resolve("mtgcard").resolve(safeGame).resolve("main_art");
             try { Files.createDirectories(dir); } catch (Exception ignored) {}
             return dir;
         }
-        var game = mc.gameDirectory.toPath();
-        var dir = game.resolve("mtgcard").resolve("mtg").resolve("main_art").resolve(cacheScope(mc));
+        var gameDir = mc.gameDirectory.toPath();
+        var dir = gameDir.resolve("mtgcard").resolve(safeGame).resolve("main_art").resolve(cacheScope(mc));
         try { Files.createDirectories(dir); } catch (Exception ignored) {}
         return dir;
     }
 
     private static Path customArtRoot() {
+        return customArtRoot(MtgCardPaths.GAME_MTG);
+    }
+
+    private static Path customArtRoot(String game) {
+        String safeGame = MtgCardPaths.sanitizeGameFolder(game);
         var mc = Minecraft.getInstance();
         if (isIntegrated(mc)) {
             Path root = mc.getSingleplayerServer().getWorldPath(LevelResource.ROOT);
-            Path dir = root.resolve("mtgcard").resolve("mtg").resolve("custom_art");
+            Path dir = root.resolve("mtgcard").resolve(safeGame).resolve("custom_art");
             try { Files.createDirectories(dir); } catch (Exception ignored) {}
             return dir;
         }
-        var game = mc.gameDirectory.toPath();
-        Path dir = game.resolve("mtgcard").resolve("mtg").resolve("custom_art").resolve(cacheScope(mc));
+        var gameDir = mc.gameDirectory.toPath();
+        Path dir = gameDir.resolve("mtgcard").resolve(safeGame).resolve("custom_art").resolve(cacheScope(mc));
         try { Files.createDirectories(dir); } catch (Exception ignored) {}
         return dir;
     }
 
     private static Path customArtDir(String setCode) {
-        Path dir = customArtRoot().resolve(MtgCardPaths.sanitizeSetFolder(setCode));
+        return customArtDir(MtgCardPaths.GAME_MTG, setCode);
+    }
+
+    private static Path customArtDir(String game, String setCode) {
+        Path dir = customArtRoot(game).resolve(MtgCardPaths.sanitizeSetFolder(setCode));
         try { Files.createDirectories(dir); } catch (Exception ignored) {}
         return dir;
     }
@@ -225,12 +249,25 @@ public final class CardArtManager {
         return scope;
     }
 
+    private static String gameForStack(ItemStack stack) {
+        String game = TcgCardMeta.read(stack).game();
+        return MtgCardPaths.sanitizeGameFolder(game);
+    }
+
+    private static String scopedArtKey(String game, String artKey) {
+        return MtgCardPaths.sanitizeGameFolder(game) + ":" + (artKey == null ? "" : artKey.trim());
+    }
+
     /** Index file path: world-scoped in integrated server; null in remote MP (server owns it). */
     private static Path indexFile() {
+        return indexFile(MtgCardPaths.GAME_MTG);
+    }
+
+    private static Path indexFile(String game) {
         var mc = Minecraft.getInstance();
         if (isIntegrated(mc)) {
             Path root = mc.getSingleplayerServer().getWorldPath(LevelResource.ROOT);
-            Path file = root.resolve("mtgcard").resolve("mtg").resolve("art_index.json");
+            Path file = root.resolve("mtgcard").resolve(MtgCardPaths.sanitizeGameFolder(game)).resolve("art_index.json");
             try { Files.createDirectories(file.getParent()); } catch (Exception ignored) {}
             return file;
         }
@@ -268,7 +305,11 @@ public final class CardArtManager {
     }
 
     public static void saveIndexAsync() {
-        var file = indexFile();
+        saveIndexAsync(MtgCardPaths.GAME_MTG);
+    }
+
+    private static void saveIndexAsync(String game) {
+        var file = indexFile(game);
         if (file == null) return;
         IO.submit(() -> {
             try (Writer w = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
@@ -312,33 +353,35 @@ public final class CardArtManager {
     public static TextureRef getOrRequestFace(ItemStack stack, int faceIndex) {
         CompoundTag root = StackData.readCustom(stack);
         CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
+        String game = gameForStack(stack);
 
         // world art path
         String worldKey = extractWorldArtKey(meta, faceIndex);
 
         if (worldKey != null && !worldKey.isBlank()) {
             String setCode = meta.getString("set").orElse("");
-            return getOrRequestWorld(worldKey.trim(), setCode);
+            return getOrRequestWorld(game, worldKey.trim(), setCode);
         }
 
         // Scryfall path
         String artKey = CardArtCommon.computeArtKey(meta, faceIndex);
         List<String> fallbackKeys = CardArtCommon.legacyFallbackArtKeys(meta, faceIndex);
+        String textureKey = scopedArtKey(game, artKey);
 
-        TextureRef cached = getLiveCached(artKey);
+        TextureRef cached = getLiveCached(textureKey);
         if (cached != null) return cached;
 
         for (String fallbackKey : fallbackKeys) {
-            cached = getLiveCached(fallbackKey);
+            cached = getLiveCached(scopedArtKey(game, fallbackKey));
             if (cached != null) return cached;
         }
 
-        Path file = resolveMainCachedFile(artKey, fallbackKeys);
+        Path file = resolveMainCachedFile(game, artKey, fallbackKeys);
 
         if (Files.exists(file)) {
             DISK_INDEX.put(artKey, file.getFileName().toString());
-            saveIndexAsync();
-            queueDiskLoad(artKey, file);
+            saveIndexAsync(game);
+            queueDiskLoad(textureKey, file);
             return null;
         }
 
@@ -347,40 +390,46 @@ public final class CardArtManager {
 
         // IMPORTANT: queue instead of sending immediately
         String fileName = DISK_INDEX.getOrDefault(artKey, artKey + ".webp");
-        enqueueRequest(artKey, url, fileName, CardArtCommon.encodeFallbackKeys(fallbackKeys));
+        enqueueRequest(game, artKey, url, fileName, CardArtCommon.encodeFallbackKeys(fallbackKeys), "");
         return null;
     }
 
     /** Resolve world-art by key: bind from disk if present, else request from server. */
     private static TextureRef getOrRequestWorld(String artKey) {
-        return getOrRequestWorld(artKey, ART_SET_INDEX.getOrDefault(artKey, ""));
+        return getOrRequestWorld(MtgCardPaths.GAME_MTG, artKey, ART_SET_INDEX.getOrDefault(scopedArtKey(MtgCardPaths.GAME_MTG, artKey), ""));
     }
 
     /** Resolve world-art by key: bind from disk if present, else request from server. */
     private static TextureRef getOrRequestWorld(String artKey, String setCode) {
-        TextureRef cached = getLiveCached(artKey);
+        return getOrRequestWorld(MtgCardPaths.GAME_MTG, artKey, setCode);
+    }
+
+    /** Resolve world-art by key: bind from disk if present, else request from server. */
+    private static TextureRef getOrRequestWorld(String game, String artKey, String setCode) {
+        String textureKey = scopedArtKey(game, artKey);
+        TextureRef cached = getLiveCached(textureKey);
         if (cached != null) {
             return cached;
         }
 
         if (setCode != null && !setCode.isBlank()) {
-            ART_SET_INDEX.put(artKey, MtgCardPaths.sanitizeSetFolder(setCode));
+            ART_SET_INDEX.put(textureKey, MtgCardPaths.sanitizeSetFolder(setCode));
         }
 
-        Path file = resolveCustomCachedFile(artKey, setCode);
+        Path file = resolveCustomCachedFile(game, artKey, setCode);
 
         if (Files.exists(file)) {
             DISK_INDEX.put(artKey, file.getFileName().toString());
-            saveIndexAsync();
-            queueDiskLoad(artKey, file);
+            saveIndexAsync(game);
+            queueDiskLoad(textureKey, file);
             return null;
         }
 
         DISK_INDEX.putIfAbsent(artKey, artKey + ".webp");
-        saveIndexAsync();
+        saveIndexAsync(game);
 
         // IMPORTANT: queue instead of sending immediately
-        enqueueRequest(artKey, "", artKey + ".webp", "", setCode);
+        enqueueRequest(game, artKey, "", artKey + ".webp", "", setCode);
         return null;
     }
 
@@ -413,13 +462,13 @@ public final class CardArtManager {
     }
 
     public static void refreshWorldArt(String artKey) {
-        refreshWorldArt(artKey, ART_SET_INDEX.getOrDefault(artKey, ""));
+        refreshWorldArt(artKey, ART_SET_INDEX.getOrDefault(scopedArtKey(MtgCardPaths.GAME_MTG, artKey), ""));
     }
 
     public static void refreshWorldArt(String artKey, String setCode) {
         if (artKey == null || artKey.isBlank()) return;
         if (setCode != null && !setCode.isBlank()) {
-            ART_SET_INDEX.put(artKey, MtgCardPaths.sanitizeSetFolder(setCode));
+            ART_SET_INDEX.put(scopedArtKey(MtgCardPaths.GAME_MTG, artKey), MtgCardPaths.sanitizeSetFolder(setCode));
         }
 
         invalidateArtKey(artKey);
@@ -431,7 +480,7 @@ public final class CardArtManager {
         }
 
         deleteCachedFiles(artKey);
-        enqueueRequest(artKey, "", artKey + ".webp", "", ART_SET_INDEX.getOrDefault(artKey, ""));
+        enqueueRequest(MtgCardPaths.GAME_MTG, artKey, "", artKey + ".webp", "", ART_SET_INDEX.getOrDefault(scopedArtKey(MtgCardPaths.GAME_MTG, artKey), ""));
     }
 
     public static void forgetWorldArt(String artKey) {
@@ -450,15 +499,22 @@ public final class CardArtManager {
 
     // Called by the client networking receiver when the server sends image bytes.
     public static void onArtResponse(String artKey, byte[] imgBytes) {
-        IN_FLIGHT.remove(artKey);
+        onArtResponse(MtgCardPaths.GAME_MTG, artKey, imgBytes);
+    }
+
+    // Called by the client networking receiver when the server sends image bytes.
+    public static void onArtResponse(String game, String artKey, byte[] imgBytes) {
+        String safeGame = MtgCardPaths.sanitizeGameFolder(game);
+        String textureKey = scopedArtKey(safeGame, artKey);
+        IN_FLIGHT.remove(textureKey);
 
         try {
             String ext = detectExt(imgBytes);
             String fileName = artKey + "." + ext;
-            String setCode = ART_SET_INDEX.get(artKey);
+            String setCode = ART_SET_INDEX.get(textureKey);
             Path dir = (setCode == null || setCode.isBlank())
-                    ? mainArtCacheDir()
-                    : customArtDir(setCode);
+                    ? mainArtCacheDir(safeGame)
+                    : customArtDir(safeGame, setCode);
             Path file = dir.resolve(fileName);
 
             Files.createDirectories(file.getParent());
@@ -466,25 +522,25 @@ public final class CardArtManager {
             com.spider.mtgcard.util.ArtImageStorage.deleteSiblingFormats(dir, artKey, ext);
 
             DISK_INDEX.put(artKey, fileName);
-            saveIndexAsync();
+            saveIndexAsync(safeGame);
 
-            queueDiskLoad(artKey, file);
+            queueDiskLoad(textureKey, file);
         } catch (Exception ignored) {}
     }
 
     private static Path resolveAnyCachedFile(String artKey) {
-        Path main = resolveMainCachedFile(artKey, List.of());
+        Path main = resolveMainCachedFile(MtgCardPaths.GAME_MTG, artKey, List.of());
         if (Files.exists(main)) return main;
 
-        String setCode = ART_SET_INDEX.getOrDefault(artKey, "");
-        Path custom = resolveCustomCachedFile(artKey, setCode);
+        String setCode = ART_SET_INDEX.getOrDefault(scopedArtKey(MtgCardPaths.GAME_MTG, artKey), "");
+        Path custom = resolveCustomCachedFile(MtgCardPaths.GAME_MTG, artKey, setCode);
         if (Files.exists(custom)) return custom;
 
         return main;
     }
 
-    private static Path resolveMainCachedFile(String artKey, List<String> fallbackKeys) {
-        Path dir = mainArtCacheDir();
+    private static Path resolveMainCachedFile(String game, String artKey, List<String> fallbackKeys) {
+        Path dir = mainArtCacheDir(game);
 
         for (String candidate : artKeyCandidates(artKey, fallbackKeys)) {
             Path indexed = resolveIndexedFile(dir, candidate);
@@ -503,12 +559,12 @@ public final class CardArtManager {
         return dir.resolve(artKey + ".webp");
     }
 
-    private static Path resolveCustomCachedFile(String artKey, String setCode) {
-        Path setDir = customArtDir(setCode);
+    private static Path resolveCustomCachedFile(String game, String artKey, String setCode) {
+        Path setDir = customArtDir(game, setCode);
         Path exact = resolveExactFile(setDir, artKey);
         if (exact != null) return exact;
 
-        Path root = customArtRoot();
+        Path root = customArtRoot(game);
         try (var dirs = Files.list(root)) {
             for (Path dir : dirs.toList()) {
                 if (!Files.isDirectory(dir) || dir.equals(setDir)) continue;

@@ -12,7 +12,7 @@ public final class ArtPackets {
     public static final Identifier REQ_ID = Identifier.fromNamespaceAndPath("mtgcard", "art_req");
     public static final Identifier CHUNK_ID = Identifier.fromNamespaceAndPath("mtgcard", "art_chunk");
 
-    public record ArtRequest(String artKey, String url, String fallbackKeys, String setCode) implements CustomPacketPayload {
+    public record ArtRequest(String artKey, String url, String fallbackKeys, String setCode, String game) implements CustomPacketPayload {
         public static final Type<ArtRequest> ID = new Type<>(REQ_ID);
 
         public static final StreamCodec<RegistryFriendlyByteBuf, ArtRequest> CODEC =
@@ -21,6 +21,7 @@ public final class ArtPackets {
                         ByteBufCodecs.STRING_UTF8, ArtRequest::url,
                         ByteBufCodecs.STRING_UTF8, ArtRequest::fallbackKeys,
                         ByteBufCodecs.STRING_UTF8, ArtRequest::setCode,
+                        ByteBufCodecs.STRING_UTF8, ArtRequest::game,
                         ArtRequest::new
                 );
 
@@ -28,12 +29,13 @@ public final class ArtPackets {
     }
 
     /** Server -> Client chunk */
-    public record ArtChunk(String artKey, int index, int total, byte[] data) implements CustomPacketPayload {
+    public record ArtChunk(String artKey, String game, int index, int total, byte[] data) implements CustomPacketPayload {
         public static final Type<ArtChunk> ID = new Type<>(CHUNK_ID);
 
         public static final StreamCodec<RegistryFriendlyByteBuf, ArtChunk> CODEC =
                 StreamCodec.composite(
                         ByteBufCodecs.STRING_UTF8, ArtChunk::artKey,
+                        ByteBufCodecs.STRING_UTF8, ArtChunk::game,
                         ByteBufCodecs.VAR_INT, ArtChunk::index,
                         ByteBufCodecs.VAR_INT, ArtChunk::total,
                         ByteBufCodecs.BYTE_ARRAY, ArtChunk::data,

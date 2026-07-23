@@ -6,6 +6,7 @@ import com.spider.mtgcard.client.compat.MtgGuiScaleHelper;
 import com.spider.mtgcard.client.input.GuiCardFaceFlipHandler;
 import com.spider.mtgcard.client.input.GuiCardFaceFlipper;
 import com.spider.mtgcard.client.java.CardArtManager;
+import com.spider.mtgcard.api.CardItemRegistry;
 import com.spider.mtgcard.api.DeckControlActionRegistry;
 import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.db.search.CardMeta;
@@ -622,6 +623,10 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
             drawMainCounts(ctx);
             // Draw "Click card to select" hint under the bottom row
             drawMainHint(ctx);
+
+            if (gameMenuOpen) {
+                renderGameMenu(ctx, mouseX, mouseY, delta);
+            }
         }
 
         renderHoverPreview(ctx, mouseX, mouseY, delta);
@@ -712,7 +717,7 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
         if (!preview.isEmpty()) {
             drawCardArtFit(ctx, preview, cardX + 2, cardY + 2, SEL_CARD_W - 4, SEL_CARD_H - 4);
         } else {
-            drawCardBackFit(ctx, cardX + 2, cardY + 2, SEL_CARD_W - 4, SEL_CARD_H - 4);
+            drawSelectedGameCardBackFit(ctx, cardX + 2, cardY + 2, SEL_CARD_W - 4, SEL_CARD_H - 4);
         }
 
         // Selected card info lines
@@ -1171,6 +1176,10 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
         int mx = (int) click.x();
         int my = (int) click.y();
 
+        if (gameMenuOpen && handleGameMenuClick(click, doubled, mx, my)) {
+            return true;
+        }
+
         Slot slot = this.hoveredSlot;
         if (slot != null && slot.hasItem()
                 && menu.isPlayerInventorySlot(slot)
@@ -1199,6 +1208,23 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
             }
         }
         return super.mouseClicked(click, doubled);
+    }
+
+    private boolean handleGameMenuClick(MouseButtonEvent click, boolean doubled, int mx, int my) {
+        for (int i = gameMenuButtons.size() - 1; i >= 0; i--) {
+            Button button = gameMenuButtons.get(i);
+            if (button.visible && button.mouseClicked(click, doubled)) {
+                return true;
+            }
+        }
+
+        if (btnGame != null && isMouseIn(mx, my, btnGame.getX(), btnGame.getY(), btnGame.getWidth(), btnGame.getHeight())) {
+            closeGameMenu();
+            return true;
+        }
+
+        closeGameMenu();
+        return true;
     }
 
     @Override
@@ -1445,6 +1471,35 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
                 CARD_BACK_TEX_W, CARD_BACK_TEX_H,
                 CARD_BACK_TEX_W, CARD_BACK_TEX_H
         );
+    }
+
+    private void drawSelectedGameCardBackFit(GuiGraphics ctx, int x, int y, int w, int h) {
+        String game = menu.getSelectedGame();
+        if (TcgGameRegistry.MTG.equals(game)) {
+            drawCardBackFit(ctx, x, y, w, h);
+            return;
+        }
+
+        ItemStack stack = new ItemStack(CardItemRegistry.itemForGameOrDefault(game));
+        if (stack.isEmpty()) {
+            drawCardBackFit(ctx, x, y, w, h);
+            return;
+        }
+
+        var m = ctx.pose();
+        m.pushMatrix();
+        m.translate((float) x, (float) y);
+        m.scale(w / 16f, h / 16f);
+        ctx.renderItem(stack, 0, 0);
+        m.popMatrix();
+    }
+
+    private void renderGameMenu(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
+        for (Button button : gameMenuButtons) {
+            if (button.visible) {
+                button.render(ctx, mouseX, mouseY, delta);
+            }
+        }
     }
 
     public void onCascadePayload(DeckControlPackets.CascadeS2C payload) {

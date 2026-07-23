@@ -112,20 +112,21 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenH
     }
 
     public String getSelectedGame(@Nullable UUID playerId) {
-        if (playerId == null) return TcgGameRegistry.MTG;
-        String game = CardStoreProviderRegistry.sanitizeGameId(playerSelectedGames.get(playerId));
-        return CardStoreProviderRegistry.containsProvider(game) ? game : TcgGameRegistry.MTG;
+        if (playerId == null) return TcgGameRegistry.ALL_GAMES;
+        String game = CardStoreProviderRegistry.sanitizeFilterId(playerSelectedGames.get(playerId));
+        if (game.isBlank()) return TcgGameRegistry.ALL_GAMES;
+        return CardStoreProviderRegistry.containsProvider(game) ? game : TcgGameRegistry.ALL_GAMES;
     }
 
     public void setSelectedGame(@Nullable UUID playerId, String game) {
         if (playerId == null) return;
-        String normalized = CardStoreProviderRegistry.sanitizeGameId(game);
-        if (!CardStoreProviderRegistry.containsProvider(normalized)) return;
+        String normalized = CardStoreProviderRegistry.sanitizeFilterId(game);
+        if (!normalized.isBlank() && !CardStoreProviderRegistry.containsProvider(normalized)) return;
 
         String old = getSelectedGame(playerId);
         if (old.equals(normalized)) return;
 
-        if (TcgGameRegistry.MTG.equals(normalized)) {
+        if (normalized.isBlank()) {
             playerSelectedGames.remove(playerId);
         } else {
             playerSelectedGames.put(playerId, normalized);
@@ -207,6 +208,7 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenH
         var savedGames = view.read("PlayerSelectedGames", SavedGame.CODEC.listOf()).orElse(List.of());
         for (var selected : savedGames) {
             if (selected == null || selected.playerId() == null || selected.game().isBlank()) continue;
+            if (TcgGameRegistry.ALL_GAMES.equals(selected.game())) continue;
             if (!CardStoreProviderRegistry.containsProvider(selected.game())) continue;
             playerSelectedGames.put(selected.playerId(), selected.game());
         }
@@ -226,8 +228,8 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenH
         ArrayList<SavedGame> savedGames = new ArrayList<>();
         for (var entry : playerSelectedGames.entrySet()) {
             if (entry.getKey() == null) continue;
-            String game = CardStoreProviderRegistry.sanitizeGameId(entry.getValue());
-            if (game.isBlank() || TcgGameRegistry.MTG.equals(game)) continue;
+            String game = CardStoreProviderRegistry.sanitizeFilterId(entry.getValue());
+            if (game.isBlank()) continue;
             if (!CardStoreProviderRegistry.containsProvider(game)) continue;
             savedGames.add(new SavedGame(entry.getKey(), game));
         }
@@ -299,7 +301,7 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedScreenH
         ).apply(inst, SavedGame::new));
 
         SavedGame {
-            game = CardStoreProviderRegistry.sanitizeGameId(game);
+            game = CardStoreProviderRegistry.sanitizeFilterId(game);
         }
     }
 

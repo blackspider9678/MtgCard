@@ -64,6 +64,13 @@ public final class CardStoreProviderRegistry {
         return List.copyOf(entries);
     }
 
+    public static synchronized List<TcgGameRegistry.Entry> filterOptionsWithProviders() {
+        ArrayList<TcgGameRegistry.Entry> entries = new ArrayList<>();
+        entries.add(TcgGameRegistry.allEntry());
+        entries.addAll(gameEntriesWithProviders());
+        return List.copyOf(entries);
+    }
+
     public static boolean hasMultipleProviders() {
         return gameEntriesWithProviders().size() > 1;
     }
@@ -74,6 +81,15 @@ public final class CardStoreProviderRegistry {
             return normalized.isBlank() ? TcgGameRegistry.MTG : normalized;
         } catch (IllegalArgumentException ignored) {
             return TcgGameRegistry.MTG;
+        }
+    }
+
+    public static String sanitizeFilterId(String game) {
+        try {
+            String normalized = TcgGameRegistry.normalizeGameId(game);
+            return normalized.isBlank() ? TcgGameRegistry.ALL_GAMES : normalized;
+        } catch (IllegalArgumentException ignored) {
+            return TcgGameRegistry.ALL_GAMES;
         }
     }
 

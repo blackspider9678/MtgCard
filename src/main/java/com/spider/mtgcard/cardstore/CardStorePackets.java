@@ -122,7 +122,7 @@ public final class CardStorePackets {
                 );
 
         public SetGameC2S {
-            game = sanitizeGame(game);
+            game = sanitizeFilterGame(game);
         }
 
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }
@@ -140,7 +140,7 @@ public final class CardStorePackets {
         );
 
         public SearchC2S {
-            game = sanitizeGame(game);
+            game = sanitizeFilterGame(game);
             query = query == null ? "" : query;
         }
 
@@ -195,7 +195,7 @@ public final class CardStorePackets {
                 );
 
         public SearchS2C {
-            game = sanitizeGame(game);
+            game = sanitizeFilterGame(game);
             name = name == null ? "" : name;
             setCode = setCode == null ? "" : setCode.trim();
             collectorNumber = collectorNumber == null ? "" : collectorNumber.trim();
@@ -232,7 +232,7 @@ public final class CardStorePackets {
                 );
 
         public SearchPrintsC2S {
-            game = sanitizeGame(game);
+            game = sanitizeFilterGame(game);
             query = query == null ? "" : query;
             page = Math.max(1, page);
             pageSize = Math.max(1, pageSize);
@@ -287,7 +287,7 @@ public final class CardStorePackets {
                 );
 
         public SearchPrintsStartS2C {
-            game = sanitizeGame(game);
+            game = sanitizeFilterGame(game);
             requestId = requestId == null ? new UUID(0L, 0L) : requestId;
             message = message == null ? "" : message;
             priceItemId = priceItemId == null ? "" : priceItemId;
@@ -359,7 +359,7 @@ public final class CardStorePackets {
                 );
 
         public SearchPrintsDoneS2C {
-            game = sanitizeGame(game);
+            game = sanitizeFilterGame(game);
             requestId = requestId == null ? new UUID(0L, 0L) : requestId;
             message = message == null ? "" : message;
         }
@@ -458,7 +458,7 @@ public final class CardStorePackets {
                 );
 
         public SearchPrintsS2C {
-            game = sanitizeGame(game);
+            game = sanitizeFilterGame(game);
             message = message == null ? "" : message;
             canonicalName = canonicalName == null ? "" : canonicalName;
             priceItemId = priceItemId == null ? "" : priceItemId;
@@ -632,8 +632,8 @@ public final class CardStorePackets {
                     var be = world.getBlockEntity(payload.pos());
                     if (!(be instanceof CardStoreBlockEntity store)) return;
 
-                    String game = sanitizeGame(payload.game());
-                    if (!CardStoreProviderRegistry.containsProvider(game)) return;
+                    String game = sanitizeFilterGame(payload.game());
+                    if (!game.isBlank() && !CardStoreProviderRegistry.containsProvider(game)) return;
                     store.setSelectedGame(player.getUUID(), game);
                 })
         );
@@ -795,7 +795,8 @@ public final class CardStorePackets {
             var server = ctx.server();
             ServerPlayer player = ctx.player();
             ServerLevel serverWorld = player.level();
-            String game = sanitizeGame(payload.game());
+            String requestedGame = sanitizeFilterGame(payload.game());
+            String game = requestedGame.isBlank() ? TcgGameRegistry.MTG : requestedGame;
 
             BlockEntity be = serverWorld.getBlockEntity(payload.storePos());
             if (!(be instanceof CardStoreBlockEntity store)) {
@@ -927,7 +928,7 @@ public final class CardStorePackets {
             var server = ctx.server();
             ServerPlayer player = ctx.player();
             ServerLevel serverWorld = player.level();
-            String game = sanitizeGame(payload.game());
+            String game = sanitizeFilterGame(payload.game());
 
             String q = payload.query();
             int page = Math.max(1, payload.page());
@@ -943,7 +944,7 @@ public final class CardStorePackets {
                 return;
             }
 
-            if (!CardStoreProviderRegistry.containsProvider(game)) {
+            if (!game.isBlank() && !CardStoreProviderRegistry.containsProvider(game)) {
                 server.execute(() -> ServerPlayNetworking.send(player,
                         new SearchPrintsStartS2C(payload.storePos(), game, reqId, false, "No Card Store provider for this game.", page, 0, false, currentPriceItemId(), currentPriceBasis())));
                 server.execute(() -> ServerPlayNetworking.send(player,
@@ -960,6 +961,11 @@ public final class CardStorePackets {
             }
 
             String qTrim = q.trim();
+            if (game.isBlank()) {
+                handleAllPrintSearch(server, player, serverWorld, store, payload.storePos(), reqId, qTrim, page, pageSize);
+                return;
+            }
+
             if (!TcgGameRegistry.MTG.equals(game)) {
                 CardStoreProviderRegistry.Provider provider = CardStoreProviderRegistry.get(game).orElse(null);
                 if (provider == null) {
@@ -1077,6 +1083,199 @@ public final class CardStorePackets {
 
     private static String currentPriceBasis() {
         return CardStoreScreenHandler.defaultPriceBasis();
+    }
+
+    private record GamePrints(String game, CardStoreProviderRegistry.SearchPrintsResult result) {
+    }
+
+    private static void handleAllPrintSearch(
+            MinecraftServer server,
+            ServerPlayer player,
+            ServerLevel world,
+            CardStoreBlockEntity store,
+            BlockPos storePos,
+            UUID reqId,
+            String query,
+            int page,
+            int pageSize
+    ) {
+        List<TcgGameRegistry.Entry> games = CardStoreProviderRegistry.gameEntriesWithProviders();
+        if (games.isEmpty()) {
+            server.execute(() -> {
+                ServerPlayNetworking.send(player, new SearchPrintsStartS2C(
+                        storePos, TcgGameRegistry.ALL_GAMES, reqId, false, "No Card Store providers.", page,
+                        0, false, currentPriceItemId(), currentPriceBasis()));
+                ServerPlayNetworking.send(player, new SearchPrintsDoneS2C(
+                        storePos, TcgGameRegistry.ALL_GAMES, reqId, false, "No providers.", page, 0, false));
+            });
+            return;
+        }
+
+        ArrayList<CompletableFuture<GamePrints>> futures = new ArrayList<>();
+        CardStoreProviderRegistry.SearchContext context =
+                new CardStoreProviderRegistry.SearchContext(server, world, player, store, storePos);
+
+        for (TcgGameRegistry.Entry entry : games) {
+            String game = entry.id();
+            CompletableFuture<CardStoreProviderRegistry.SearchPrintsResult> future;
+            if (TcgGameRegistry.MTG.equals(game)) {
+                future = searchMtgPrintsAsync(server, game, query, page, pageSize);
+            } else {
+                CardStoreProviderRegistry.Provider provider = CardStoreProviderRegistry.get(game).orElse(null);
+                if (provider == null) continue;
+                future = provider.searchPrints(context, query, page, pageSize)
+                        .exceptionally(err -> CardStoreProviderRegistry.SearchPrintsResult.empty("Search failed.", page));
+            }
+
+            futures.add(future
+                    .exceptionally(err -> CardStoreProviderRegistry.SearchPrintsResult.empty("Search failed.", page))
+                    .thenApply(result -> new GamePrints(game, result)));
+        }
+
+        if (futures.isEmpty()) {
+            server.execute(() -> {
+                ServerPlayNetworking.send(player, new SearchPrintsStartS2C(
+                        storePos, TcgGameRegistry.ALL_GAMES, reqId, false, "No Card Store providers.", page,
+                        0, false, currentPriceItemId(), currentPriceBasis()));
+                ServerPlayNetworking.send(player, new SearchPrintsDoneS2C(
+                        storePos, TcgGameRegistry.ALL_GAMES, reqId, false, "No providers.", page, 0, false));
+            });
+            return;
+        }
+
+        CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
+                .whenComplete((v, ex) -> server.execute(() -> {
+                    int total = 0;
+                    boolean hasMore = false;
+                    ArrayList<SearchPrintsS2C.Entry> entries = new ArrayList<>();
+
+                    for (CompletableFuture<GamePrints> future : futures) {
+                        GamePrints gamePrints = future.getNow(null);
+                        if (gamePrints == null || gamePrints.result() == null) continue;
+
+                        CardStoreProviderRegistry.SearchPrintsResult result = gamePrints.result();
+                        int resultTotal = Math.max(result.total(), result.entries().size());
+                        total = Math.min(Integer.MAX_VALUE, total + resultTotal);
+                        hasMore = hasMore || result.hasMore();
+
+                        for (CardStoreProviderRegistry.PrintEntry print : result.entries()) {
+                            entries.add(new SearchPrintsS2C.Entry(
+                                    gamePrints.game(),
+                                    print.setCode(),
+                                    print.collectorNumber(),
+                                    print.stack(),
+                                    print.priceItems()
+                            ));
+                        }
+                    }
+
+                    entries.sort((a, b) -> {
+                        int byGame = String.CASE_INSENSITIVE_ORDER.compare(a.game(), b.game());
+                        if (byGame != 0) return byGame;
+                        String an = a.stack().getHoverName().getString();
+                        String bn = b.stack().getHoverName().getString();
+                        int byName = String.CASE_INSENSITIVE_ORDER.compare(an, bn);
+                        if (byName != 0) return byName;
+                        int bySet = String.CASE_INSENSITIVE_ORDER.compare(a.setCode(), b.setCode());
+                        if (bySet != 0) return bySet;
+                        return String.CASE_INSENSITIVE_ORDER.compare(a.collectorNumber(), b.collectorNumber());
+                    });
+
+                    if (entries.size() > pageSize) {
+                        entries = new ArrayList<>(entries.subList(0, pageSize));
+                    }
+
+                    hasMore = hasMore || total > page * pageSize;
+                    boolean ok = !entries.isEmpty();
+                    String msg = ok ? ("Loaded " + entries.size() + " results.") : "No results.";
+
+                    ServerPlayNetworking.send(player, new SearchPrintsStartS2C(
+                            storePos, TcgGameRegistry.ALL_GAMES, reqId, true, "Searching...", page, total,
+                            hasMore, currentPriceItemId(), currentPriceBasis()));
+
+                    for (SearchPrintsS2C.Entry entry : entries) {
+                        ServerPlayNetworking.send(player, new SearchPrintsAddS2C(storePos, reqId, entry));
+                    }
+
+                    ServerPlayNetworking.send(player, new SearchPrintsDoneS2C(
+                            storePos, TcgGameRegistry.ALL_GAMES, reqId, ok, msg, page, total, hasMore));
+                }));
+    }
+
+    private static CompletableFuture<CardStoreProviderRegistry.SearchPrintsResult> searchMtgPrintsAsync(
+            MinecraftServer server,
+            String game,
+            String query,
+            int page,
+            int pageSize
+    ) {
+        String qTrim = query == null ? "" : query.trim();
+        if (qTrim.isBlank()) {
+            return CompletableFuture.completedFuture(CardStoreProviderRegistry.SearchPrintsResult.empty("Type a card name.", page));
+        }
+
+        String qLower = qTrim.toLowerCase(Locale.ROOT);
+        String scryQ = qLower.contains("include:") ? qTrim : (qTrim + " include:extras");
+        int offset = (page - 1) * pageSize;
+
+        List<com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta> customMatches =
+                findCustomMatches(server, qTrim);
+        int customTotal = customMatches.size();
+        int customStart = Math.min(offset, customTotal);
+        int customSendCount = Math.min(pageSize, Math.max(0, customTotal - offset));
+        List<com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta> customPage =
+                customSendCount <= 0 ? List.of() : customMatches.subList(customStart, customStart + customSendCount);
+
+        int officialOffset = Math.max(0, offset - customTotal);
+        int officialLimit = Math.max(0, pageSize - customPage.size());
+
+        CompletableFuture<ScryfallPrintSearchFetch.Page> officialFuture =
+                officialLimit <= 0
+                        ? CompletableFuture.completedFuture(new ScryfallPrintSearchFetch.Page(List.of(), 0, false))
+                        : ScryfallPrintSearchFetch.fetchSearchOffsetSliceAsync(scryQ, officialOffset, officialLimit);
+
+        return officialFuture.thenCompose(pg -> {
+            boolean scryOk = pg != null && pg.hits() != null;
+            int officialTotal = scryOk ? pg.totalCards() : 0;
+            int total = customTotal + officialTotal;
+            boolean hasMore = total > (offset + pageSize);
+
+            ArrayList<CardStoreProviderRegistry.PrintEntry> entries = new ArrayList<>();
+            for (SearchPrintsS2C.Entry entry : buildCustomEntries(game, customPage)) {
+                entries.add(toProviderPrintEntry(entry));
+            }
+
+            if (!scryOk || pg.hits().isEmpty()) {
+                String msg = entries.isEmpty() ? "No results." : ("Loaded " + entries.size() + " results.");
+                return CompletableFuture.completedFuture(new CardStoreProviderRegistry.SearchPrintsResult(
+                        !entries.isEmpty(), msg, qTrim, page, total, hasMore, entries));
+            }
+
+            ArrayList<ScryfallPrintSearchFetch.PrintHit> pageHits = new ArrayList<>(pg.hits());
+            return ScryfallExactFetch.fetchCollectionByPrintHitsAsync(pageHits)
+                    .exceptionally(err -> List.of())
+                    .thenApply(models -> {
+                        for (SearchPrintsS2C.Entry entry : buildSearchEntries(game, pageHits, models)) {
+                            entries.add(toProviderPrintEntry(entry));
+                        }
+
+                        String msg = entries.isEmpty() ? "No results." : ("Loaded " + entries.size() + " results.");
+                        return new CardStoreProviderRegistry.SearchPrintsResult(
+                                !entries.isEmpty(), msg, qTrim, page, total, hasMore, entries);
+                    });
+        }).exceptionally(err -> CardStoreProviderRegistry.SearchPrintsResult.empty("Search failed.", page));
+    }
+
+    private static CardStoreProviderRegistry.PrintEntry toProviderPrintEntry(SearchPrintsS2C.Entry entry) {
+        if (entry == null) {
+            return new CardStoreProviderRegistry.PrintEntry("", "", ItemStack.EMPTY, 0);
+        }
+        return new CardStoreProviderRegistry.PrintEntry(
+                entry.setCode(),
+                entry.collectorNumber(),
+                entry.stack(),
+                entry.priceItems()
+        );
     }
 
     // -------------------------
@@ -1330,6 +1529,10 @@ public final class CardStorePackets {
 
     private static String sanitizeGame(String game) {
         return CardStoreProviderRegistry.sanitizeGameId(game);
+    }
+
+    private static String sanitizeFilterGame(String game) {
+        return CardStoreProviderRegistry.sanitizeFilterId(game);
     }
 
     private CardStorePackets() {}

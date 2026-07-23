@@ -364,7 +364,7 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         if (infoOpen) {
             int shownFace = getShownFaceIndex();
             currentScryfallId = readScryfallIdForFace(stack, shownFace);
-            if (currentScryfallId != null && !currentScryfallId.isBlank()) {
+            if (shouldUseRemoteInfo() && currentScryfallId != null && !currentScryfallId.isBlank()) {
                 ScryfallInfoManager.forceRefresh(currentScryfallId);
             }
         } else {
@@ -408,10 +408,15 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         return null;
     }
 
+    private boolean shouldUseRemoteInfo() {
+        return TcgCardMeta.read(stack).isMtg();
+    }
+
     private static int legalityColor(String status) {
         if (status == null) return 0xFFAAAAAA;
+        String normalized = status.trim().toLowerCase(Locale.ROOT);
 
-        return switch (status) {
+        return switch (normalized) {
             case "legal" -> 0xFF3BE36A;
             case "restricted" -> 0xFFE6D24A;
             case "banned" -> 0xFFE04A4A;
@@ -422,7 +427,8 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
 
     private static String prettyLegality(String status) {
         if (status == null) return "â€”";
-        return switch (status) {
+        String normalized = status.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
             case "legal" -> "Legal";
             case "restricted" -> "Restricted";
             case "banned" -> "Banned";
@@ -451,7 +457,7 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
                 if (infoOpen) {
                     int shownFace = getShownFaceIndex();
                     currentScryfallId = readScryfallIdForFace(stack, shownFace);
-                    if (currentScryfallId != null && !currentScryfallId.isBlank()) {
+                    if (shouldUseRemoteInfo() && currentScryfallId != null && !currentScryfallId.isBlank()) {
                         ScryfallInfoManager.forceRefresh(currentScryfallId);
                     }
                 }
@@ -469,7 +475,7 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
             refreshTicker++;
             if (refreshTicker >= REFRESH_CHECK_EVERY_TICKS) {
                 refreshTicker = 0;
-                if (currentScryfallId != null && !currentScryfallId.isBlank()) {
+                if (shouldUseRemoteInfo() && currentScryfallId != null && !currentScryfallId.isBlank()) {
                     ScryfallInfoManager.ensureFresh(currentScryfallId);
                 }
             }
@@ -1779,7 +1785,11 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         ctx.drawString(this.font, Component.literal(typeLine), x, y, 0xFFAAAAAA);
         y += 14;
 
-        ScryfallInfoManager.Entry e = (currentScryfallId == null) ? null : ScryfallInfoManager.getCached(currentScryfallId);
+        ScryfallInfoManager.Entry localEntry = ScryfallInfoManager.Entry.fromLocalMeta(meta);
+        ScryfallInfoManager.Entry remoteEntry = (shouldUseRemoteInfo() && currentScryfallId != null)
+                ? ScryfallInfoManager.getCached(currentScryfallId)
+                : null;
+        ScryfallInfoManager.Entry e = remoteEntry == null ? localEntry : remoteEntry;
 
         PriceResult used = (e == null) ? new PriceResult("0", PriceTier.NORMAL) : resolvePrice(e);
 
@@ -1868,6 +1878,10 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
                 .thenComparing(Map.Entry::getKey));
 
         lastLegalityRowCount = rows.size();
+        if (rows.isEmpty()) {
+            ctx.drawString(this.font, Component.literal("No legalities listed."), x, y, 0xFFAAAAAA);
+            return;
+        }
 
         // Scroll area rect (inside panel)
         int listX = x;
