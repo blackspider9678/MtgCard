@@ -1,6 +1,7 @@
 package com.spider.mtgcard.client.life;
 
 import com.spider.mtgcard.life.LifePointPackets;
+import com.spider.mtgcard.life.LifeFormat;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.core.BlockPos;
 import org.jetbrains.annotations.Nullable;
@@ -228,7 +229,66 @@ public final class LifePointClientState {
     public static String getFormatKey(@Nullable BlockPos pos) {
         String s = safe(pos).getString("FormatKey").orElse("commander");
         if (s == null || s.isBlank()) return "commander";
-        return s;
+        return LifeFormat.normalizeKey(s);
+    }
+
+    public static LifeFormat getFormat(@Nullable BlockPos pos) {
+        return LifeFormat.fromKey(getFormatKey(pos));
+    }
+
+    public static @Nullable BlockPos twoHeadedTeammate(@Nullable BlockPos pos) {
+        if (pos == null || !getFormat(pos).hasSharedTeams()) return null;
+
+        UUID gid = getGroupIdFor(pos);
+        GroupView g = getGroup(gid);
+        if (g == null || g.order == null || g.order.isEmpty()) return null;
+
+        int idx = g.order.indexOf(pos);
+        if (idx < 0) return null;
+
+        int teammateIdx = (idx % 2 == 0) ? idx + 1 : idx - 1;
+        if (teammateIdx < 0 || teammateIdx >= g.order.size()) return null;
+
+        return g.order.get(teammateIdx);
+    }
+
+    public static String displayNameForLife(@Nullable BlockPos pos) {
+        if (pos == null) return "";
+
+        if (getFormat(pos).hasSharedTeams()) {
+            UUID gid = getGroupIdFor(pos);
+            GroupView g = getGroup(gid);
+            if (g != null && g.order != null && !g.order.isEmpty()) {
+                int idx = g.order.indexOf(pos);
+                if (idx >= 0) {
+                    int teamStart = idx - (idx % 2);
+                    String first = memberDisplayName(gid, g.order.get(teamStart));
+                    int secondIdx = teamStart + 1;
+                    if (secondIdx < g.order.size()) {
+                        String second = memberDisplayName(gid, g.order.get(secondIdx));
+                        if (!second.isBlank()) return first + " // " + second;
+                    }
+                    return first;
+                }
+            }
+        }
+
+        return memberDisplayName(getGroupIdFor(pos), pos);
+    }
+
+    private static String memberDisplayName(@Nullable UUID groupId, @Nullable BlockPos pos) {
+        if (pos == null) return "";
+
+        String nm = groupMemberName(groupId, pos);
+        if (nm != null && !nm.isBlank()) return nm;
+
+        CompoundTag st = get(pos);
+        if (st != null) {
+            String n = st.getString("DisplayName").orElse("");
+            if (n != null && !n.isBlank()) return n;
+        }
+
+        return pos.getX() + "," + pos.getY() + "," + pos.getZ();
     }
 
     public static int getCommanderLethal(@Nullable BlockPos pos) {

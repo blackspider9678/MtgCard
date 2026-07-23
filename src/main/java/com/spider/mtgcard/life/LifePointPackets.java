@@ -83,7 +83,13 @@ public final class LifePointPackets {
         lp.setPlayerColor(pc);
         lp.setLifeColor(lc);
         lp.setIconKey(icon);
-        lp.setFormatKey(fmt);
+        if (lp.getLevel() instanceof ServerLevel world) {
+            if (LifePlayGroups.canChangeFormat(world, lp.getBlockPos())) {
+                LifePlayGroups.applyFormatSelection(world, lp.getBlockPos(), fmt);
+            }
+        } else {
+            lp.setFormatKey(fmt);
+        }
         lp.setCommanderLethal(lethal);
         lp.setIconSwapColor(swap);
     }
@@ -548,15 +554,15 @@ public final class LifePointPackets {
 
         ServerPlayNetworking.registerGlobalReceiver(SetLifeC2S.ID, (payload, ctx) ->
                 ctx.server().execute(() -> {
-                    var be = ((ServerLevel) ctx.player().level()).getBlockEntity(payload.pos());
-                    if (be instanceof LifePointBlockEntity lp) lp.setLife(payload.value());
+                    ServerLevel world = (ServerLevel) ctx.player().level();
+                    LifePlayGroups.setLife(world, payload.pos(), payload.value());
                 })
         );
 
         ServerPlayNetworking.registerGlobalReceiver(AddLifeC2S.ID, (payload, ctx) ->
                 ctx.server().execute(() -> {
-                    var be = ((ServerLevel) ctx.player().level()).getBlockEntity(payload.pos());
-                    if (be instanceof LifePointBlockEntity lp) lp.addLife(payload.delta());
+                    ServerLevel world = (ServerLevel) ctx.player().level();
+                    LifePlayGroups.addLife(world, payload.pos(), payload.delta());
                 })
         );
 
@@ -584,8 +590,8 @@ public final class LifePointPackets {
 
         ServerPlayNetworking.registerGlobalReceiver(SetFormatKeyC2S.ID, (payload, ctx) ->
                 ctx.server().execute(() -> {
-                    var be = ((ServerLevel) ctx.player().level()).getBlockEntity(payload.pos());
-                    if (be instanceof LifePointBlockEntity lp) lp.setFormatKey(payload.key());
+                    ServerLevel world = (ServerLevel) ctx.player().level();
+                    LifePlayGroups.applyFormatSelection(world, payload.pos(), payload.key());
                 })
         );
 
@@ -817,8 +823,9 @@ public final class LifePointPackets {
                     var world = (ServerLevel) ctx.player().level();
                     var be = world.getBlockEntity(payload.pos());
                     if (be instanceof LifePointBlockEntity lp) {
-                        lp.addCommanderDamage(payload.source(), payload.delta()); // ✅ ONLY cmd damage
-                        syncToTracking(world, payload.pos(), lp);                // ✅ push update
+                        if (!lp.getLifeFormat().hasCommanderDamage()) return;
+                        lp.addCommanderDamageAndAdjustLife(payload.source(), payload.delta());
+                        return;
                     }
                 })
         );
@@ -912,6 +919,7 @@ public final class LifePointPackets {
         n.putInt("Life", lp.getLife());
         n.putInt("LifeColor", lp.getLifeColor());
         n.putBoolean("TurnActive", lp.isTurnActive());
+        n.putBoolean("GameStarted", lp.isGameStarted());
 
         // ✅ appearance
         n.putInt("PlayerColor", lp.getPlayerColor());
@@ -932,14 +940,16 @@ public final class LifePointPackets {
         // Commander damage: legacy compound (optional) + new list for display
         var cdList = new net.minecraft.nbt.ListTag();
 
-        for (var e : lp.getCommanderDamage().long2IntEntrySet()) {
-            int dmg = e.getIntValue();
-            if (dmg <= 0) continue;
+        if (lp.getLifeFormat().hasCommanderDamage()) {
+            for (var e : lp.getCommanderDamage().long2IntEntrySet()) {
+                int dmg = e.getIntValue();
+                if (dmg <= 0) continue;
 
-            var row = new CompoundTag();
-            row.putLong("AttackerPos", e.getLongKey());
-            row.putInt("Damage", dmg);
-            cdList.add(row);
+                var row = new CompoundTag();
+                row.putLong("AttackerPos", e.getLongKey());
+                row.putInt("Damage", dmg);
+                cdList.add(row);
+            }
         }
 
         n.put("CommanderDamageList", cdList);
@@ -947,17 +957,19 @@ public final class LifePointPackets {
         StringBuilder sb = new StringBuilder();
         boolean first = true;
 
-        for (var e : lp.getCommanderDamage().long2IntEntrySet()) {
-            int dmg = e.getIntValue();
-            if (dmg <= 0) continue;
+        if (lp.getLifeFormat().hasCommanderDamage()) {
+            for (var e : lp.getCommanderDamage().long2IntEntrySet()) {
+                int dmg = e.getIntValue();
+                if (dmg <= 0) continue;
 
-            long k = e.getLongKey();
+                long k = e.getLongKey();
 
-            if (!first) sb.append(',');
-            first = false;
-            sb.append(k);
+                if (!first) sb.append(',');
+                first = false;
+                sb.append(k);
 
-            n.putInt("CmdL_" + k, dmg);
+                n.putInt("CmdL_" + k, dmg);
+            }
         }
 
         n.putString("CmdLKeys", sb.toString());

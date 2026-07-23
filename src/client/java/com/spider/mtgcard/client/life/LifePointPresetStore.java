@@ -15,7 +15,7 @@ public final class LifePointPresetStore {
 
     // bumping schema is optional; your loader already accepts both formats.
     // We keep it here for future use.
-    public static final int CURRENT_SCHEMA = 2;
+    public static final int CURRENT_SCHEMA = 3;
 
     public static final class Preset {
         public String name = "Preset";
@@ -23,6 +23,7 @@ public final class LifePointPresetStore {
         public int lifeColor   = 0xFFFFFF;
         public String iconKey  = "none";
         public String formatKey = "commander";
+        public int iconSwapColor = 0xFF0000;
 
         // NEW: commander lethal threshold (defaults to 21)
         public int cmdLethal = 21;
@@ -36,24 +37,24 @@ public final class LifePointPresetStore {
         // Back-compat constructor (old call sites)
         public Preset(String name, int playerColor, int lifeColor, String iconKey, String formatKey,
                       Map<String, Integer> customCounters) {
-            this.name = name;
-            this.playerColor = playerColor;
-            this.lifeColor = lifeColor;
-            this.iconKey = iconKey;
-            this.formatKey = formatKey;
-            this.cmdLethal = 21;
-            this.customCounters = customCounters;
+            this(name, playerColor, lifeColor, iconKey, formatKey, 21, 0xFF0000, customCounters);
         }
 
         // New constructor (includes cmdLethal)
         public Preset(String name, int playerColor, int lifeColor, String iconKey, String formatKey,
                       int cmdLethal, Map<String, Integer> customCounters) {
+            this(name, playerColor, lifeColor, iconKey, formatKey, cmdLethal, 0xFF0000, customCounters);
+        }
+
+        public Preset(String name, int playerColor, int lifeColor, String iconKey, String formatKey,
+                      int cmdLethal, int iconSwapColor, Map<String, Integer> customCounters) {
             this.name = name;
             this.playerColor = playerColor;
             this.lifeColor = lifeColor;
             this.iconKey = iconKey;
             this.formatKey = formatKey;
             this.cmdLethal = cmdLethal;
+            this.iconSwapColor = iconSwapColor;
             this.customCounters = customCounters;
         }
     }
@@ -189,6 +190,7 @@ public final class LifePointPresetStore {
 
         v.playerColor &= 0xFFFFFF;
         v.lifeColor &= 0xFFFFFF;
+        v.iconSwapColor &= 0xFFFFFF;
 
         // Cmd lethal clamp + default
         if (v.cmdLethal <= 0) v.cmdLethal = 21;

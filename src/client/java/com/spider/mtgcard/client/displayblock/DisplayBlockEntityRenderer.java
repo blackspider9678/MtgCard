@@ -194,6 +194,10 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
             s.hasLife = true;
             s.life = st.getInt("Life").orElse(0);
             s.name = st.getString("DisplayName").orElse("");
+            String displayName = LifePointClientState.displayNameForLife(s.linkedLifePos);
+            if (LifePointClientState.getFormat(s.linkedLifePos).hasSharedTeams() && !displayName.isBlank()) {
+                s.name = displayName;
+            }
             s.lifeColor = st.getInt("LifeColor").orElse(0xFFFFFF);
             s.playerColor = st.getInt("PlayerColor").orElse(0xE8E8E8);
             s.iconColor = st.getInt("IconSwapColor").orElse(s.lifeColor); // fallback to lifeColor if missing
@@ -207,7 +211,9 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
             s.isDead = isDeadFromGroup(s.linkedLifePos);
 
             // ---- Commander damage threshold ----
-            s.showCommander = (area >= MIN_BLOCKS_FOR_COMMANDER) && !s.isDead;
+            s.showCommander = LifePointClientState.getFormat(s.linkedLifePos).hasCommanderDamage()
+                    && (area >= MIN_BLOCKS_FOR_COMMANDER)
+                    && !s.isDead;
 
 
             if (s.showCommander) {
