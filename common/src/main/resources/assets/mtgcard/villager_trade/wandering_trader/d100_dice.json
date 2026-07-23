@@ -1,0 +1,13 @@
+{
+  "wants": {
+    "id": "minecraft:emerald",
+    "count": 16
+  },
+  "gives": {
+    "id": "mtgcard:d100_dice",
+    "count": 1
+  },
+  "max_uses": 6,
+  "villager_experience": 0,
+  "price_multiplier": 0.0
+}

@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "ITI",
+    "TGT",
+    "IRI"
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "T": "#c:glass_blocks",
+    "G": "minecraft:black_concrete",
+    "R": "minecraft:redstone"
+  },
+  "result": {
+    "id": "mtgcard:display_block",
+    "count": 1
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "PGP",
+    "GCG",
+    "PGP"
+  ],
+  "key": {
+    "P": "minecraft:bamboo_planks",
+    "G": "minecraft:gold_ingot",
+    "C": "#c:chests"
+  },
+  "result": {
+    "id": "mtgcard:bamboo_deckbox",
+    "count": 1
+  }
+}

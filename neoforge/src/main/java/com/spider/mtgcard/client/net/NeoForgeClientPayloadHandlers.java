@@ -254,17 +254,13 @@ public final class NeoForgeClientPayloadHandlers {
 
     private static void customArtReady(CustomCardPackets.CustomArtReady payload) {
         String key = payload.artKey();
+        String setCode = payload.setCode();
         invokeStaticIfPresent(
                 "com.spider.mtgcard.client.java.CardArtManager",
-                "invalidateArtKey",
-                new Class<?>[] { String.class },
-                key
-        );
-        invokeStaticIfPresent(
-                "com.spider.mtgcard.client.java.CardArtManager",
-                "tryLoadNow",
-                new Class<?>[] { String.class },
-                key
+                "refreshWorldArt",
+                new Class<?>[] { String.class, String.class },
+                key,
+                setCode
         );
     }
 

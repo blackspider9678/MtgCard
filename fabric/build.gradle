@@ -18,6 +18,12 @@ loom {
     }
 }
 
+tasks.configureEach {
+    if (name == 'net.fabricmc.devlaunchinjector.Main.main()') {
+        dependsOn('downloadAssets')
+    }
+}
+
 sourceSets {
     main {
         java.srcDirs = ['src/main/java', '../common/src/main/java']

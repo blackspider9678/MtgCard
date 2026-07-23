@@ -9,6 +9,9 @@ displayName = "MtgCard"
 authors = "Spider"
 description = '''satisfactory oreposits in the world of minecraft'''
 
+[[mixins]]
+config = "mtgcard.mousetweaks.mixins.json"
+
 [[dependencies.mtgcard]]
 modId = "neoforge"
 type = "required"

@@ -1,0 +1,20 @@
+{
+  "parent": "mtgcard:open_50_booster_packs",
+  "criteria": {
+    "opened": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancement.mtgcard.open_100_booster_packs.description"
+    },
+    "icon": {
+      "count": 1,
+      "id": "mtgcard:mtg_pack"
+    },
+    "title": {
+      "translate": "advancement.mtgcard.open_100_booster_packs.title"
+    }
+  }
+}

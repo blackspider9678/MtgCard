@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " S ",
+    "ICI",
+    "SNS"
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "C": "minecraft:comparator",
+    "S": "minecraft:cut_red_sandstone",
+    "N": "minecraft:netherrack"
+  },
+  "result": {
+    "id": "mtgcard:deck_control_cut_red_sandstone",
+    "count": 1
+  }
+}

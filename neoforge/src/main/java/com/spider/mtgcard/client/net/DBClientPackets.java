@@ -1,6 +1,7 @@
 package com.spider.mtgcard.client.net;
 
 import com.spider.mtgcard.net.payload.SearchPayload;
+import com.spider.mtgcard.net.payload.CardDbGridActionPayload;
 import net.neoforged.neoforge.client.network.ClientPacketDistributor;
 
 public final class DBClientPackets {
@@ -13,5 +14,10 @@ public final class DBClientPackets {
                 dir == null ? "asc" : dir,
                 rememberSort
         ));
+    }
+
+    public static boolean sendGridAction(int containerId, int slot, int action) {
+        ClientPacketDistributor.sendToServer(new CardDbGridActionPayload(containerId, slot, action));
+        return true;
     }
 }

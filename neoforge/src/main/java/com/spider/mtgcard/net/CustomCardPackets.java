@@ -187,6 +187,7 @@ public final class CustomCardPackets {
     public record CustomArtBegin(
             String uploadId,
             String artKey,
+            String setCode,
             String ext,
             int totalBytes,
             int chunkSize,
@@ -198,12 +199,14 @@ public final class CustomCardPackets {
                         (payload, buf) -> {
                             buf.writeUtf(payload.uploadId());
                             buf.writeUtf(payload.artKey());
+                            buf.writeUtf(payload.setCode());
                             buf.writeUtf(payload.ext());
                             buf.writeVarInt(payload.totalBytes());
                             buf.writeVarInt(payload.chunkSize());
                             buf.writeVarInt(payload.totalChunks());
                         },
                         buf -> new CustomArtBegin(
+                                buf.readUtf(),
                                 buf.readUtf(),
                                 buf.readUtf(),
                                 buf.readUtf(),
@@ -248,10 +251,16 @@ public final class CustomCardPackets {
         }
     }
 
-    public record CustomArtReady(String artKey) implements CustomPacketPayload {
+    public record CustomArtReady(String artKey, String setCode) implements CustomPacketPayload {
         public static final Type<CustomArtReady> ID = new Type<>(ART_READY_ID);
         public static final StreamCodec<RegistryFriendlyByteBuf, CustomArtReady> CODEC =
-                StreamCodec.composite(ByteBufCodecs.STRING_UTF8, CustomArtReady::artKey, CustomArtReady::new);
+                StreamCodec.ofMember(
+                        (payload, buf) -> {
+                            buf.writeUtf(payload.artKey());
+                            buf.writeUtf(payload.setCode());
+                        },
+                        buf -> new CustomArtReady(buf.readUtf(), buf.readUtf())
+                );
 
         @Override
         public Type<? extends CustomPacketPayload> type() {

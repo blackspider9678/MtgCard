@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "IGI",
+    "SDS",
+    "IRI"
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "G": "minecraft:glass_pane",
+    "S": "minecraft:smooth_stone",
+    "D": "minecraft:dispenser",
+    "R": "minecraft:redstone"
+  },
+  "result": {
+    "id": "mtgcard:card_store",
+    "count": 1
+  }
+}

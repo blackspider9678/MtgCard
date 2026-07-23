@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "ICI",
+    "TBT",
+    "IRI"
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "C": "minecraft:comparator",
+    "T": "#c:glass_blocks",
+    "B": "minecraft:redstone_block",
+    "R": "minecraft:redstone"
+  },
+  "result": {
+    "id": "mtgcard:life_point",
+    "count": 1
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "format_version": "1.21.11",
+  "parent": "block/block",
+  "textures": {
+    "window": "mtgcard:block/deck_control_window_lit"
+  },
+  "elements": [
+    {
+      "name": "window_north_inset",
+      "from": [6.4, 12, 5.45],
+      "to": [9.6, 13.7, 5.6],
+      "faces": {
+        "north": {"uv": [0, 0, 3.25, 1.75], "texture": "#window"},
+        "east": {"uv": [7, 8, 7.25, 9.75], "texture": "#window"},
+        "south": {"uv": [0, 2, 3.25, 3.75], "texture": "#window"},
+        "west": {"uv": [8, 7, 8.25, 8.75], "texture": "#window"},
+        "up": {"uv": [3.25, 8.25, 0, 8], "texture": "#window"},
+        "down": {"uv": [11.25, 0, 8, 0.25], "texture": "#window"}
+      }
+    },
+    {
+      "name": "window_south_inset",
+      "from": [6.4, 12, 10.4],
+      "to": [9.6, 13.7, 10.55],
+      "faces": {
+        "north": {"uv": [0, 4, 3.25, 5.75], "texture": "#window"},
+        "east": {"uv": [0, 9, 0.25, 10.75], "texture": "#window"},
+        "south": {"uv": [4, 0, 7.25, 1.75], "texture": "#window"},
+        "west": {"uv": [1, 9, 1.25, 10.75], "texture": "#window"},
+        "up": {"uv": [11.25, 1.25, 8, 1], "texture": "#window"},
+        "down": {"uv": [11.25, 2, 8, 2.25], "texture": "#window"}
+      }
+    },
+    {
+      "name": "window_west_inset",
+      "from": [5.45, 12, 6.4],
+      "to": [5.6, 13.7, 9.6],
+      "faces": {
+        "north": {"uv": [2, 9, 2.25, 10.75], "texture": "#window"},
+        "east": {"uv": [4, 2, 7.25, 3.75], "texture": "#window"},
+        "south": {"uv": [3, 9, 3.25, 10.75], "texture": "#window"},
+        "west": {"uv": [4, 4, 7.25, 5.75], "texture": "#window"},
+        "up": {"uv": [8.25, 6.25, 8, 3], "texture": "#window"},
+        "down": {"uv": [4.25, 8, 4, 11.25], "texture": "#window"}
+      }
+    },
+    {
+      "name": "window_east_inset",
+      "from": [10.4, 12, 6.4],
+      "to": [10.55, 13.7, 9.6],
+      "faces": {
+        "north": {"uv": [9, 3, 9.25, 4.75], "texture": "#window"},
+        "east": {"uv": [0, 6, 3.25, 7.75], "texture": "#window"},
+        "south": {"uv": [9, 5, 9.25, 6.75], "texture": "#window"},
+        "west": {"uv": [4, 6, 7.25, 7.75], "texture": "#window"},
+        "up": {"uv": [5.25, 11.25, 5, 8], "texture": "#window"},
+        "down": {"uv": [6.25, 8, 6, 11.25], "texture": "#window"}
+      }
+    }
+  ]
+}

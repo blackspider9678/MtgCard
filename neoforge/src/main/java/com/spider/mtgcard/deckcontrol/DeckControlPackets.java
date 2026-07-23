@@ -1,5 +1,7 @@
 package com.spider.mtgcard.deckcontrol;
 
+import com.spider.mtgcard.api.DeckControlActionRegistry;
+import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.registry.ModRegistry;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -60,6 +62,48 @@ public final class DeckControlPackets {
                             buf.writeVarInt(p.b());
                         },
                         buf -> new ActionC2S(buf.readBlockPos(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt())
+                );
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return ID;
+        }
+    }
+
+    public record SetGameC2S(BlockPos pos, String gameId) implements CustomPacketPayload {
+        public static final Type<SetGameC2S> ID = new Type<>(ModRegistry.id("deck_set_game"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, SetGameC2S> CODEC =
+                StreamCodec.of(
+                        (buf, p) -> {
+                            buf.writeBlockPos(p.pos());
+                            buf.writeUtf(p.gameId(), 128);
+                        },
+                        buf -> new SetGameC2S(buf.readBlockPos(), buf.readUtf(128))
+                );
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return ID;
+        }
+    }
+
+    public record RunActionC2S(BlockPos pos, String actionId, int value, int playerInventorySlot)
+            implements CustomPacketPayload {
+        public static final Type<RunActionC2S> ID = new Type<>(ModRegistry.id("deck_run_action"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, RunActionC2S> CODEC =
+                StreamCodec.of(
+                        (buf, p) -> {
+                            buf.writeBlockPos(p.pos());
+                            buf.writeUtf(p.actionId(), 128);
+                            buf.writeVarInt(p.value());
+                            buf.writeVarInt(p.playerInventorySlot());
+                        },
+                        buf -> new RunActionC2S(
+                                buf.readBlockPos(),
+                                buf.readUtf(128),
+                                buf.readVarInt(),
+                                buf.readVarInt()
+                        )
                 );
 
         @Override
@@ -284,6 +328,44 @@ public final class DeckControlPackets {
         });
     }
 
+    public static void handleSetGame(SetGameC2S payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer player)) {
+                return;
+            }
+            ServerLevel world = player.level();
+            if (!(world.getBlockEntity(payload.pos()) instanceof DeckControlBlockEntity dc)) {
+                return;
+            }
+
+            String game = TcgGameRegistry.normalizeGameId(payload.gameId());
+            if (game.isBlank() || !TcgGameRegistry.containsGame(game)) {
+                return;
+            }
+            dc.setSelectedGame(game);
+        });
+    }
+
+    public static void handleRunAction(RunActionC2S payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer player)) {
+                return;
+            }
+            ServerLevel world = player.level();
+            if (!(world.getBlockEntity(payload.pos()) instanceof DeckControlBlockEntity dc)) {
+                return;
+            }
+
+            DeckControlActionRegistry.run(
+                    payload.actionId(),
+                    player,
+                    dc,
+                    payload.value(),
+                    payload.playerInventorySlot()
+            );
+        });
+    }
+
     public static void handleCascadeStart(CascadeStartC2S payload, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (!(context.player() instanceof ServerPlayer player)) {
@@ -373,6 +455,8 @@ public final class DeckControlPackets {
 
     public static void registerTypes() {
         PayloadTypeRegistry.serverboundPlay().register(ActionC2S.ID, ActionC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetGameC2S.ID, SetGameC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(RunActionC2S.ID, RunActionC2S.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(CascadeStartC2S.ID, CascadeStartC2S.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(CascadeResolveC2S.ID, CascadeResolveC2S.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(ResolveOrderedC2S.ID, ResolveOrderedC2S.CODEC);
@@ -382,6 +466,10 @@ public final class DeckControlPackets {
     }
 
     public static void registerReceivers() {
+        ServerPlayNetworking.registerGlobalReceiver(SetGameC2S.ID, (payload, context) ->
+                handleSetGame(payload, context.neoForgeContext()));
+        ServerPlayNetworking.registerGlobalReceiver(RunActionC2S.ID, (payload, context) ->
+                handleRunAction(payload, context.neoForgeContext()));
         ServerPlayNetworking.registerGlobalReceiver(ActionC2S.ID, (payload, context) ->
                 handleAction(payload, context.neoForgeContext()));
         ServerPlayNetworking.registerGlobalReceiver(CascadeStartC2S.ID, (payload, context) ->
