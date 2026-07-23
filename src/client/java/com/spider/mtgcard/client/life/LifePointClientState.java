@@ -237,38 +237,50 @@ public final class LifePointClientState {
     }
 
     public static @Nullable BlockPos twoHeadedTeammate(@Nullable BlockPos pos) {
-        if (pos == null || !getFormat(pos).hasSharedTeams()) return null;
+        List<BlockPos> teammates = sharedTeamMembers(pos);
+        return teammates.isEmpty() ? null : teammates.getFirst();
+    }
+
+    public static List<BlockPos> sharedTeamMembers(@Nullable BlockPos pos) {
+        LifeFormat format = getFormat(pos);
+        int teamSize = format.turnGroupSize();
+        if (pos == null || teamSize <= 1) return List.of();
 
         UUID gid = getGroupIdFor(pos);
         GroupView g = getGroup(gid);
-        if (g == null || g.order == null || g.order.isEmpty()) return null;
+        if (g == null || g.order == null || g.order.isEmpty()) return List.of();
 
         int idx = g.order.indexOf(pos);
-        if (idx < 0) return null;
+        if (idx < 0) return List.of();
 
-        int teammateIdx = (idx % 2 == 0) ? idx + 1 : idx - 1;
-        if (teammateIdx < 0 || teammateIdx >= g.order.size()) return null;
+        int teamStart = idx - (idx % teamSize);
+        var out = new ArrayList<BlockPos>(teamSize - 1);
+        for (int i = teamStart; i < teamStart + teamSize && i < g.order.size(); i++) {
+            BlockPos teammate = g.order.get(i);
+            if (!teammate.equals(pos)) out.add(teammate);
+        }
 
-        return g.order.get(teammateIdx);
+        return out.isEmpty() ? List.of() : List.copyOf(out);
     }
 
     public static String displayNameForLife(@Nullable BlockPos pos) {
         if (pos == null) return "";
 
-        if (getFormat(pos).hasSharedTeams()) {
+        LifeFormat format = getFormat(pos);
+        int teamSize = format.turnGroupSize();
+        if (teamSize > 1) {
             UUID gid = getGroupIdFor(pos);
             GroupView g = getGroup(gid);
             if (g != null && g.order != null && !g.order.isEmpty()) {
                 int idx = g.order.indexOf(pos);
                 if (idx >= 0) {
-                    int teamStart = idx - (idx % 2);
-                    String first = memberDisplayName(gid, g.order.get(teamStart));
-                    int secondIdx = teamStart + 1;
-                    if (secondIdx < g.order.size()) {
-                        String second = memberDisplayName(gid, g.order.get(secondIdx));
-                        if (!second.isBlank()) return first + " // " + second;
+                    int teamStart = idx - (idx % teamSize);
+                    var names = new ArrayList<String>(teamSize);
+                    for (int i = teamStart; i < teamStart + teamSize && i < g.order.size(); i++) {
+                        String name = memberDisplayName(gid, g.order.get(i));
+                        if (!name.isBlank()) names.add(name);
                     }
-                    return first;
+                    if (!names.isEmpty()) return String.join(" // ", names);
                 }
             }
         }

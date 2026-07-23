@@ -426,7 +426,7 @@ public final class LifePlayGroups {
                 if (!activeTurnHasAlive(world, g)) {
                     advanceToNextAlive(world, g);
                 } else if (hasTeamTurns(world, g)) {
-                    g.activeIndex = teamStartIndex(g.activeIndex);
+                    g.activeIndex = teamStartIndex(g.activeIndex, turnGroupSize(world, g));
                 }
             } else {
                 g.activeIndex = firstAliveTurnIndex(world, g);
@@ -594,7 +594,8 @@ public final class LifePlayGroups {
 
         var be = world.getBlockEntity(member);
         if (!(be instanceof LifePointBlockEntity lp)) return List.of(member);
-        if (!lp.getLifeFormat().hasSharedTeams()) return List.of(member);
+        int teamSize = lp.getLifeFormat().turnGroupSize();
+        if (teamSize <= 1) return List.of(member);
 
         State st = get(world);
         Group g = findGroup(st, member);
@@ -603,9 +604,9 @@ public final class LifePlayGroups {
         int idx = g.order.indexOf(member);
         if (idx < 0) return List.of(member);
 
-        int teamStart = idx - (idx % 2);
-        var out = new ArrayList<BlockPos>(2);
-        for (int i = teamStart; i <= teamStart + 1 && i < g.order.size(); i++) {
+        int teamStart = teamStartIndex(idx, teamSize);
+        var out = new ArrayList<BlockPos>(teamSize);
+        for (int i = teamStart; i < teamStart + teamSize && i < g.order.size(); i++) {
             BlockPos target = g.order.get(i);
             if (!out.contains(target)) out.add(target);
         }
@@ -647,10 +648,11 @@ public final class LifePlayGroups {
     }
 
     private static int firstAliveTurnIndex(ServerLevel world, Group g) {
-        if (!hasTeamTurns(world, g)) return firstAliveIndex(g);
+        int teamSize = turnGroupSize(world, g);
+        if (teamSize <= 1) return firstAliveIndex(g);
 
-        for (int i = 0; i < g.order.size(); i += 2) {
-            if (teamHasAlive(g, i)) return i;
+        for (int i = 0; i < g.order.size(); i += teamSize) {
+            if (teamHasAlive(g, i, teamSize)) return i;
         }
 
         return -1;
@@ -660,10 +662,11 @@ public final class LifePlayGroups {
         if (g.order.isEmpty()) return -1;
         if (g.dead.size() >= g.order.size()) return -1;
 
-        if (hasTeamTurns(world, g)) {
+        int teamSize = turnGroupSize(world, g);
+        if (teamSize > 1) {
             var aliveTeams = new ArrayList<Integer>();
-            for (int i = 0; i < g.order.size(); i += 2) {
-                if (teamHasAlive(g, i)) aliveTeams.add(i);
+            for (int i = 0; i < g.order.size(); i += teamSize) {
+                if (teamHasAlive(g, i, teamSize)) aliveTeams.add(i);
             }
 
             if (aliveTeams.isEmpty()) return -1;
@@ -685,15 +688,16 @@ public final class LifePlayGroups {
             return;
         }
 
-        if (hasTeamTurns(world, g)) {
-            int teamCount = (g.order.size() + 1) / 2;
-            int activeStart = teamStartIndex(g.activeIndex);
-            int activeTeam = activeStart < 0 ? -1 : activeStart / 2;
+        int teamSize = turnGroupSize(world, g);
+        if (teamSize > 1) {
+            int teamCount = (g.order.size() + teamSize - 1) / teamSize;
+            int activeStart = teamStartIndex(g.activeIndex, teamSize);
+            int activeTeam = activeStart < 0 ? -1 : activeStart / teamSize;
 
             for (int step = 1; step <= teamCount; step++) {
                 int team = Math.floorMod(activeTeam + step, teamCount);
-                int idx = team * 2;
-                if (teamHasAlive(g, idx)) {
+                int idx = team * teamSize;
+                if (teamHasAlive(g, idx, teamSize)) {
                     g.activeIndex = idx;
                     return;
                 }
@@ -717,18 +721,24 @@ public final class LifePlayGroups {
     }
 
     private static boolean hasTeamTurns(ServerLevel world, Group g) {
-        return formatForGroup(world, g).hasSharedTeams();
+        return turnGroupSize(world, g) > 1;
     }
 
-    private static int teamStartIndex(int index) {
+    private static int turnGroupSize(ServerLevel world, Group g) {
+        return Math.max(1, formatForGroup(world, g).turnGroupSize());
+    }
+
+    private static int teamStartIndex(int index, int teamSize) {
         if (index < 0) return -1;
-        return index - (index % 2);
+        int size = Math.max(1, teamSize);
+        return index - (index % size);
     }
 
-    private static boolean teamHasAlive(Group g, int teamStart) {
+    private static boolean teamHasAlive(Group g, int teamStart, int teamSize) {
         if (g == null || teamStart < 0 || teamStart >= g.order.size()) return false;
 
-        for (int i = teamStart; i <= teamStart + 1 && i < g.order.size(); i++) {
+        int size = Math.max(1, teamSize);
+        for (int i = teamStart; i < teamStart + size && i < g.order.size(); i++) {
             if (!g.dead.contains(g.order.get(i))) return true;
         }
 
@@ -738,8 +748,9 @@ public final class LifePlayGroups {
     private static boolean activeTurnHasAlive(ServerLevel world, Group g) {
         if (g == null || g.activeIndex < 0 || g.activeIndex >= g.order.size()) return false;
 
-        if (hasTeamTurns(world, g)) {
-            return teamHasAlive(g, teamStartIndex(g.activeIndex));
+        int teamSize = turnGroupSize(world, g);
+        if (teamSize > 1) {
+            return teamHasAlive(g, teamStartIndex(g.activeIndex, teamSize), teamSize);
         }
 
         return !g.dead.contains(g.order.get(g.activeIndex));
@@ -777,7 +788,7 @@ public final class LifePlayGroups {
                     if (!activeTurnHasAlive(world, g)) {
                         advanceToNextAlive(world, g);
                     } else if (hasTeamTurns(world, g)) {
-                        g.activeIndex = teamStartIndex(g.activeIndex);
+                        g.activeIndex = teamStartIndex(g.activeIndex, turnGroupSize(world, g));
                     }
                 }
             }
@@ -791,7 +802,8 @@ public final class LifePlayGroups {
 
     private static void applyGroupToMembers(ServerLevel world, Group g) {
         LifeFormat format = formatForGroup(world, g);
-        int activeTeamStart = format.hasSharedTeams() ? teamStartIndex(g.activeIndex) : -1;
+        int teamSize = Math.max(1, format.turnGroupSize());
+        int activeTeamStart = teamSize > 1 ? teamStartIndex(g.activeIndex, teamSize) : -1;
 
         for (int i = 0; i < g.order.size(); i++) {
             BlockPos p = g.order.get(i);
@@ -799,8 +811,8 @@ public final class LifePlayGroups {
             if (be instanceof LifePointBlockEntity lp) {
                 lp.setGroup(g.id, i);
                 lp.setGameStarted(g.started);
-                boolean active = format.hasSharedTeams()
-                        ? activeTeamStart >= 0 && i >= activeTeamStart && i <= activeTeamStart + 1
+                boolean active = teamSize > 1
+                        ? activeTeamStart >= 0 && i >= activeTeamStart && i < activeTeamStart + teamSize
                         : i == g.activeIndex;
                 lp.setTurnActive(active);
             }
@@ -875,7 +887,7 @@ public final class LifePlayGroups {
                 g.rolling = false;
                 // ensure activeIndex is alive (should be)
                 if (!activeTurnHasAlive(world, g)) g.activeIndex = firstAliveTurnIndex(world, g);
-                else if (hasTeamTurns(world, g)) g.activeIndex = teamStartIndex(g.activeIndex);
+                else if (hasTeamTurns(world, g)) g.activeIndex = teamStartIndex(g.activeIndex, turnGroupSize(world, g));
             }
         }
 

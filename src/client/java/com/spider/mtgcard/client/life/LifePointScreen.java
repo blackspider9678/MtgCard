@@ -3,6 +3,7 @@ package com.spider.mtgcard.client.life;
 import com.spider.mtgcard.client.compat.LegacyScreen;
 import com.spider.mtgcard.life.LifeFormat;
 import com.spider.mtgcard.life.LifePointPackets;
+import com.spider.mtgcard.api.LifeFormatRegistry;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderPipelines;
@@ -410,8 +411,6 @@ public final class LifePointScreen extends LegacyScreen {
     public String getYourPresetId() {
         return yourPresetId;
     }
-
-    private static final List<String> FORMAT_KEYS = List.of("commander", "standard", "brawl", "twoheaded");
 
     private static final class Palette {
         final String label; final int rgb;
@@ -2282,7 +2281,7 @@ public final class LifePointScreen extends LegacyScreen {
         ctx.enableScissor(vp.x, vp.y, vp.x + vp.w, vp.y + vp.h);
 
         UUID gid = LifePointClientState.getGroupIdFor(pos);
-        BlockPos teammate = LifePointClientState.twoHeadedTeammate(pos);
+        List<BlockPos> teammates = LifePointClientState.sharedTeamMembers(pos);
 
         for (int i = 0; i < otherPlayersOrdered.size(); i++) {
             BlockPos other = otherPlayersOrdered.get(i);
@@ -2295,7 +2294,7 @@ public final class LifePointScreen extends LegacyScreen {
             boolean sel = (selectedCmdTarget != null && selectedCmdTarget.equals(other));
             boolean hov = mouseX >= r.x && mouseX < r.x + r.w && mouseY >= r.y && mouseY < r.y + r.h;
             drawFlatRow(ctx, r, sel, hov);
-            boolean teammateRow = teammate != null && teammate.equals(other);
+            boolean teammateRow = teammates.contains(other);
             if (teammateRow) {
                 ctx.fill(r.x, r.y, r.x + r.w, r.y + 1, 0xFFFFD54F);
                 ctx.fill(r.x, r.y + r.h - 1, r.x + r.w, r.y + r.h, 0xFFFFD54F);
@@ -2694,8 +2693,10 @@ public final class LifePointScreen extends LegacyScreen {
         int cellW = (innerW - cellGap) / 2;
 
         boolean formatEditable = canEditFormat();
-        for (int i = 0; i < FORMAT_KEYS.size(); i++) {
-            String fk = FORMAT_KEYS.get(i);
+        List<LifeFormat> formats = LifeFormatRegistry.entries();
+        for (int i = 0; i < formats.size(); i++) {
+            LifeFormat format = formats.get(i);
+            String fk = format.key();
             int cx = innerX + (i % gridCols) * (cellW + cellGap);
             int cy = y + (i / gridCols) * (cellH + cellGap);
 
@@ -2706,11 +2707,11 @@ public final class LifePointScreen extends LegacyScreen {
             boolean hov = formatEditable && mouseX >= r.x && mouseX < r.x + r.w && mouseY >= r.y && mouseY < r.y + r.h;
 
             drawFormatRow(ctx, r, sel, hov, formatEditable);
-            String label = fitText(LifeFormat.displayName(fk), r.w - 10);
+            String label = fitText(format.displayName(), r.w - 10);
             int textColor = formatEditable ? 0xFFFFFFFF : 0xFF777777;
             ctx.drawString(font, Component.literal(label), r.x + 6, r.y + 5, textColor);
         }
-        y += (int) Math.ceil(FORMAT_KEYS.size() / 2.0) * (cellH + cellGap);
+        y += (int) Math.ceil(formats.size() / 2.0) * (cellH + cellGap);
         y += 10;
 
         // ---- Icon Key ----

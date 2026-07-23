@@ -314,8 +314,8 @@ public final class LifePointPackets {
         public static final Type<SetFormatKeyC2S> ID = new Type<>(ModRegistry.id("life_set_format_key"));
         public static final StreamCodec<RegistryFriendlyByteBuf, SetFormatKeyC2S> CODEC =
                 StreamCodec.of(
-                        (buf, p) -> { buf.writeBlockPos(p.pos()); buf.writeUtf(p.key(), 32); },
-                        (buf) -> new SetFormatKeyC2S(buf.readBlockPos(), buf.readUtf(32))
+                        (buf, p) -> { buf.writeBlockPos(p.pos()); buf.writeUtf(p.key(), 128); },
+                        (buf) -> new SetFormatKeyC2S(buf.readBlockPos(), buf.readUtf(128))
                 );
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
