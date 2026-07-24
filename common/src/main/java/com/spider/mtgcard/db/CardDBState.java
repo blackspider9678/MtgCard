@@ -1,5 +1,6 @@
 package com.spider.mtgcard.db;
 
+import com.spider.mtgcard.api.CardItemRegistry;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.Dynamic;
 import net.minecraft.util.datafix.DataFixTypes;
@@ -251,6 +252,7 @@ public final class CardDBState extends net.minecraft.world.level.saveddata.Saved
             CompoundTag e = new CompoundTag();
             e.putInt("i", i);
             e.putInt("c", st.getCount());
+            e.putString("item", CardItemRegistry.itemId(st));
 
             var cd = st.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
             if (cd != null) e.put("cd", cd.copyTag());
@@ -278,7 +280,7 @@ public final class CardDBState extends net.minecraft.world.level.saveddata.Saved
             int slot  = Math.max(0, Math.min(inv.getContainerSize() - 1, e.getInt("i").orElse(0)));
             int count = Math.max(1, e.getInt("c").orElse(1));
 
-            var st = new net.minecraft.world.item.ItemStack(com.spider.mtgcard.item.ModItems.CARD, count);
+            var st = new net.minecraft.world.item.ItemStack(CardItemRegistry.itemForSerializedEntry(e), count);
 
             var cd = e.getCompound("cd").orElse(null);
             if (cd != null) {
@@ -314,6 +316,7 @@ public final class CardDBState extends net.minecraft.world.level.saveddata.Saved
             var e = new CompoundTag();
             e.putInt("i", i);
             e.putInt("c", st.getCount());
+            e.putString("item", CardItemRegistry.itemId(st));
 
             var cd = st.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
             if (cd != null) e.put("cd", cd.copyTag());
@@ -357,7 +360,7 @@ public final class CardDBState extends net.minecraft.world.level.saveddata.Saved
 
             while (dst.size() <= i) dst.add(net.minecraft.world.item.ItemStack.EMPTY);
 
-            var st = new net.minecraft.world.item.ItemStack(com.spider.mtgcard.item.ModItems.CARD, count);
+            var st = new net.minecraft.world.item.ItemStack(CardItemRegistry.itemForSerializedEntry(e), count);
 
             var cd = e.getCompound("cd").orElse(null);
             if (cd != null) {

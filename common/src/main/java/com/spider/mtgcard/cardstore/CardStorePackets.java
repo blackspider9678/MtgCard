@@ -1,5 +1,7 @@
 package com.spider.mtgcard.cardstore;
 
+import com.spider.mtgcard.api.CardStoreProviderRegistry;
+import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.content.pack.cache.*;
 import com.spider.mtgcard.db.search.ScryfallSyntax;
 import com.spider.mtgcard.registry.ModRegistry;
@@ -31,12 +33,23 @@ import java.util.concurrent.CompletableFuture;
 
 public final class CardStorePackets {
     private static boolean serverRegistered = false;
-    private static final int COLLECTOR_NUMBER_MAX_LENGTH = 64;
+    private static final int CARD_ID_MAX_LENGTH = 64;
 
     // ---------- C2S: Confirm purchase ----------
     public record ConfirmPurchaseC2S(BlockPos pos, int lineCount, List<Line> lines) implements CustomPacketPayload {
         public static final Type<ConfirmPurchaseC2S> ID = new Type<>(ModRegistry.id("cardstore_confirm"));
-        public record Line(String setCode, String collectorNumber, int qty) {}
+        public record Line(String game, String setCode, String collectorNumber, int qty) {
+            public Line(String setCode, String collectorNumber, int qty) {
+                this(TcgGameRegistry.MTG, setCode, collectorNumber, qty);
+            }
+
+            public Line {
+                game = sanitizeGame(game);
+                setCode = setCode == null ? "" : setCode.trim();
+                collectorNumber = collectorNumber == null ? "" : collectorNumber.trim();
+                qty = Math.max(0, qty);
+            }
+        }
 
         public static final StreamCodec<RegistryFriendlyByteBuf, ConfirmPurchaseC2S> CODEC =
                 StreamCodec.of(
@@ -44,8 +57,9 @@ public final class CardStorePackets {
                             buf.writeBlockPos(p.pos());
                             buf.writeVarInt(p.lines().size());
                             for (Line l : p.lines()) {
+                                buf.writeUtf(l.game(), 128);
                                 buf.writeUtf(l.setCode());
-                                buf.writeUtf(l.collectorNumber(), COLLECTOR_NUMBER_MAX_LENGTH);
+                                buf.writeUtf(l.collectorNumber(), CARD_ID_MAX_LENGTH);
                                 buf.writeVarInt(l.qty());
                             }
                         },
@@ -54,10 +68,11 @@ public final class CardStorePackets {
                             int n = buf.readVarInt();
                             var lines = new ArrayList<Line>(n);
                             for (int i = 0; i < n; i++) {
+                                String game = buf.readUtf(128);
                                 String set = buf.readUtf();
-                                String cn  = buf.readUtf(COLLECTOR_NUMBER_MAX_LENGTH);
+                                String cn  = buf.readUtf(CARD_ID_MAX_LENGTH);
                                 int qty    = buf.readVarInt();
-                                lines.add(new Line(set, cn, qty));
+                                lines.add(new Line(game, set, cn, qty));
                             }
                             return new ConfirmPurchaseC2S(pos, n, lines);
                         }
@@ -93,15 +108,41 @@ public final class CardStorePackets {
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
+    // ---------- C2S: Remember selected game ----------
+    public record SetGameC2S(BlockPos pos, String game) implements CustomPacketPayload {
+        public static final Type<SetGameC2S> ID = new Type<>(ModRegistry.id("cardstore_set_game"));
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, SetGameC2S> CODEC =
+                StreamCodec.of(
+                        (buf, payload) -> {
+                            buf.writeBlockPos(payload.pos());
+                            buf.writeUtf(payload.game(), 128);
+                        },
+                        (buf) -> new SetGameC2S(buf.readBlockPos(), buf.readUtf(128))
+                );
+
+        public SetGameC2S {
+            game = sanitizeFilterGame(game);
+        }
+
+        @Override public Type<? extends CustomPacketPayload> type() { return ID; }
+    }
+
     // ---------- C2S: Search (single resolve) ----------
-    public record SearchC2S(BlockPos storePos, String query) implements CustomPacketPayload {
+    public record SearchC2S(BlockPos storePos, String game, String query) implements CustomPacketPayload {
         public static final Type<SearchC2S> ID = new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "card_store_search"));
 
         public static final StreamCodec<RegistryFriendlyByteBuf, SearchC2S> CODEC = StreamCodec.composite(
                 BlockPos.STREAM_CODEC, SearchC2S::storePos,
+                ByteBufCodecs.STRING_UTF8, SearchC2S::game,
                 ByteBufCodecs.STRING_UTF8, SearchC2S::query,
                 SearchC2S::new
         );
+
+        public SearchC2S {
+            game = sanitizeFilterGame(game);
+            query = query == null ? "" : query;
+        }
 
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
@@ -109,6 +150,7 @@ public final class CardStorePackets {
     // ---------- S2C: Search result (single) ----------
     public record SearchS2C(
             BlockPos storePos,
+            String game,
             boolean ok,
             String name,
             String setCode,
@@ -124,6 +166,7 @@ public final class CardStorePackets {
                 StreamCodec.of(
                         (buf, p) -> {
                             buf.writeBlockPos(p.storePos());
+                            buf.writeUtf(p.game(), 128);
                             buf.writeBoolean(p.ok());
                             buf.writeUtf(p.name());
                             buf.writeUtf(p.setCode());
@@ -137,6 +180,7 @@ public final class CardStorePackets {
                         },
                         (buf) -> {
                             BlockPos pos = buf.readBlockPos();
+                            String game = buf.readUtf(128);
                             boolean ok = buf.readBoolean();
                             String name = buf.readUtf();
                             String set = buf.readUtf();
@@ -146,21 +190,31 @@ public final class CardStorePackets {
                             boolean has = buf.readBoolean();
                             ItemStack st = has ? ItemStack.STREAM_CODEC.decode(buf) : ItemStack.EMPTY;
 
-                            return new SearchS2C(pos, ok, name, set, cn, msg, has, st);
+                            return new SearchS2C(pos, game, ok, name, set, cn, msg, has, st);
                         }
                 );
+
+        public SearchS2C {
+            game = sanitizeFilterGame(game);
+            name = name == null ? "" : name;
+            setCode = setCode == null ? "" : setCode.trim();
+            collectorNumber = collectorNumber == null ? "" : collectorNumber.trim();
+            message = message == null ? "" : message;
+            preview = preview == null ? ItemStack.EMPTY : preview.copyWithCount(1);
+        }
 
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // ---------- C2S: Search prints (paged + streamed) ----------
-    public record SearchPrintsC2S(BlockPos storePos, String query, int page, int pageSize, UUID requestId) implements CustomPacketPayload {
+    public record SearchPrintsC2S(BlockPos storePos, String game, String query, int page, int pageSize, UUID requestId) implements CustomPacketPayload {
         public static final Type<SearchPrintsC2S> ID = new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "card_store_search_prints"));
 
         public static final StreamCodec<RegistryFriendlyByteBuf, SearchPrintsC2S> CODEC =
                 StreamCodec.of(
                         (buf, p) -> {
                             buf.writeBlockPos(p.storePos());
+                            buf.writeUtf(p.game(), 128);
                             buf.writeUtf(p.query());
                             buf.writeVarInt(p.page());
                             buf.writeVarInt(p.pageSize());
@@ -168,13 +222,22 @@ public final class CardStorePackets {
                         },
                         (buf) -> {
                             BlockPos pos = buf.readBlockPos();
+                            String game = buf.readUtf(128);
                             String q = buf.readUtf();
                             int page = buf.readVarInt();
                             int pageSize = buf.readVarInt();
                             UUID req = buf.readUUID();
-                            return new SearchPrintsC2S(pos, q, page, pageSize, req);
+                            return new SearchPrintsC2S(pos, game, q, page, pageSize, req);
                         }
                 );
+
+        public SearchPrintsC2S {
+            game = sanitizeFilterGame(game);
+            query = query == null ? "" : query;
+            page = Math.max(1, page);
+            pageSize = Math.max(1, pageSize);
+            requestId = requestId == null ? new UUID(0L, 0L) : requestId;
+        }
 
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
@@ -182,6 +245,7 @@ public final class CardStorePackets {
     // ---------- S2C: prints start ----------
     public record SearchPrintsStartS2C(
             BlockPos storePos,
+            String game,
             UUID requestId,
             boolean ok,
             String message,
@@ -198,6 +262,7 @@ public final class CardStorePackets {
                 StreamCodec.of(
                         (buf, p) -> {
                             buf.writeBlockPos(p.storePos());
+                            buf.writeUtf(p.game(), 128);
                             buf.writeUUID(p.requestId());
                             buf.writeBoolean(p.ok());
                             buf.writeUtf(p.message() == null ? "" : p.message());
@@ -209,6 +274,7 @@ public final class CardStorePackets {
                         },
                         (buf) -> new SearchPrintsStartS2C(
                                 buf.readBlockPos(),
+                                buf.readUtf(128),
                                 buf.readUUID(),
                                 buf.readBoolean(),
                                 buf.readUtf(),
@@ -219,6 +285,14 @@ public final class CardStorePackets {
                                 buf.readUtf()
                         )
                 );
+
+        public SearchPrintsStartS2C {
+            game = sanitizeFilterGame(game);
+            requestId = requestId == null ? new UUID(0L, 0L) : requestId;
+            message = message == null ? "" : message;
+            priceItemId = priceItemId == null ? "" : priceItemId;
+            priceBasis = priceBasis == null ? "" : priceBasis;
+        }
 
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
@@ -249,6 +323,7 @@ public final class CardStorePackets {
     // ---------- S2C: prints done ----------
     public record SearchPrintsDoneS2C(
             BlockPos storePos,
+            String game,
             UUID requestId,
             boolean ok,
             String message,
@@ -263,6 +338,7 @@ public final class CardStorePackets {
                 StreamCodec.of(
                         (buf, p) -> {
                             buf.writeBlockPos(p.storePos());
+                            buf.writeUtf(p.game(), 128);
                             buf.writeUUID(p.requestId());
                             buf.writeBoolean(p.ok());
                             buf.writeUtf(p.message() == null ? "" : p.message());
@@ -272,6 +348,7 @@ public final class CardStorePackets {
                         },
                         (buf) -> new SearchPrintsDoneS2C(
                                 buf.readBlockPos(),
+                                buf.readUtf(128),
                                 buf.readUUID(),
                                 buf.readBoolean(),
                                 buf.readUtf(),
@@ -281,12 +358,19 @@ public final class CardStorePackets {
                         )
                 );
 
+        public SearchPrintsDoneS2C {
+            game = sanitizeFilterGame(game);
+            requestId = requestId == null ? new UUID(0L, 0L) : requestId;
+            message = message == null ? "" : message;
+        }
+
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // ---------- S2C: Search prints results (GRID) ----------
     public record SearchPrintsS2C(
             BlockPos storePos,
+            String game,
             boolean ok,
             String message,
             String canonicalName,
@@ -301,29 +385,40 @@ public final class CardStorePackets {
         public static final Type<SearchPrintsS2C> ID =
                 new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "card_store_search_prints_result"));
 
-        public record Entry(String setCode, String collectorNumber, ItemStack stack, long priceItems) {
+        public record Entry(String game, String setCode, String collectorNumber, ItemStack stack, long priceItems) {
             public static final StreamCodec<RegistryFriendlyByteBuf, Entry> CODEC =
                     StreamCodec.of(
                             (buf, e) -> {
+                                buf.writeUtf(e.game(), 128);
                                 buf.writeUtf(e.setCode());
-                                buf.writeUtf(e.collectorNumber(), COLLECTOR_NUMBER_MAX_LENGTH);
+                                buf.writeUtf(e.collectorNumber(), CARD_ID_MAX_LENGTH);
                                 ItemStack.STREAM_CODEC.encode(buf, e.stack());
                                 buf.writeVarLong(e.priceItems());
                             },
                             (buf) -> {
+                                String game = buf.readUtf(128);
                                 String set = buf.readUtf();
-                                String cn  = buf.readUtf(COLLECTOR_NUMBER_MAX_LENGTH);
+                                String cn  = buf.readUtf(CARD_ID_MAX_LENGTH);
                                 ItemStack st = ItemStack.STREAM_CODEC.decode(buf);
                                 long price = buf.readVarLong();
-                                return new Entry(set, cn, st, price);
+                                return new Entry(game, set, cn, st, price);
                             }
                     );
+
+            public Entry {
+                game = sanitizeGame(game);
+                setCode = setCode == null ? "" : setCode.trim();
+                collectorNumber = collectorNumber == null ? "" : collectorNumber.trim();
+                stack = stack == null ? ItemStack.EMPTY : stack.copyWithCount(1);
+                priceItems = Math.max(0L, priceItems);
+            }
         }
 
         public static final StreamCodec<RegistryFriendlyByteBuf, SearchPrintsS2C> CODEC =
                 StreamCodec.of(
                         (buf, p) -> {
                             buf.writeBlockPos(p.storePos());
+                            buf.writeUtf(p.game(), 128);
                             buf.writeBoolean(p.ok());
                             buf.writeUtf(p.message());
                             buf.writeUtf(p.canonicalName());
@@ -339,6 +434,7 @@ public final class CardStorePackets {
                         },
                         (buf) -> {
                             BlockPos pos = buf.readBlockPos();
+                            String game = buf.readUtf(128);
                             boolean ok = buf.readBoolean();
                             String msg = buf.readUtf();
                             String name = buf.readUtf();
@@ -353,24 +449,46 @@ public final class CardStorePackets {
                             var list = new ArrayList<Entry>(n);
                             for (int i = 0; i < n; i++) list.add(Entry.CODEC.decode(buf));
 
-                            return new SearchPrintsS2C(pos, ok, msg, name, page, total, hasMore, priceItemId, priceBasis, list);
+                            return new SearchPrintsS2C(pos, game, ok, msg, name, page, total, hasMore, priceItemId, priceBasis, list);
                         }
                 );
+
+        public SearchPrintsS2C {
+            game = sanitizeFilterGame(game);
+            message = message == null ? "" : message;
+            canonicalName = canonicalName == null ? "" : canonicalName;
+            priceItemId = priceItemId == null ? "" : priceItemId;
+            priceBasis = priceBasis == null ? "" : priceBasis;
+            entries = entries == null ? List.of() : List.copyOf(entries);
+        }
 
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // ---------- C2S: Import Deck ----------
-    public record ImportDeckC2S(BlockPos pos, int lineCount, List<Line> lines) implements CustomPacketPayload {
+    public record ImportDeckC2S(BlockPos pos, String game, int lineCount, List<Line> lines) implements CustomPacketPayload {
         public static final Type<ImportDeckC2S> ID = new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "cardstore_import_deck"));
 
-        public record Line(String set, String cn, int qty) {}
+        public record Line(String game, String set, String cn, int qty) {
+            public Line(String set, String cn, int qty) {
+                this(TcgGameRegistry.MTG, set, cn, qty);
+            }
+
+            public Line {
+                game = sanitizeGame(game);
+                set = set == null ? "" : set.trim();
+                cn = cn == null ? "" : cn.trim();
+                qty = Math.max(1, qty);
+            }
+        }
 
         public static final StreamCodec<RegistryFriendlyByteBuf, ImportDeckC2S> CODEC =
                 StreamCodec.composite(
                         BlockPos.STREAM_CODEC, ImportDeckC2S::pos,
+                        ByteBufCodecs.STRING_UTF8, ImportDeckC2S::game,
                         ByteBufCodecs.VAR_INT, ImportDeckC2S::lineCount,
                         StreamCodec.composite(
+                                ByteBufCodecs.STRING_UTF8, Line::game,
                                 ByteBufCodecs.STRING_UTF8, Line::set,
                                 ByteBufCodecs.STRING_UTF8, Line::cn,
                                 ByteBufCodecs.VAR_INT, Line::qty,
@@ -380,26 +498,47 @@ public final class CardStorePackets {
                         ImportDeckC2S::new
                 );
 
+        public ImportDeckC2S {
+            game = sanitizeGame(game);
+            lines = lines == null ? List.of() : List.copyOf(lines);
+            lineCount = lines.size();
+        }
+
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
 
     // ---------- S2C: Import Deck result ----------
-    public record ImportDeckS2C(BlockPos pos, boolean ok, String message, List<Entry> entries) implements CustomPacketPayload {
+    public record ImportDeckS2C(BlockPos pos, String game, boolean ok, String message, List<Entry> entries) implements CustomPacketPayload {
         public static final Type<ImportDeckS2C> ID = new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "cardstore_import_deck_result"));
 
-        public record Entry(String set, String cn, int qty, ItemStack stack, long priceItems) {}
+        public record Entry(String game, String set, String cn, int qty, ItemStack stack, long priceItems) {
+            public Entry(String set, String cn, int qty, ItemStack stack, long priceItems) {
+                this(TcgGameRegistry.MTG, set, cn, qty, stack, priceItems);
+            }
+
+            public Entry {
+                game = sanitizeGame(game);
+                set = set == null ? "" : set.trim();
+                cn = cn == null ? "" : cn.trim();
+                qty = Math.max(1, qty);
+                stack = stack == null ? ItemStack.EMPTY : stack.copyWithCount(1);
+                priceItems = Math.max(0L, priceItems);
+            }
+        }
 
         public static final StreamCodec<RegistryFriendlyByteBuf, ImportDeckS2C> CODEC =
                 StreamCodec.of(
                         (buf, p) -> {
                             buf.writeBlockPos(p.pos());
+                            buf.writeUtf(p.game(), 128);
                             buf.writeBoolean(p.ok());
                             buf.writeUtf(p.message() == null ? "" : p.message());
 
                             buf.writeVarInt(p.entries().size());
                             for (Entry e : p.entries()) {
+                                buf.writeUtf(e.game(), 128);
                                 buf.writeUtf(e.set());
-                                buf.writeUtf(e.cn(), COLLECTOR_NUMBER_MAX_LENGTH);
+                                buf.writeUtf(e.cn(), CARD_ID_MAX_LENGTH);
                                 buf.writeVarInt(e.qty());
                                 ItemStack.STREAM_CODEC.encode(buf, e.stack());
                                 buf.writeVarLong(e.priceItems());
@@ -407,23 +546,35 @@ public final class CardStorePackets {
                         },
                         (buf) -> {
                             BlockPos pos = buf.readBlockPos();
+                            String game = buf.readUtf(128);
                             boolean ok = buf.readBoolean();
                             String msg = buf.readUtf();
 
                             int n = buf.readVarInt();
                             var entries = new ArrayList<Entry>(n);
                             for (int i = 0; i < n; i++) {
+                                String entryGame = buf.readUtf(128);
                                 String set = buf.readUtf();
-                                String cn  = buf.readUtf(COLLECTOR_NUMBER_MAX_LENGTH);
+                                String cn  = buf.readUtf(CARD_ID_MAX_LENGTH);
                                 int qty    = buf.readVarInt();
                                 ItemStack st = ItemStack.STREAM_CODEC.decode(buf);
                                 long price = buf.readVarLong();
-                                entries.add(new Entry(set, cn, qty, st, price));
+                                entries.add(new Entry(entryGame, set, cn, qty, st, price));
                             }
 
-                            return new ImportDeckS2C(pos, ok, msg, entries);
+                            return new ImportDeckS2C(pos, game, ok, msg, entries);
                         }
                 );
+
+        public ImportDeckS2C(BlockPos pos, boolean ok, String message, List<Entry> entries) {
+            this(pos, TcgGameRegistry.MTG, ok, message, entries);
+        }
+
+        public ImportDeckS2C {
+            game = sanitizeGame(game);
+            message = message == null ? "" : message;
+            entries = entries == null ? List.of() : List.copyOf(entries);
+        }
 
         @Override public Type<? extends CustomPacketPayload> type() { return ID; }
     }
@@ -432,6 +583,7 @@ public final class CardStorePackets {
     public static void registerTypes() {
         PayloadTypeRegistry.serverboundPlay().register(ConfirmPurchaseC2S.ID, ConfirmPurchaseC2S.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(SetCartC2S.ID, SetCartC2S.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetGameC2S.ID, SetGameC2S.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(SearchC2S.ID, SearchC2S.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(SearchS2C.ID, SearchS2C.CODEC);
 
@@ -476,16 +628,73 @@ public final class CardStorePackets {
                 })
         );
 
+        ServerPlayNetworking.registerGlobalReceiver(SetGameC2S.ID, (payload, ctx) ->
+                ctx.server().execute(() -> {
+                    ServerPlayer player = ctx.player();
+                    ServerLevel world = player.level();
+
+                    var be = world.getBlockEntity(payload.pos());
+                    if (!(be instanceof CardStoreBlockEntity store)) return;
+
+                    String game = sanitizeFilterGame(payload.game());
+                    if (!game.isBlank() && !CardStoreProviderRegistry.containsProvider(game)) return;
+                    store.setSelectedGame(player.getUUID(), game);
+                })
+        );
+
         ServerPlayNetworking.registerGlobalReceiver(ImportDeckC2S.ID, (payload, ctx) -> {
             var server = ctx.server();
             server.execute(() -> {
                 ServerPlayer player = ctx.player();
                 ServerLevel world = player.level();
+                String game = sanitizeGame(payload.game());
 
                 BlockEntity be = world.getBlockEntity(payload.pos());
                 if (!(be instanceof CardStoreBlockEntity store)) {
                     ServerPlayNetworking.send(player,
-                            new ImportDeckS2C(payload.pos(), false, "Card Store not found.", List.of()));
+                            new ImportDeckS2C(payload.pos(), game, false, "Card Store not found.", List.of()));
+                    return;
+                }
+
+                if (!CardStoreProviderRegistry.containsProvider(game)) {
+                    ServerPlayNetworking.send(player,
+                            new ImportDeckS2C(payload.pos(), game, false, "No Card Store provider for this game.", List.of()));
+                    return;
+                }
+
+                store.setSelectedGame(player.getUUID(), game);
+
+                if (!TcgGameRegistry.MTG.equals(game)) {
+                    CardStoreProviderRegistry.Provider provider = CardStoreProviderRegistry.get(game).orElse(null);
+                    if (provider == null) {
+                        ServerPlayNetworking.send(player,
+                                new ImportDeckS2C(payload.pos(), game, false, "No Card Store provider for this game.", List.of()));
+                        return;
+                    }
+
+                    provider.importDeck(
+                                    new CardStoreProviderRegistry.SearchContext(server, world, player, store, payload.pos()),
+                                    toProviderImportLines(payload.lines())
+                            )
+                            .exceptionally(err -> CardStoreProviderRegistry.ImportDeckResult.empty("Deck import failed."))
+                            .whenComplete((result, ex) -> server.execute(() -> {
+                                CardStoreProviderRegistry.ImportDeckResult safe = result == null
+                                        ? CardStoreProviderRegistry.ImportDeckResult.empty("Deck import failed.")
+                                        : result;
+                                ArrayList<ImportDeckS2C.Entry> entries = new ArrayList<>();
+                                for (var entry : safe.entries()) {
+                                    entries.add(new ImportDeckS2C.Entry(
+                                            game,
+                                            entry.set(),
+                                            entry.collectorNumber(),
+                                            entry.qty(),
+                                            entry.stack(),
+                                            entry.priceItems()
+                                    ));
+                                }
+                                ServerPlayNetworking.send(player,
+                                        new ImportDeckS2C(payload.pos(), game, safe.ok(), safe.message(), entries));
+                            }));
                     return;
                 }
 
@@ -523,6 +732,7 @@ public final class CardStorePackets {
                                     String setCode = (meta.set == null || meta.set.isBlank()) ? "CSTM" : meta.set;
 
                                     return new ImportDeckS2C.Entry(
+                                            game,
                                             setCode,
                                             meta.id,
                                             qty,
@@ -550,7 +760,10 @@ public final class CardStorePackets {
                                         );
 
                                         return new ImportDeckS2C.Entry(
-                                                model.set, model.collectorNumber, qty,
+                                                game,
+                                                model.set,
+                                                model.collectorNumber,
+                                                qty,
                                                 st.copyWithCount(1),
                                                 priceItems
                                         );
@@ -576,7 +789,7 @@ public final class CardStorePackets {
                                     : "Imported 0 lines (no matches). Check set/cn values.";
 
                             ServerPlayNetworking.send(player,
-                                    new ImportDeckS2C(payload.pos(), ok, msg, out));
+                                    new ImportDeckS2C(payload.pos(), game, ok, msg, out));
                         }));
             });
         });
@@ -588,11 +801,27 @@ public final class CardStorePackets {
         ServerPlayNetworking.registerGlobalReceiver(SearchC2S.ID, (payload, ctx) -> {
             var server = ctx.server();
             ServerPlayer player = ctx.player();
+            ServerLevel serverWorld = player.level();
+            String requestedGame = sanitizeFilterGame(payload.game());
+            String game = requestedGame.isBlank() ? TcgGameRegistry.MTG : requestedGame;
+
+            BlockEntity be = serverWorld.getBlockEntity(payload.storePos());
+            if (!(be instanceof CardStoreBlockEntity store)) {
+                server.execute(() -> ServerPlayNetworking.send(player,
+                        new SearchS2C(payload.storePos(), game, false, "", "", "", "Card Store not found.", false, ItemStack.EMPTY)));
+                return;
+            }
+
+            if (!CardStoreProviderRegistry.containsProvider(game)) {
+                server.execute(() -> ServerPlayNetworking.send(player,
+                        new SearchS2C(payload.storePos(), game, false, "", "", "", "No Card Store provider for this game.", false, ItemStack.EMPTY)));
+                return;
+            }
 
             String q = payload.query();
             if (q == null || q.trim().isEmpty()) {
                 server.execute(() -> ServerPlayNetworking.send(player,
-                        new SearchS2C(payload.storePos(), false, "", "", "", "Type a card name.", false, ItemStack.EMPTY)));
+                        new SearchS2C(payload.storePos(), game, false, "", "", "", "Type a card name.", false, ItemStack.EMPTY)));
                 return;
             }
 
@@ -622,7 +851,7 @@ public final class CardStorePackets {
 
                     var finalHit = hit;
                     server.execute(() -> ServerPlayNetworking.send(player,
-                            new SearchS2C(payload.storePos(), true,
+                            new SearchS2C(payload.storePos(), game, true,
                                     finalHit.name, setCode, finalHit.id,
                                     "Custom ✓", true, st)));
                     return;
@@ -633,7 +862,7 @@ public final class CardStorePackets {
             ScryfallNamedFetch.fetchNamedFuzzyAsync(trimmed).whenComplete((hit, ex) -> {
                 if (ex != null || hit == null) {
                     server.execute(() -> ServerPlayNetworking.send(player,
-                            new SearchS2C(payload.storePos(), false, "", "", "", "No match found.", false, ItemStack.EMPTY)));
+                            new SearchS2C(payload.storePos(), game, false, "", "", "", "No match found.", false, ItemStack.EMPTY)));
                     return;
                 }
 
@@ -643,7 +872,7 @@ public final class CardStorePackets {
                         .whenComplete((card, ex2) -> server.execute(() -> {
                             if (ex2 != null || card == null) {
                                 ServerPlayNetworking.send(player,
-                                        new SearchS2C(payload.storePos(), false, "", "", "",
+                                        new SearchS2C(payload.storePos(), game, false, "", "", "",
                                                 "Resolved name, but failed exact printing.", false, ItemStack.EMPTY));
                                 return;
                             }
@@ -654,6 +883,7 @@ public final class CardStorePackets {
                             ServerPlayNetworking.send(player,
                                     new SearchS2C(
                                             payload.storePos(),
+                                            game,
                                             true,
                                             card.name,
                                             hit.set(),
@@ -673,21 +903,83 @@ public final class CardStorePackets {
         ServerPlayNetworking.registerGlobalReceiver(SearchPrintsC2S.ID, (payload, ctx) -> {
             var server = ctx.server();
             ServerPlayer player = ctx.player();
+            ServerLevel serverWorld = player.level();
+            String game = sanitizeFilterGame(payload.game());
 
             String q = payload.query();
             int page = Math.max(1, payload.page());
             int pageSize = Math.max(1, Math.min(payload.pageSize(), 175));
             UUID reqId = payload.requestId();
 
+            BlockEntity be = serverWorld.getBlockEntity(payload.storePos());
+            if (!(be instanceof CardStoreBlockEntity store)) {
+                server.execute(() -> ServerPlayNetworking.send(player,
+                        new SearchPrintsStartS2C(payload.storePos(), game, reqId, false, "Card Store not found.", page, 0, false, currentPriceItemId(), currentPriceBasis())));
+                server.execute(() -> ServerPlayNetworking.send(player,
+                        new SearchPrintsDoneS2C(payload.storePos(), game, reqId, false, "Card Store not found.", page, 0, false)));
+                return;
+            }
+
+            if (!game.isBlank() && !CardStoreProviderRegistry.containsProvider(game)) {
+                server.execute(() -> ServerPlayNetworking.send(player,
+                        new SearchPrintsStartS2C(payload.storePos(), game, reqId, false, "No Card Store provider for this game.", page, 0, false, currentPriceItemId(), currentPriceBasis())));
+                server.execute(() -> ServerPlayNetworking.send(player,
+                        new SearchPrintsDoneS2C(payload.storePos(), game, reqId, false, "No provider.", page, 0, false)));
+                return;
+            }
+
             if (q == null || q.trim().isEmpty()) {
                 server.execute(() -> ServerPlayNetworking.send(player,
-                        new SearchPrintsStartS2C(payload.storePos(), reqId, false, "Type a card name.", page, 0, false, currentPriceItemId(), currentPriceBasis())));
+                        new SearchPrintsStartS2C(payload.storePos(), game, reqId, false, "Type a card name.", page, 0, false, currentPriceItemId(), currentPriceBasis())));
                 server.execute(() -> ServerPlayNetworking.send(player,
-                        new SearchPrintsDoneS2C(payload.storePos(), reqId, false, "No query.", page, 0, false)));
+                        new SearchPrintsDoneS2C(payload.storePos(), game, reqId, false, "No query.", page, 0, false)));
                 return;
             }
 
             String qTrim = q.trim();
+            if (game.isBlank()) {
+                handleAllPrintSearch(server, player, serverWorld, store, payload.storePos(), reqId, qTrim, page, pageSize);
+                return;
+            }
+
+            if (!TcgGameRegistry.MTG.equals(game)) {
+                CardStoreProviderRegistry.Provider provider = CardStoreProviderRegistry.get(game).orElse(null);
+                if (provider == null) {
+                    server.execute(() -> ServerPlayNetworking.send(player,
+                            new SearchPrintsStartS2C(payload.storePos(), game, reqId, false, "No Card Store provider for this game.", page, 0, false, currentPriceItemId(), currentPriceBasis())));
+                    server.execute(() -> ServerPlayNetworking.send(player,
+                            new SearchPrintsDoneS2C(payload.storePos(), game, reqId, false, "No provider.", page, 0, false)));
+                    return;
+                }
+
+                provider.searchPrints(new CardStoreProviderRegistry.SearchContext(server, serverWorld, player, store, payload.storePos()), qTrim, page, pageSize)
+                        .exceptionally(err -> CardStoreProviderRegistry.SearchPrintsResult.empty("Search failed.", page))
+                        .whenComplete((result, ex) -> server.execute(() -> {
+                            CardStoreProviderRegistry.SearchPrintsResult safe = result == null
+                                    ? CardStoreProviderRegistry.SearchPrintsResult.empty("Search failed.", page)
+                                    : result;
+                            ServerPlayNetworking.send(player,
+                                    new SearchPrintsStartS2C(payload.storePos(), game, reqId, true, safe.message(), page,
+                                            safe.total(), safe.hasMore(), currentPriceItemId(), currentPriceBasis()));
+                            int sent = 0;
+                            for (var entry : safe.entries()) {
+                                ServerPlayNetworking.send(player, new SearchPrintsAddS2C(
+                                        payload.storePos(),
+                                        reqId,
+                                        new SearchPrintsS2C.Entry(game, entry.setCode(), entry.collectorNumber(), entry.stack(), entry.priceItems())
+                                ));
+                                sent++;
+                            }
+                            String doneMsg = !safe.message().isBlank()
+                                    ? safe.message()
+                                    : (sent > 0 ? ("Loaded " + sent + " results.") : "No results.");
+                            ServerPlayNetworking.send(player,
+                                    new SearchPrintsDoneS2C(payload.storePos(), game, reqId, sent > 0, doneMsg, page,
+                                            safe.total(), safe.hasMore()));
+                        }));
+                return;
+            }
+
             String qLower = qTrim.toLowerCase(Locale.ROOT);
             String scryQ = qLower.contains("include:") ? qTrim : (qTrim + " include:extras");
             int offset = (page - 1) * pageSize;
@@ -719,9 +1011,9 @@ public final class CardStorePackets {
                         boolean hasMore = total > (offset + pageSize);
 
                         server.execute(() -> ServerPlayNetworking.send(player,
-                                new SearchPrintsStartS2C(payload.storePos(), reqId, true, "Searching…", page, total, hasMore, currentPriceItemId(), currentPriceBasis())));
+                                new SearchPrintsStartS2C(payload.storePos(), game, reqId, true, "Searching…", page, total, hasMore, currentPriceItemId(), currentPriceBasis())));
 
-                        ArrayList<SearchPrintsS2C.Entry> customEntries = buildCustomEntries(customPage);
+                        ArrayList<SearchPrintsS2C.Entry> customEntries = buildCustomEntries(game, customPage);
                         server.execute(() -> {
                             for (var entry : customEntries) {
                                 ServerPlayNetworking.send(player, new SearchPrintsAddS2C(payload.storePos(), reqId, entry));
@@ -733,7 +1025,7 @@ public final class CardStorePackets {
                         if (!scryOk || pg.hits().isEmpty()) {
                             String doneMsg = (sent > 0) ? ("Loaded " + sent + " results.") : "No results.";
                             server.execute(() -> ServerPlayNetworking.send(player,
-                                    new SearchPrintsDoneS2C(payload.storePos(), reqId, sent > 0, doneMsg, page, total, hasMore)));
+                                    new SearchPrintsDoneS2C(payload.storePos(), game, reqId, sent > 0, doneMsg, page, total, hasMore)));
                             return;
                         }
 
@@ -741,7 +1033,7 @@ public final class CardStorePackets {
                         ScryfallExactFetch.fetchCollectionByPrintHitsAsync(pageHits)
                                 .exceptionally(err -> List.of())
                                 .whenComplete((models, ex3) -> {
-                                    ArrayList<SearchPrintsS2C.Entry> entries = buildSearchEntries(pageHits, models);
+                                    ArrayList<SearchPrintsS2C.Entry> entries = buildSearchEntries(game, pageHits, models);
 
                                     server.execute(() -> {
                                         for (var entry : entries) {
@@ -754,7 +1046,7 @@ public final class CardStorePackets {
                                                 ? ("Loaded " + totalSent + " results.")
                                                 : "No results.";
                                         ServerPlayNetworking.send(player,
-                                                new SearchPrintsDoneS2C(payload.storePos(), reqId, totalSent > 0, doneMsg, page, total, hasMore));
+                                                new SearchPrintsDoneS2C(payload.storePos(), game, reqId, totalSent > 0, doneMsg, page, total, hasMore));
                                     });
                                 });
                     });
@@ -767,6 +1059,199 @@ public final class CardStorePackets {
 
     private static String currentPriceBasis() {
         return CardStoreScreenHandler.defaultPriceBasis();
+    }
+
+    private record GamePrints(String game, CardStoreProviderRegistry.SearchPrintsResult result) {
+    }
+
+    private static void handleAllPrintSearch(
+            MinecraftServer server,
+            ServerPlayer player,
+            ServerLevel world,
+            CardStoreBlockEntity store,
+            BlockPos storePos,
+            UUID reqId,
+            String query,
+            int page,
+            int pageSize
+    ) {
+        List<TcgGameRegistry.Entry> games = CardStoreProviderRegistry.gameEntriesWithProviders();
+        if (games.isEmpty()) {
+            server.execute(() -> {
+                ServerPlayNetworking.send(player, new SearchPrintsStartS2C(
+                        storePos, TcgGameRegistry.ALL_GAMES, reqId, false, "No Card Store providers.", page,
+                        0, false, currentPriceItemId(), currentPriceBasis()));
+                ServerPlayNetworking.send(player, new SearchPrintsDoneS2C(
+                        storePos, TcgGameRegistry.ALL_GAMES, reqId, false, "No providers.", page, 0, false));
+            });
+            return;
+        }
+
+        ArrayList<CompletableFuture<GamePrints>> futures = new ArrayList<>();
+        CardStoreProviderRegistry.SearchContext context =
+                new CardStoreProviderRegistry.SearchContext(server, world, player, store, storePos);
+
+        for (TcgGameRegistry.Entry entry : games) {
+            String game = entry.id();
+            CompletableFuture<CardStoreProviderRegistry.SearchPrintsResult> future;
+            if (TcgGameRegistry.MTG.equals(game)) {
+                future = searchMtgPrintsAsync(server, game, query, page, pageSize);
+            } else {
+                CardStoreProviderRegistry.Provider provider = CardStoreProviderRegistry.get(game).orElse(null);
+                if (provider == null) continue;
+                future = provider.searchPrints(context, query, page, pageSize)
+                        .exceptionally(err -> CardStoreProviderRegistry.SearchPrintsResult.empty("Search failed.", page));
+            }
+
+            futures.add(future
+                    .exceptionally(err -> CardStoreProviderRegistry.SearchPrintsResult.empty("Search failed.", page))
+                    .thenApply(result -> new GamePrints(game, result)));
+        }
+
+        if (futures.isEmpty()) {
+            server.execute(() -> {
+                ServerPlayNetworking.send(player, new SearchPrintsStartS2C(
+                        storePos, TcgGameRegistry.ALL_GAMES, reqId, false, "No Card Store providers.", page,
+                        0, false, currentPriceItemId(), currentPriceBasis()));
+                ServerPlayNetworking.send(player, new SearchPrintsDoneS2C(
+                        storePos, TcgGameRegistry.ALL_GAMES, reqId, false, "No providers.", page, 0, false));
+            });
+            return;
+        }
+
+        CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
+                .whenComplete((v, ex) -> server.execute(() -> {
+                    int total = 0;
+                    boolean hasMore = false;
+                    ArrayList<SearchPrintsS2C.Entry> entries = new ArrayList<>();
+
+                    for (CompletableFuture<GamePrints> future : futures) {
+                        GamePrints gamePrints = future.getNow(null);
+                        if (gamePrints == null || gamePrints.result() == null) continue;
+
+                        CardStoreProviderRegistry.SearchPrintsResult result = gamePrints.result();
+                        int resultTotal = Math.max(result.total(), result.entries().size());
+                        total = Math.min(Integer.MAX_VALUE, total + resultTotal);
+                        hasMore = hasMore || result.hasMore();
+
+                        for (CardStoreProviderRegistry.PrintEntry print : result.entries()) {
+                            entries.add(new SearchPrintsS2C.Entry(
+                                    gamePrints.game(),
+                                    print.setCode(),
+                                    print.collectorNumber(),
+                                    print.stack(),
+                                    print.priceItems()
+                            ));
+                        }
+                    }
+
+                    entries.sort((a, b) -> {
+                        int byGame = String.CASE_INSENSITIVE_ORDER.compare(a.game(), b.game());
+                        if (byGame != 0) return byGame;
+                        String an = a.stack().getHoverName().getString();
+                        String bn = b.stack().getHoverName().getString();
+                        int byName = String.CASE_INSENSITIVE_ORDER.compare(an, bn);
+                        if (byName != 0) return byName;
+                        int bySet = String.CASE_INSENSITIVE_ORDER.compare(a.setCode(), b.setCode());
+                        if (bySet != 0) return bySet;
+                        return String.CASE_INSENSITIVE_ORDER.compare(a.collectorNumber(), b.collectorNumber());
+                    });
+
+                    if (entries.size() > pageSize) {
+                        entries = new ArrayList<>(entries.subList(0, pageSize));
+                    }
+
+                    hasMore = hasMore || total > page * pageSize;
+                    boolean ok = !entries.isEmpty();
+                    String msg = ok ? ("Loaded " + entries.size() + " results.") : "No results.";
+
+                    ServerPlayNetworking.send(player, new SearchPrintsStartS2C(
+                            storePos, TcgGameRegistry.ALL_GAMES, reqId, true, "Searching...", page, total,
+                            hasMore, currentPriceItemId(), currentPriceBasis()));
+
+                    for (SearchPrintsS2C.Entry entry : entries) {
+                        ServerPlayNetworking.send(player, new SearchPrintsAddS2C(storePos, reqId, entry));
+                    }
+
+                    ServerPlayNetworking.send(player, new SearchPrintsDoneS2C(
+                            storePos, TcgGameRegistry.ALL_GAMES, reqId, ok, msg, page, total, hasMore));
+                }));
+    }
+
+    private static CompletableFuture<CardStoreProviderRegistry.SearchPrintsResult> searchMtgPrintsAsync(
+            MinecraftServer server,
+            String game,
+            String query,
+            int page,
+            int pageSize
+    ) {
+        String qTrim = query == null ? "" : query.trim();
+        if (qTrim.isBlank()) {
+            return CompletableFuture.completedFuture(CardStoreProviderRegistry.SearchPrintsResult.empty("Type a card name.", page));
+        }
+
+        String qLower = qTrim.toLowerCase(Locale.ROOT);
+        String scryQ = qLower.contains("include:") ? qTrim : (qTrim + " include:extras");
+        int offset = (page - 1) * pageSize;
+
+        List<com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta> customMatches =
+                findCustomMatches(server, qTrim);
+        int customTotal = customMatches.size();
+        int customStart = Math.min(offset, customTotal);
+        int customSendCount = Math.min(pageSize, Math.max(0, customTotal - offset));
+        List<com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta> customPage =
+                customSendCount <= 0 ? List.of() : customMatches.subList(customStart, customStart + customSendCount);
+
+        int officialOffset = Math.max(0, offset - customTotal);
+        int officialLimit = Math.max(0, pageSize - customPage.size());
+
+        CompletableFuture<ScryfallPrintSearchFetch.Page> officialFuture =
+                officialLimit <= 0
+                        ? CompletableFuture.completedFuture(new ScryfallPrintSearchFetch.Page(List.of(), 0, false))
+                        : ScryfallPrintSearchFetch.fetchSearchOffsetSliceAsync(scryQ, officialOffset, officialLimit);
+
+        return officialFuture.thenCompose(pg -> {
+            boolean scryOk = pg != null && pg.hits() != null;
+            int officialTotal = scryOk ? pg.totalCards() : 0;
+            int total = customTotal + officialTotal;
+            boolean hasMore = total > (offset + pageSize);
+
+            ArrayList<CardStoreProviderRegistry.PrintEntry> entries = new ArrayList<>();
+            for (SearchPrintsS2C.Entry entry : buildCustomEntries(game, customPage)) {
+                entries.add(toProviderPrintEntry(entry));
+            }
+
+            if (!scryOk || pg.hits().isEmpty()) {
+                String msg = entries.isEmpty() ? "No results." : ("Loaded " + entries.size() + " results.");
+                return CompletableFuture.completedFuture(new CardStoreProviderRegistry.SearchPrintsResult(
+                        !entries.isEmpty(), msg, qTrim, page, total, hasMore, entries));
+            }
+
+            ArrayList<ScryfallPrintSearchFetch.PrintHit> pageHits = new ArrayList<>(pg.hits());
+            return ScryfallExactFetch.fetchCollectionByPrintHitsAsync(pageHits)
+                    .exceptionally(err -> List.of())
+                    .thenApply(models -> {
+                        for (SearchPrintsS2C.Entry entry : buildSearchEntries(game, pageHits, models)) {
+                            entries.add(toProviderPrintEntry(entry));
+                        }
+
+                        String msg = entries.isEmpty() ? "No results." : ("Loaded " + entries.size() + " results.");
+                        return new CardStoreProviderRegistry.SearchPrintsResult(
+                                !entries.isEmpty(), msg, qTrim, page, total, hasMore, entries);
+                    });
+        }).exceptionally(err -> CardStoreProviderRegistry.SearchPrintsResult.empty("Search failed.", page));
+    }
+
+    private static CardStoreProviderRegistry.PrintEntry toProviderPrintEntry(SearchPrintsS2C.Entry entry) {
+        if (entry == null) {
+            return new CardStoreProviderRegistry.PrintEntry("", "", ItemStack.EMPTY, 0);
+        }
+        return new CardStoreProviderRegistry.PrintEntry(
+                entry.setCode(),
+                entry.collectorNumber(),
+                entry.stack(),
+                entry.priceItems()
+        );
     }
 
     // -------------------------
@@ -942,6 +1427,7 @@ public final class CardStorePackets {
     }
 
     private static ArrayList<SearchPrintsS2C.Entry> buildSearchEntries(
+            String game,
             List<ScryfallPrintSearchFetch.PrintHit> requestedHits,
             List<ScryfallModels.Card> models
     ) {
@@ -970,13 +1456,14 @@ public final class CardStorePackets {
                     model.price.tix
             );
 
-            entries.add(new SearchPrintsS2C.Entry(model.set, model.collectorNumber, stack, priceItems));
+            entries.add(new SearchPrintsS2C.Entry(game, model.set, model.collectorNumber, stack, priceItems));
         }
 
         return entries;
     }
 
     private static ArrayList<SearchPrintsS2C.Entry> buildCustomEntries(
+            String game,
             List<com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta> metas
     ) {
         ArrayList<SearchPrintsS2C.Entry> entries = new ArrayList<>();
@@ -992,7 +1479,7 @@ public final class CardStorePackets {
 
             long price = com.spider.mtgcard.util.CustomCardPricing.priceItemsForRarity(meta.rarity);
             String setCode = (meta.set == null || meta.set.isBlank()) ? "CSTM" : meta.set;
-            entries.add(new SearchPrintsS2C.Entry(setCode, meta.id, st, price));
+            entries.add(new SearchPrintsS2C.Entry(game, setCode, meta.id, st, price));
         }
 
         return entries;
@@ -1000,6 +1487,28 @@ public final class CardStorePackets {
 
     private static String printingKey(String set, String collectorNumber) {
         return norm(set) + "\u0000" + norm(collectorNumber);
+    }
+
+    private static List<CardStoreProviderRegistry.ImportLine> toProviderImportLines(List<ImportDeckC2S.Line> lines) {
+        if (lines == null || lines.isEmpty()) return List.of();
+        ArrayList<CardStoreProviderRegistry.ImportLine> out = new ArrayList<>();
+        for (var line : lines) {
+            if (line == null) continue;
+            String set = line.set() == null ? "" : line.set().trim();
+            String cn = line.cn() == null ? "" : line.cn().trim();
+            int qty = Math.max(1, line.qty());
+            if (set.isBlank() || cn.isBlank()) continue;
+            out.add(new CardStoreProviderRegistry.ImportLine(set, cn, qty));
+        }
+        return out.isEmpty() ? List.of() : List.copyOf(out);
+    }
+
+    private static String sanitizeGame(String game) {
+        return CardStoreProviderRegistry.sanitizeGameId(game);
+    }
+
+    private static String sanitizeFilterGame(String game) {
+        return CardStoreProviderRegistry.sanitizeFilterId(game);
     }
 
     private CardStorePackets() {}

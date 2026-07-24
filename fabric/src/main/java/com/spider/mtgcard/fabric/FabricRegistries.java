@@ -2,6 +2,8 @@ package com.spider.mtgcard.fabric;
 
 import com.spider.mtgcard.ModEntities;
 import com.spider.mtgcard.Mtgcard;
+import com.spider.mtgcard.api.CardItemRegistry;
+import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.data.ModDataComponents;
 import com.spider.mtgcard.item.ModItemGroup;
 import com.spider.mtgcard.item.ModItems;
@@ -54,6 +56,7 @@ public final class FabricRegistries {
 
     private static void registerItems() {
         ModItems.initialize();
+        CardItemRegistry.register(TcgGameRegistry.MTG, ModItems.CARD);
 
         Registry.register(BuiltInRegistries.ITEM, id("card"), ModItems.CARD);
         Registry.register(BuiltInRegistries.ITEM, id("mtg_pack"), ModItems.MTG_PACK);

@@ -2,6 +2,7 @@
 package com.spider.mtgcard.deckbox;
 
 import com.spider.mtgcard.deckcontrol.DeckControlBlockEntity;
+import com.spider.mtgcard.api.DeckboxRemovalCallbackRegistry;
 import com.spider.mtgcard.registry.ModBlockEntities;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
@@ -244,6 +245,9 @@ public class DeckboxBlockEntity extends RandomizableContainerBlockEntity {
 
     @Override
     public void preRemoveSideEffects(BlockPos pos, BlockState state) {
+        if (level != null && !level.isClientSide()) {
+            DeckboxRemovalCallbackRegistry.fire(level, pos, this);
+        }
         // Shulker-like behavior: keep the inventory in the dropped block item.
     }
 

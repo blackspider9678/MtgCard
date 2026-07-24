@@ -2,6 +2,7 @@ package com.spider.mtgcard.client;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import net.minecraft.nbt.CompoundTag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -157,11 +158,71 @@ public final class ScryfallInfoManager {
             return new Entry(now, "—","—","—","—","—","—", new ConcurrentHashMap<>());
         }
 
+        public static Entry fromLocalMeta(CompoundTag meta) {
+            if (meta == null) return blank();
+
+            long now = System.currentTimeMillis();
+            String usd = readMetaPrice(meta, "usd", "price_usd", "price");
+            String usdFoil = readNestedMetaPrice(meta, "usd_foil", "usdFoil");
+            String usdEtched = readNestedMetaPrice(meta, "usd_etched", "usdEtched");
+            String eur = readNestedMetaPrice(meta, "eur");
+            String eurFoil = readNestedMetaPrice(meta, "eur_foil", "eurFoil");
+            String tix = readNestedMetaPrice(meta, "tix");
+
+            Map<String, String> legalities = new ConcurrentHashMap<>();
+            meta.getCompound("legalities").ifPresent(legs -> {
+                for (String key : legs.keySet()) {
+                    String value = legs.getString(key).orElse("");
+                    if (!value.isBlank()) legalities.put(key, value);
+                }
+            });
+
+            return new Entry(now, usd, usdFoil, usdEtched, eur, eurFoil, tix, legalities);
+        }
+
         private static String readPrice(JsonObject prices, String key) {
             if (prices == null) return "—";
             if (!prices.has(key) || prices.get(key).isJsonNull()) return "—";
             String s = prices.get(key).getAsString();
             return (s == null || s.isBlank()) ? "—" : s;
+        }
+
+        private static String readMetaPrice(CompoundTag meta, String... keys) {
+            if (meta == null || keys == null) return "â€”";
+
+            for (String key : keys) {
+                String direct = readMetaScalar(meta, key);
+                if (!direct.equals("â€”")) return direct;
+            }
+            return readNestedMetaPrice(meta, keys);
+        }
+
+        private static String readNestedMetaPrice(CompoundTag meta, String... keys) {
+            if (meta == null || keys == null) return "â€”";
+            for (String compoundKey : new String[]{"prices", "price"}) {
+                CompoundTag prices = meta.getCompound(compoundKey).orElse(null);
+                if (prices == null) continue;
+                for (String key : keys) {
+                    String value = readMetaScalar(prices, key);
+                    if (!value.equals("â€”")) return value;
+                }
+            }
+            return "â€”";
+        }
+
+        private static String readMetaScalar(CompoundTag tag, String key) {
+            if (tag == null || key == null || key.isBlank()) return "â€”";
+
+            String value = tag.getString(key).orElse("").trim();
+            if (!value.isBlank()) return value;
+
+            var d = tag.getDouble(key);
+            if (d.isPresent()) return String.format(java.util.Locale.ROOT, "%.2f", d.get());
+
+            var i = tag.getInt(key);
+            if (i.isPresent()) return String.valueOf(i.get());
+
+            return "â€”";
         }
 
         public static Entry fromScryfall(JsonObject root) {

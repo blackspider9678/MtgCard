@@ -38,6 +38,7 @@ public final class ArtServerPackets {
             final String url = payload.url() == null ? "" : payload.url().trim();
             final String fallbackKeys = payload.fallbackKeys() == null ? "" : payload.fallbackKeys();
             final String setCode = payload.setCode() == null ? "" : payload.setCode().trim();
+            final String game = MtgCardPaths.sanitizeGameFolder(payload.game());
 
             if (artKey.isEmpty()) return;
 
@@ -46,8 +47,8 @@ public final class ArtServerPackets {
                 try {
                     // 1) Serve from server disk cache first (world scoped)
                     Path cached = url.isEmpty()
-                            ? resolveServerCustomCachedFile(server, artKey, setCode)
-                            : resolveServerMainCachedFile(server, artKey, fallbackKeys);
+                            ? resolveServerCustomCachedFile(server, game, artKey, setCode)
+                            : resolveServerMainCachedFile(server, game, artKey, fallbackKeys);
                     if (Files.exists(cached)) {
                         byte[] bytes = Files.readAllBytes(cached);
                         if (bytes.length > 0) {
@@ -57,7 +58,7 @@ public final class ArtServerPackets {
                             } else {
                                 Mtgcard.LOGGER.info("[MTGCard] Art {} served from cache as .{}", artKey, cachedExt);
                             }
-                            sendChunks(server, player, artKey, bytes);
+                            sendChunks(server, player, game, artKey, bytes);
                         }
                         return;
                     }
@@ -84,8 +85,8 @@ public final class ArtServerPackets {
                         Mtgcard.LOGGER.info("[MTGCard] Art {} from {} stored as .{}", artKey, url, art.ext());
                     }
 
-                    ArtImageStorage.write(serverMainArtDir(server), artKey, art);
-                    sendChunks(server, player, artKey, art.bytes());
+                    ArtImageStorage.write(serverMainArtDir(server, game), artKey, art);
+                    sendChunks(server, player, game, artKey, art.bytes());
 
                 } catch (Throwable t) {
                     Mtgcard.LOGGER.warn("[MTGCard] Art request failed for {} from {}: {}", artKey, url, t.toString());
@@ -94,8 +95,9 @@ public final class ArtServerPackets {
         });
     }
 
-    private static void sendChunks(MinecraftServer server, ServerPlayer player, String artKey, byte[] bytes) {
+    private static void sendChunks(MinecraftServer server, ServerPlayer player, String game, String artKey, byte[] bytes) {
         final int total = (bytes.length + CHUNK_SIZE - 1) / CHUNK_SIZE;
+        final String safeGame = MtgCardPaths.sanitizeGameFolder(game);
 
         for (int i = 0; i < total; i++) {
             final int index = i;
@@ -106,21 +108,21 @@ public final class ArtServerPackets {
 
             server.execute(() -> {
                 if (player.connection != null) {
-                    ServerPlayNetworking.send(player, new ArtPackets.ArtChunk(artKey, index, total, part));
+                    ServerPlayNetworking.send(player, new ArtPackets.ArtChunk(artKey, safeGame, index, total, part));
                 }
             });
         }
     }
 
-    /** <world>/mtgcard/mtg/main_art */
-    private static Path serverMainArtDir(MinecraftServer server) {
-        Path dir = MtgCardPaths.mainArtDir(server);
+    /** <world>/mtgcard/<game>/main_art */
+    private static Path serverMainArtDir(MinecraftServer server, String game) {
+        Path dir = MtgCardPaths.mainArtDir(server, game);
         try { Files.createDirectories(dir); } catch (Exception ignored) {}
         return dir;
     }
 
-    private static Path resolveServerMainCachedFile(MinecraftServer server, String artKey, String fallbackKeys) {
-        Path mainDir = serverMainArtDir(server);
+    private static Path resolveServerMainCachedFile(MinecraftServer server, String game, String artKey, String fallbackKeys) {
+        Path mainDir = serverMainArtDir(server, game);
         Path legacyDir = MtgCardPaths.legacyArtDir(server);
 
         for (String candidate : artKeyCandidates(artKey, fallbackKeys)) {
@@ -136,12 +138,12 @@ public final class ArtServerPackets {
         return mainDir.resolve(artKey + ".webp");
     }
 
-    private static Path resolveServerCustomCachedFile(MinecraftServer server, String artKey, String setCode) {
-        Path setDir = MtgCardPaths.customArtDir(server, setCode);
+    private static Path resolveServerCustomCachedFile(MinecraftServer server, String game, String artKey, String setCode) {
+        Path setDir = MtgCardPaths.customArtDir(server, game, setCode);
         Path exact = resolveExactFile(setDir, artKey);
         if (exact != null) return exact;
 
-        Path customRoot = MtgCardPaths.customArtRoot(server);
+        Path customRoot = MtgCardPaths.customArtRoot(server, game);
         try (var dirs = Files.list(customRoot)) {
             for (Path dir : dirs.toList()) {
                 if (!Files.isDirectory(dir) || dir.equals(setDir)) continue;

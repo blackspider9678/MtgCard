@@ -2,6 +2,8 @@ package com.spider.mtgcard.neoforge;
 
 import com.spider.mtgcard.ModEntities;
 import com.spider.mtgcard.Mtgcard;
+import com.spider.mtgcard.api.CardItemRegistry;
+import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.data.ModDataComponents;
 import com.spider.mtgcard.item.ModItemGroup;
 import com.spider.mtgcard.item.ModItems;
@@ -46,6 +48,7 @@ public final class NeoForgeRegistries {
 
         if (event.getRegistryKey().equals(Registries.ITEM)) {
             ModItems.initialize();
+            CardItemRegistry.register(TcgGameRegistry.MTG, ModItems.CARD);
             registerItem(event, "card", ModItems.CARD);
             registerItem(event, "mtg_pack", ModItems.MTG_PACK);
             registerItem(event, "d4_dice", ModItems.D4_DICE);
