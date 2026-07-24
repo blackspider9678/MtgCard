@@ -1,5 +1,6 @@
 package com.spider.mtgcard.db;
 
+import com.spider.mtgcard.api.CardDatabaseCards;
 import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.item.ModItemTags;
 import com.spider.mtgcard.screen.ModScreenHandlers;
@@ -7,7 +8,6 @@ import com.spider.mtgcard.util.TcgCardMeta;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
-import net.minecraft.world.item.component.CustomData;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
@@ -499,15 +499,16 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
             ItemStack toStore = carried.copy();
             toStore.setCount(Math.min(moveCount, carried.getCount()));
+            int storedCount = toStore.getCount();
             clearUid(toStore);
             sess.appendToIntake(toStore);
 
-            carried.shrink(toStore.getCount());
+            carried.shrink(storedCount);
             this.setCarried(carried.isEmpty() ? ItemStack.EMPTY : carried);
             syncAfterWindowMutation(sess);
             if (CardDatabaseDebug.enabled()) {
                 CardDatabaseDebug.log("[CardDBDebug] server inserted carried card count={} carriedAfter={} storedCardsAfter={}",
-                        toStore.getCount(), debugStack(this.getCarried()), countStoredCardItems(sess));
+                        storedCount, debugStack(this.getCarried()), countStoredCardItems(sess));
             }
             return;
         }
@@ -519,20 +520,9 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         }
 
         ItemStack clicked = slot.getItem().copy();
-        String uid = readUid(clicked);
-        if (uid == null || uid.isBlank()) {
-            CardDatabaseDebug.log("[CardDBDebug] server DB extraction ignored because clicked stack has no uid: {}", debugStack(clicked));
-            return;
-        }
-
-        int moveCount = switch (action) {
-            case DB_INTERACT_RIGHT, DB_INTERACT_SHIFT_RIGHT -> 1;
-            default -> clicked.getCount();
-        };
-
-        ItemStack extracted = takeFromDatabase(sess, uid, moveCount);
+        ItemStack extracted = sess.takeOneLike(clicked);
         if (extracted.isEmpty()) {
-            CardDatabaseDebug.log("[CardDBDebug] server DB extraction failed uid={} moveCount={}", uid, moveCount);
+            CardDatabaseDebug.log("[CardDBDebug] server DB extraction failed clicked={}", debugStack(clicked));
             return;
         }
 
@@ -543,31 +533,14 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         }
         syncAfterWindowMutation(sess);
         if (CardDatabaseDebug.enabled()) {
-            CardDatabaseDebug.log("[CardDBDebug] server extracted DB card uid={} count={} carriedNow={} storedCardsAfter={}",
-                    uid, extracted.getCount(), debugStack(this.getCarried()), countStoredCardItems(sess));
+            CardDatabaseDebug.log("[CardDBDebug] server extracted DB card count={} carriedNow={} storedCardsAfter={}",
+                    extracted.getCount(), debugStack(this.getCarried()), countStoredCardItems(sess));
         }
-    }
-
-    private static String readUid(ItemStack st) {
-        var comp = st.getOrDefault(DataComponents.CUSTOM_DATA, null);
-        if (comp == null) return "";
-        var nbt = comp.copyTag();
-        return nbt.getString("mtg_uid").orElse("");
     }
 
     private static void clearUid(ItemStack stack) {
-        var comp = stack.getOrDefault(DataComponents.CUSTOM_DATA, null);
-        if (comp == null) return;
-
-        var nbt = comp.copyTag();
-        nbt.remove("mtg_uid");
-
-        if (nbt.isEmpty()) {
-            stack.remove(DataComponents.CUSTOM_DATA);
-            return;
-        }
-
-        stack.set(DataComponents.CUSTOM_DATA, CustomData.of(nbt));
+        CardDatabaseCards.clearInstanceUid(stack);
+        CardDatabaseCards.clearDatabaseFields(stack);
     }
 
     private boolean dumpCardsFromCarriedBundle(CardDBSession sess, ItemStack bundle, boolean dumpAll) {
@@ -652,7 +625,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         long count = 0L;
         for (ItemStack stack : sess.getIntakeAll()) {
             if (stack != null && !stack.isEmpty() && stack.is(ModItemTags.TCG_CARD)) {
-                count += stack.getCount();
+                count = CardDatabaseCards.saturatedAdd(count, CardDatabaseCards.databaseCount(stack));
             }
         }
         return count;
@@ -704,39 +677,6 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         } else {
             bundle.set(DataComponents.BUNDLE_CONTENTS, new BundleContents(stacks));
         }
-    }
-
-    private ItemStack takeFromDatabase(CardDBSession sess, String uid, int amount) {
-        if (uid == null || uid.isBlank() || amount <= 0) {
-            return ItemStack.EMPTY;
-        }
-
-        var intake = sess.getIntakeAll();
-        for (int i = 0; i < intake.size(); i++) {
-            ItemStack backing = intake.get(i);
-            if (backing == null || backing.isEmpty()) continue;
-            if (!uid.equals(readUid(backing))) continue;
-
-            int moveCount = Math.min(amount, backing.getCount());
-            if (moveCount <= 0) {
-                return ItemStack.EMPTY;
-            }
-
-            ItemStack extracted = backing.copy();
-            extracted.setCount(moveCount);
-
-            if (moveCount >= backing.getCount()) {
-                intake.remove(i);
-            } else {
-                backing.shrink(moveCount);
-                intake.set(i, backing);
-            }
-
-            sess.compactIntakeAndReprojectSamePage();
-            return extracted;
-        }
-
-        return ItemStack.EMPTY;
     }
 
     private void syncAfterWindowMutation(CardDBSession sess) {

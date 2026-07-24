@@ -4,6 +4,7 @@ import com.spider.mtgcard.client.compat.LegacyContainerScreen;
 import com.spider.mtgcard.client.compat.MtgGuiScaleHelper;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.client.net.DBClientPackets;
+import com.spider.mtgcard.api.CardDatabaseCards;
 import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.db.CardDatabaseDebug;
 import com.spider.mtgcard.db.CardDatabaseScreenHandler;
@@ -873,6 +874,63 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
 
         // Hover preview
         renderHoverPreview(ctx, mouseX, mouseY, delta);
+    }
+
+    @Override
+    protected void renderSlot(GuiGraphics ctx, Slot slot, int mouseX, int mouseY) {
+        super.renderSlot(ctx, slot, mouseX, mouseY);
+
+        if (!isDbWindowMenuSlot(slot)) return;
+        ItemStack stack = slot.getItem();
+        if (stack == null || stack.isEmpty()) return;
+
+        long count = CardDatabaseCards.databaseCount(stack);
+        if (count <= 1L) return;
+
+        drawDbCount(ctx, slot, formatDbCount(count));
+    }
+
+    private boolean isDbWindowMenuSlot(Slot slot) {
+        if (slot == null || this.menu == null) return false;
+        int menuIndex = this.menu.slots.indexOf(slot);
+        return menuIndex >= 0 && menuIndex < CardDatabaseScreenHandler.DB_ROWS * CardDatabaseScreenHandler.DB_COLS;
+    }
+
+    private void drawDbCount(GuiGraphics ctx, Slot slot, String label) {
+        if (label == null || label.isBlank()) return;
+
+        int labelWidth = this.font.width(label);
+        float scale = labelWidth > 16 ? 0.75f : 1.0f;
+        float x = this.leftPos + slot.x + 17.0f - (labelWidth * scale);
+        float y = this.topPos + slot.y + 9.0f;
+
+        var m = ctx.pose();
+        float m00 = m.m00(), m01 = m.m01();
+        float m10 = m.m10(), m11 = m.m11();
+        float m20 = m.m20(), m21 = m.m21();
+
+        m.translate(x, y);
+        if (scale != 1.0f) {
+            m.scale(scale, scale);
+        }
+
+        ctx.drawString(this.font, label, 0, 0, 0xFFFFFFFF, true);
+        m.set(m00, m01, m10, m11, m20, m21);
+    }
+
+    private static String formatDbCount(long count) {
+        if (count < 1_000L) return Long.toString(Math.max(0L, count));
+        if (count < 1_000_000L) return formatDbCountUnit(count, 1_000L, "k");
+        if (count < 1_000_000_000L) return formatDbCountUnit(count, 1_000_000L, "m");
+        if (count < 1_000_000_000_000L) return formatDbCountUnit(count, 1_000_000_000L, "b");
+        return formatDbCountUnit(count, 1_000_000_000_000L, "t");
+    }
+
+    private static String formatDbCountUnit(long count, long unit, String suffix) {
+        long whole = count / unit;
+        long tenth = (count % unit) / (unit / 10L);
+        if (whole >= 10L || tenth == 0L) return whole + suffix;
+        return whole + "." + tenth + suffix;
     }
 
     private void renderDeckboxTabTooltip(GuiGraphics ctx, int mouseX, int mouseY) {
