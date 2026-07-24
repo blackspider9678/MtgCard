@@ -1533,9 +1533,16 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     private void renderGameMenu(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
         for (Button button : gameMenuButtons) {
             if (button.visible) {
-                button.render(ctx, mouseX, mouseY, delta);
+                button.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
             }
         }
+    }
+
+    private boolean isMouseOverGameButton(int mx, int my) {
+        if (gameBtn == null || !gameBtn.visible) return false;
+        return mx >= gameBtn.getX() && my >= gameBtn.getY()
+                && mx < gameBtn.getX() + gameBtn.getWidth()
+                && my < gameBtn.getY() + gameBtn.getHeight();
     }
 
     private boolean isMouseOverSortButton(int mx, int my) {

@@ -1,6 +1,7 @@
 package com.spider.mtgcard.db;
 
 import com.spider.mtgcard.api.CardItemRegistry;
+import com.spider.mtgcard.api.CardDatabaseCards;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.Dynamic;
 import net.minecraft.util.datafix.DataFixTypes;
@@ -251,7 +252,9 @@ public final class CardDBState extends net.minecraft.world.level.saveddata.Saved
 
             CompoundTag e = new CompoundTag();
             e.putInt("i", i);
-            e.putInt("c", st.getCount());
+            long count = Math.max(1L, CardDatabaseCards.databaseCount(st));
+            e.putInt("c", (int) Math.min(Integer.MAX_VALUE, count));
+            e.putLong("c_long", count);
             e.putString("item", CardItemRegistry.itemId(st));
 
             var cd = st.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
@@ -278,7 +281,8 @@ public final class CardDBState extends net.minecraft.world.level.saveddata.Saved
             if (e == null) continue;
 
             int slot  = Math.max(0, Math.min(inv.getContainerSize() - 1, e.getInt("i").orElse(0)));
-            int count = Math.max(1, e.getInt("c").orElse(1));
+            long storedCount = Math.max(1L, e.getLong("c_long").orElse((long) e.getInt("c").orElse(1)));
+            int count = (int) Math.min(Integer.MAX_VALUE, storedCount);
 
             var st = new net.minecraft.world.item.ItemStack(CardItemRegistry.itemForSerializedEntry(e), count);
 
@@ -315,7 +319,9 @@ public final class CardDBState extends net.minecraft.world.level.saveddata.Saved
 
             var e = new CompoundTag();
             e.putInt("i", i);
-            e.putInt("c", st.getCount());
+            long count = Math.max(1L, CardDatabaseCards.databaseCount(st));
+            e.putInt("c", (int) Math.min(Integer.MAX_VALUE, count));
+            e.putLong("c_long", count);
             e.putString("item", CardItemRegistry.itemId(st));
 
             var cd = st.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
@@ -356,7 +362,8 @@ public final class CardDBState extends net.minecraft.world.level.saveddata.Saved
             if (e == null) continue;
 
             int i = Math.max(0, e.getInt("i").orElse(0));
-            int count = Math.max(1, e.getInt("c").orElse(1));
+            long storedCount = Math.max(1L, e.getLong("c_long").orElse((long) e.getInt("c").orElse(1)));
+            int count = (int) Math.min(Integer.MAX_VALUE, storedCount);
 
             while (dst.size() <= i) dst.add(net.minecraft.world.item.ItemStack.EMPTY);
 

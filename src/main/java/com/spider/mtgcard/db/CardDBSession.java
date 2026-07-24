@@ -1,11 +1,12 @@
 // com/spider/mtgcard/db/CardDBSession.java
 package com.spider.mtgcard.db;
 
+import com.spider.mtgcard.api.CardDatabaseCards;
 import com.spider.mtgcard.db.search.SearchEngine;
 import com.spider.mtgcard.item.ModItemTags;
-import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.ServerLevel;
@@ -131,7 +132,7 @@ public final class CardDBSession implements CardDBView {
     /** Removes all EMPTY entries from the backing list, clamps offset, redraws the same page. */
     public void compactIntakeAndReprojectSamePage() {
         if (uiFrozen) { needsReproject = true; persist(); return; }
-        intakeAll.removeIf(s -> s == null || s.isEmpty());
+        normalizeStorage();
         this.windowOffset = clampOffset(this.windowOffset);
         if (projectingSearch) {
             persist();
@@ -263,8 +264,10 @@ public final class CardDBSession implements CardDBView {
         var list = state.getIntake(playerId);
         this.intakeAll.clear();
         if (list != null) CardDBState.applyIntakeToList(this.intakeAll, list);
+        normalizeStorage();
         this.windowOffset = 0;
         this.projectingSearch = false;
+        persist();
     }
 
     public void ensureLoaded(ServerPlayer sp) {
@@ -276,10 +279,12 @@ public final class CardDBSession implements CardDBView {
 
         this.intakeAll.clear();
         CardDBState.applyIntakeToList(this.intakeAll, saved);
+        normalizeStorage();
         this.windowOffset = 0;
         this.projectingSearch = false;
         applyBackingToWindow();
         this.window.setChanged();
+        persist();
     }
 
     private void persist() {
@@ -333,10 +338,7 @@ public final class CardDBSession implements CardDBView {
         for (ItemStack stack : stacks) {
             if (stack == null || stack.isEmpty() || !stack.is(ModItemTags.TCG_CARD)) continue;
 
-            ItemStack copy = stack.copy();
-            ensureUid(copy);
-            this.intakeAll.add(copy);
-            added++;
+            if (addToGroupedStorage(stack)) added++;
         }
 
         if (added == 0) return;
@@ -345,6 +347,22 @@ public final class CardDBSession implements CardDBView {
         if (!projectingSearch) applyBackingToWindow();
         persist();
         window.setChanged();
+    }
+
+    public ItemStack takeOneLike(ItemStack visibleStack) {
+        if (visibleStack == null || visibleStack.isEmpty()) return ItemStack.EMPTY;
+
+        String key = CardDatabaseCards.databaseKey(visibleStack);
+        if (key.isBlank()) return ItemStack.EMPTY;
+
+        for (int i = 0; i < intakeAll.size(); i++) {
+            ItemStack stored = intakeAll.get(i);
+            if (stored == null || stored.isEmpty()) continue;
+            if (!key.equals(CardDatabaseCards.databaseKey(stored))) continue;
+            return takeOneAtIndex(i);
+        }
+
+        return ItemStack.EMPTY;
     }
 
     /** Remove by UID then redraw same page. */
@@ -367,11 +385,9 @@ public final class CardDBSession implements CardDBView {
         int idx = windowOffset + windowSlot;
         if (idx < 0 || idx >= intakeAll.size()) return false;
 
-        ItemStack removed = intakeAll.remove(idx);
+        ItemStack removed = takeOneAtIndex(idx);
 
-        // 🔧 Do a full compact + redraw of the same page so no empties linger
-        compactIntakeAndReprojectSamePage();
-
+        // takeOneAtIndex redraws and persists the same page.
         return removed != null && !removed.isEmpty();
     }
 
@@ -423,6 +439,88 @@ public final class CardDBSession implements CardDBView {
         while (trim >= 0 && intakeAll.get(trim).isEmpty()) trim--;
         intakeAll.subList(trim+1, intakeAll.size()).clear();
         this.windowOffset = clampOffset(this.windowOffset);
+    }
+
+    private boolean normalizeStorage() {
+        if (intakeAll.isEmpty()) return false;
+
+        ArrayList<ItemStack> original = new ArrayList<>(intakeAll);
+        intakeAll.clear();
+
+        boolean changed = false;
+        for (ItemStack stack : original) {
+            if (stack == null || stack.isEmpty() || !stack.is(ModItemTags.TCG_CARD)) {
+                changed = true;
+                continue;
+            }
+            if (!addToGroupedStorage(stack)) {
+                changed = true;
+            }
+        }
+
+        if (original.size() != intakeAll.size()) return true;
+        for (int i = 0; i < original.size(); i++) {
+            ItemStack before = original.get(i);
+            ItemStack after = intakeAll.get(i);
+            if (!CardDatabaseCards.databaseKey(before).equals(CardDatabaseCards.databaseKey(after))) return true;
+            if (CardDatabaseCards.databaseCount(before) != CardDatabaseCards.databaseCount(after)) return true;
+            if (before.getCount() != 1) return true;
+            if (!readUid(before).isBlank()) return true;
+        }
+        return changed;
+    }
+
+    private boolean addToGroupedStorage(ItemStack source) {
+        if (source == null || source.isEmpty() || !source.is(ModItemTags.TCG_CARD)) return false;
+
+        long count = CardDatabaseCards.databaseCount(source);
+        if (count <= 0L) return false;
+
+        ItemStack storedCopy = CardDatabaseCards.copyForDatabase(source, count);
+        if (storedCopy.isEmpty()) return false;
+
+        String key = CardDatabaseCards.databaseKey(storedCopy);
+        if (key.isBlank()) return false;
+
+        for (int i = 0; i < intakeAll.size(); i++) {
+            ItemStack existing = intakeAll.get(i);
+            if (existing == null || existing.isEmpty()) continue;
+            if (!key.equals(CardDatabaseCards.databaseKey(existing))) continue;
+
+            long merged = CardDatabaseCards.saturatedAdd(CardDatabaseCards.databaseCount(existing), count);
+            CardDatabaseCards.setDatabaseCount(existing, merged);
+            intakeAll.set(i, existing);
+            return true;
+        }
+
+        intakeAll.add(storedCopy);
+        return true;
+    }
+
+    private ItemStack takeOneAtIndex(int index) {
+        if (index < 0 || index >= intakeAll.size()) return ItemStack.EMPTY;
+
+        ItemStack stored = intakeAll.get(index);
+        if (stored == null || stored.isEmpty()) return ItemStack.EMPTY;
+
+        long count = CardDatabaseCards.databaseCount(stored);
+        if (count <= 0L) return ItemStack.EMPTY;
+
+        ItemStack extracted = CardDatabaseCards.copyForExtraction(stored);
+        if (count <= 1L) {
+            intakeAll.remove(index);
+        } else {
+            CardDatabaseCards.setDatabaseCount(stored, count - 1L);
+            intakeAll.set(index, stored);
+        }
+
+        this.windowOffset = clampOffset(this.windowOffset);
+        if (!projectingSearch) {
+            applyBackingToWindow();
+        }
+        persist();
+
+        return extracted;
     }
 
 

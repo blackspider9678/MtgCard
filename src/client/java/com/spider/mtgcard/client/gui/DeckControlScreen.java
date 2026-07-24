@@ -1509,7 +1509,7 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
     private void renderGameMenu(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
         for (Button button : gameMenuButtons) {
             if (button.visible) {
-                button.render(ctx, mouseX, mouseY, delta);
+                button.extractRenderState(ctx.unwrap(), mouseX, mouseY, delta);
             }
         }
     }
