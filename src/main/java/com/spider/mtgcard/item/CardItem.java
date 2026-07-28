@@ -15,7 +15,6 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipDisplay;
-import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.BlockHitResult;
@@ -144,27 +143,19 @@ public class CardItem extends Item {
 
     private CardDisplayEntity createDisplayEntity(Level world, Player player, InteractionHand hand, ItemStack held,
                                                   BlockPos clicked, Direction face, Vec3 hitLocation, BlockHitResult hit) {
-        if (face.getAxis() == Direction.Axis.Y) {
-            OptionalDouble surface = CardDisplayEntity.findHorizontalSurfaceOffset(world, clicked, face, hitLocation);
-            if (surface.isEmpty()) {
-                return null;
-            }
-
-            return new CardDisplayEntity(
-                    world,
-                    clicked,
-                    face,
-                    surface.getAsDouble(),
-                    hitLocation.x - clicked.getX(),
-                    hitLocation.z - clicked.getZ()
-            );
-        }
-
-        BlockPos attachment = clicked.relative(face);
-        if (!world.getBlockState(attachment).canBeReplaced(new BlockPlaceContext(player, hand, held, hit))) {
+        OptionalDouble surface = CardDisplayEntity.findSurfaceOffset(world, clicked, face, hitLocation);
+        if (surface.isEmpty()) {
             return null;
         }
 
-        return new CardDisplayEntity(world, attachment, face);
+        return new CardDisplayEntity(
+                world,
+                clicked,
+                face,
+                surface.getAsDouble(),
+                hitLocation.x - clicked.getX(),
+                hitLocation.y - clicked.getY(),
+                hitLocation.z - clicked.getZ()
+        );
     }
 }

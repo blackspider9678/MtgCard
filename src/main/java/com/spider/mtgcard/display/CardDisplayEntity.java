@@ -40,6 +40,7 @@ public class CardDisplayEntity extends HangingEntity {
     private static final double FACE_OFFSET = 0.46875D;
     private static final double SURFACE_SEPARATION = 1.0E-4D;
     private static final double SURFACE_MATCH_EPSILON = 1.0E-3D;
+
     private static final EntityDataAccessor<Integer> FLAT_YAW_STEP =
             SynchedEntityData.defineId(CardDisplayEntity.class, EntityDataSerializers.INT);
 
@@ -58,6 +59,9 @@ public class CardDisplayEntity extends HangingEntity {
     private static final EntityDataAccessor<Float> SURFACE_X =
             SynchedEntityData.defineId(CardDisplayEntity.class, EntityDataSerializers.FLOAT);
 
+    private static final EntityDataAccessor<Float> SURFACE_Y =
+            SynchedEntityData.defineId(CardDisplayEntity.class, EntityDataSerializers.FLOAT);
+
     private static final EntityDataAccessor<Float> SURFACE_Z =
             SynchedEntityData.defineId(CardDisplayEntity.class, EntityDataSerializers.FLOAT);
 
@@ -65,17 +69,15 @@ public class CardDisplayEntity extends HangingEntity {
         super(type, world);
     }
 
-    /** Convenience constructor for spawning like an item frame. */
     public CardDisplayEntity(Level world, BlockPos attachmentPos, Direction facing) {
-        super(ModEntities.CARD_DISPLAY, world, attachmentPos); // ✅ sets attachedBlockPos correctly
+        super(ModEntities.CARD_DISPLAY, world, attachmentPos);
         this.setDirection(facing);
     }
 
-    /** Creates a flat display anchored to the actual horizontal surface that was clicked. */
     public CardDisplayEntity(Level world, BlockPos supportPos, Direction facing,
-                             double surfaceOffset, double surfaceX, double surfaceZ) {
+                             double surfaceOffset, double surfaceX, double surfaceY, double surfaceZ) {
         super(ModEntities.CARD_DISPLAY, world, supportPos);
-        setSurfaceAnchor(surfaceOffset, surfaceX, surfaceZ);
+        setSurfaceAnchor(surfaceOffset, surfaceX, surfaceY, surfaceZ);
         this.setDirection(facing);
     }
 
@@ -84,10 +86,11 @@ public class CardDisplayEntity extends HangingEntity {
         super.defineSynchedData(builder);
         builder.define(STACK, ItemStack.EMPTY);
         builder.define(ROT_STEP, 0);
-        builder.define(FLAT_YAW_STEP, 0); // 0..3
+        builder.define(FLAT_YAW_STEP, 0);
         builder.define(SURFACE_ANCHORED, false);
         builder.define(SURFACE_OFFSET, 1.0F);
         builder.define(SURFACE_X, 0.5F);
+        builder.define(SURFACE_Y, 0.5F);
         builder.define(SURFACE_Z, 0.5F);
     }
 
@@ -97,6 +100,7 @@ public class CardDisplayEntity extends HangingEntity {
         if (data.equals(SURFACE_ANCHORED)
                 || data.equals(SURFACE_OFFSET)
                 || data.equals(SURFACE_X)
+                || data.equals(SURFACE_Y)
                 || data.equals(SURFACE_Z)) {
             this.recalculateBoundingBox();
         }
@@ -126,48 +130,43 @@ public class CardDisplayEntity extends HangingEntity {
         return entityData.get(SURFACE_X);
     }
 
+    private float getSurfaceY() {
+        return entityData.get(SURFACE_Y);
+    }
+
     private float getSurfaceZ() {
         return entityData.get(SURFACE_Z);
     }
 
-    private void setSurfaceAnchor(double offset, double x, double z) {
+    private void setSurfaceAnchor(double offset, double x, double y, double z) {
         entityData.set(SURFACE_ANCHORED, true);
         entityData.set(SURFACE_OFFSET, (float) clamp01(offset));
         entityData.set(SURFACE_X, (float) clamp01(x));
+        entityData.set(SURFACE_Y, (float) clamp01(y));
         entityData.set(SURFACE_Z, (float) clamp01(z));
     }
 
-    private boolean isHorizontalSurfaceAnchored() {
-        return isSurfaceAnchored() && this.pos != null && this.getDirection().getAxis() == Direction.Axis.Y;
+    private boolean isShapeSurfaceAnchored() {
+        return isSurfaceAnchored() && this.pos != null;
     }
 
-    /** Called by placement code to orient flat cards without exposing protected setFacing(). */
     public void setFlatYawTowardPlayer(net.minecraft.world.entity.player.Player player) {
-        // vector from card -> player (horizontal only)
         double dx = player.getX() - this.getX();
         double dz = player.getZ() - this.getZ();
 
-        // if somehow perfectly centered, fall back to player's facing
         Direction toPlayer;
         if (Math.abs(dx) < 1.0E-4 && Math.abs(dz) < 1.0E-4) {
             toPlayer = player.getDirection();
         } else {
-            // closest cardinal direction toward the player
             toPlayer = Direction.getApproximateNearest(dx, 0.0, dz);
             if (!toPlayer.getAxis().isHorizontal()) {
                 toPlayer = player.getDirection();
             }
         }
 
-        // We want the "top" of the card to point toward the player.
-        // Depending on your renderer's texture orientation, you may need .getOpposite() here.
         setFlatYawStep(toPlayer.get2DDataValue());
-
-        // refresh pitch/yaw using current facing
         this.setDirection(this.getDirection());
     }
-
-    // ---- data API ----
 
     public ItemStack getStack() {
         return entityData.get(STACK);
@@ -182,12 +181,10 @@ public class CardDisplayEntity extends HangingEntity {
     }
 
     public void setRotStep(int v) {
-        // only allow 0 or 1
         entityData.set(ROT_STEP, (v & 1));
     }
 
     public void cycleRot() {
-        // toggle 0 <-> 1
         setRotStep(getRotStep() ^ 1);
     }
 
@@ -203,7 +200,7 @@ public class CardDisplayEntity extends HangingEntity {
 
     @Override
     public void setPos(double x, double y, double z) {
-        if (isHorizontalSurfaceAnchored()) {
+        if (isShapeSurfaceAnchored()) {
             this.recalculateBoundingBox();
             return;
         }
@@ -219,7 +216,6 @@ public class CardDisplayEntity extends HangingEntity {
             this.setXRot(0.0F);
             this.setYRot(facing.get2DDataValue() * 90f);
         } else {
-            // Laying flat: pitch sets up/down, yaw comes from flat step
             this.setXRot(-90f * facing.getAxisDirection().getStep());
             this.setYRot(getFlatYawStep() * 90f);
         }
@@ -229,67 +225,64 @@ public class CardDisplayEntity extends HangingEntity {
         this.recalculateBoundingBox();
     }
 
-
-    // ---- attachment + bounds ----
-
-    /**
-     * Make the interaction hitbox/bounds match a "thin card on a face".
-     * AbstractDecorationEntity asks us for a bounding box at a block + face. :contentReference[oaicite:4]{index=4}
-     */
     @Override
     protected AABB calculateBoundingBox(BlockPos pos, Direction side) {
-        if (isSurfaceAnchored() && side.getAxis() == Direction.Axis.Y) {
-            double surfaceY = pos.getY() + clamp01(getSurfaceOffset());
-            double centerY = surfaceY + (side == Direction.UP ? SURFACE_SEPARATION : -SURFACE_SEPARATION);
-            Vec3 center = new Vec3(pos.getX() + 0.5D, centerY, pos.getZ() + 0.5D);
-            return AABB.ofSize(center, CARD_SIZE, CARD_THICKNESS, CARD_SIZE);
+        if (isSurfaceAnchored()) {
+            return calculateSurfaceBoundingBox(pos, side);
         }
 
-        // Match vanilla item-frame wall offset:
-        // center of supporting block, then push BACK into the block along the face normal
-        // (this prevents the "one full air block gap" when attachment pos/facing math is involved)
         Vec3 center = Vec3.atCenterOf(pos).relative(side, -FACE_OFFSET);
-
-        // We want a full-card hit area (1x1) but only 1/16 thick in the normal axis.
-        // Box.of takes FULL sizes (not half-extents).
-        Direction.Axis axis = side.getAxis();
-
-        double sizeX = (axis == Direction.Axis.X) ? CARD_THICKNESS : CARD_SIZE;
-        double sizeY = (axis == Direction.Axis.Y) ? CARD_THICKNESS : CARD_SIZE;
-        double sizeZ = (axis == Direction.Axis.Z) ? CARD_THICKNESS : CARD_SIZE;
-
-        return AABB.ofSize(center, sizeX, sizeY, sizeZ);
+        return AABB.ofSize(center,
+                sizeForAxis(side.getAxis(), Direction.Axis.X),
+                sizeForAxis(side.getAxis(), Direction.Axis.Y),
+                sizeForAxis(side.getAxis(), Direction.Axis.Z));
     }
 
+    private AABB calculateSurfaceBoundingBox(BlockPos pos, Direction side) {
+        Direction.Axis axis = side.getAxis();
+        double centerX = pos.getX() + 0.5D;
+        double centerY = pos.getY() + 0.5D;
+        double centerZ = pos.getZ() + 0.5D;
+        double centerOnAxis = blockCoordinate(pos, axis)
+                + clamp01(getSurfaceOffset())
+                + surfaceSeparation(side);
 
-    /**
-     * This is REQUIRED to be public (super is public). :contentReference[oaicite:5]{index=5}
-     * Keep it simple for now: if the attached block is gone/air, pop off.
-     */
+        switch (axis) {
+            case X -> centerX = centerOnAxis;
+            case Y -> centerY = centerOnAxis;
+            case Z -> centerZ = centerOnAxis;
+        }
+
+        return AABB.ofSize(new Vec3(centerX, centerY, centerZ),
+                sizeForAxis(axis, Direction.Axis.X),
+                sizeForAxis(axis, Direction.Axis.Y),
+                sizeForAxis(axis, Direction.Axis.Z));
+    }
+
+    private static double sizeForAxis(Direction.Axis normalAxis, Direction.Axis sizeAxis) {
+        return normalAxis == sizeAxis ? CARD_THICKNESS : CARD_SIZE;
+    }
+
     @Override
     public boolean survives() {
         Direction facing = this.getDirection();
-        if (isSurfaceAnchored() && facing.getAxis() == Direction.Axis.Y) {
-            return survivesOnHorizontalSurface(facing);
+        if (isSurfaceAnchored()) {
+            return survivesOnSurface(facing);
         }
 
         return super.survives();
     }
 
-    private boolean survivesOnHorizontalSurface(Direction facing) {
-        if (!hasHorizontalSurfaceAt(this.level(), this.getPos(), facing,
-                getSurfaceOffset(), getSurfaceX(), getSurfaceZ())) {
+    private boolean survivesOnSurface(Direction facing) {
+        if (!hasSurfaceAt(this.level(), this.getPos(), facing,
+                getSurfaceOffset(), getSurfaceX(), getSurfaceY(), getSurfaceZ())) {
             return false;
         }
 
         return this.canCoexist(false);
     }
 
-    public static OptionalDouble findHorizontalSurfaceOffset(Level world, BlockPos pos, Direction face, Vec3 hitLocation) {
-        if (face.getAxis() != Direction.Axis.Y) {
-            return OptionalDouble.empty();
-        }
-
+    public static OptionalDouble findSurfaceOffset(Level world, BlockPos pos, Direction face, Vec3 hitLocation) {
         VoxelShape shape = getSurfaceShape(world, pos);
         if (shape.isEmpty()) {
             return OptionalDouble.empty();
@@ -298,59 +291,72 @@ public class CardDisplayEntity extends HangingEntity {
         double localX = clamp01(hitLocation.x - pos.getX());
         double localY = clamp01(hitLocation.y - pos.getY());
         double localZ = clamp01(hitLocation.z - pos.getZ());
+        Direction.Axis axis = face.getAxis();
+        double hitAxis = coordinateForAxis(axis, localX, localY, localZ);
+        boolean positive = isPositive(face);
         List<AABB> boxes = shape.toAabbs();
 
-        double best = (face == Direction.UP) ? -1.0D : 2.0D;
+        double best = positive ? -1.0D : 2.0D;
         for (AABB box : boxes) {
-            if (!containsHorizontal(box, localX, localZ)) {
+            if (!containsPerpendicular(box, axis, localX, localY, localZ)) {
                 continue;
             }
 
-            double surface = (face == Direction.UP) ? box.maxY : box.minY;
-            if (face == Direction.UP) {
-                if (surface <= localY + SURFACE_MATCH_EPSILON
+            double surface = positive ? maxOnAxis(box, axis) : minOnAxis(box, axis);
+            if (positive) {
+                if (surface <= hitAxis + SURFACE_MATCH_EPSILON
                         && surface > best
-                        && isSurfaceExposed(boxes, face, surface, localX, localZ)) {
+                        && isSurfaceExposed(boxes, face, surface, localX, localY, localZ)) {
                     best = surface;
                 }
             } else {
-                if (surface >= localY - SURFACE_MATCH_EPSILON
+                if (surface >= hitAxis - SURFACE_MATCH_EPSILON
                         && surface < best
-                        && isSurfaceExposed(boxes, face, surface, localX, localZ)) {
+                        && isSurfaceExposed(boxes, face, surface, localX, localY, localZ)) {
                     best = surface;
                 }
             }
         }
 
-        if (face == Direction.UP && best >= 0.0D) {
+        if (positive && best >= 0.0D) {
             return OptionalDouble.of(clamp01(best));
         }
-        if (face == Direction.DOWN && best <= 1.0D) {
+        if (!positive && best <= 1.0D) {
             return OptionalDouble.of(clamp01(best));
         }
         return OptionalDouble.empty();
     }
 
-    private static boolean hasHorizontalSurfaceAt(Level world, BlockPos pos, Direction face,
-                                                  double surfaceOffset, double localX, double localZ) {
+    public static OptionalDouble findHorizontalSurfaceOffset(Level world, BlockPos pos, Direction face, Vec3 hitLocation) {
+        if (face.getAxis() != Direction.Axis.Y) {
+            return OptionalDouble.empty();
+        }
+
+        return findSurfaceOffset(world, pos, face, hitLocation);
+    }
+
+    private static boolean hasSurfaceAt(Level world, BlockPos pos, Direction face,
+                                        double surfaceOffset, double localX, double localY, double localZ) {
         VoxelShape shape = getSurfaceShape(world, pos);
         if (shape.isEmpty()) {
             return false;
         }
 
+        Direction.Axis axis = face.getAxis();
         double surface = clamp01(surfaceOffset);
         double x = clamp01(localX);
+        double y = clamp01(localY);
         double z = clamp01(localZ);
         List<AABB> boxes = shape.toAabbs();
 
         for (AABB box : boxes) {
-            if (!containsHorizontal(box, x, z)) {
+            if (!containsPerpendicular(box, axis, x, y, z)) {
                 continue;
             }
 
-            double candidate = (face == Direction.UP) ? box.maxY : box.minY;
+            double candidate = isPositive(face) ? maxOnAxis(box, axis) : minOnAxis(box, axis);
             if (Math.abs(candidate - surface) <= SURFACE_MATCH_EPSILON
-                    && isSurfaceExposed(boxes, face, surface, x, z)) {
+                    && isSurfaceExposed(boxes, face, surface, x, y, z)) {
                 return true;
             }
         }
@@ -361,32 +367,74 @@ public class CardDisplayEntity extends HangingEntity {
         return world.getBlockState(pos).getShape(world, pos);
     }
 
-    private static boolean containsHorizontal(AABB box, double x, double z) {
-        return x >= box.minX - SURFACE_MATCH_EPSILON
-                && x <= box.maxX + SURFACE_MATCH_EPSILON
-                && z >= box.minZ - SURFACE_MATCH_EPSILON
-                && z <= box.maxZ + SURFACE_MATCH_EPSILON;
+    private static boolean containsPerpendicular(AABB box, Direction.Axis normalAxis, double x, double y, double z) {
+        return switch (normalAxis) {
+            case X -> contains(box.minY, box.maxY, y) && contains(box.minZ, box.maxZ, z);
+            case Y -> contains(box.minX, box.maxX, x) && contains(box.minZ, box.maxZ, z);
+            case Z -> contains(box.minX, box.maxX, x) && contains(box.minY, box.maxY, y);
+        };
     }
 
-    private static boolean isSurfaceExposed(List<AABB> boxes, Direction face, double surface, double x, double z) {
+    private static boolean contains(double min, double max, double value) {
+        return value >= min - SURFACE_MATCH_EPSILON && value <= max + SURFACE_MATCH_EPSILON;
+    }
+
+    private static boolean isSurfaceExposed(List<AABB> boxes, Direction face, double surface,
+                                            double x, double y, double z) {
+        Direction.Axis axis = face.getAxis();
+        boolean positive = isPositive(face);
+        double outside = surface + (positive ? SURFACE_MATCH_EPSILON : -SURFACE_MATCH_EPSILON);
+
         for (AABB box : boxes) {
-            if (!containsHorizontal(box, x, z)) {
+            if (!containsPerpendicular(box, axis, x, y, z)) {
                 continue;
             }
 
-            if (face == Direction.UP) {
-                if (box.minY < surface + SURFACE_MATCH_EPSILON
-                        && box.maxY > surface + SURFACE_MATCH_EPSILON) {
-                    return false;
-                }
-            } else {
-                if (box.minY < surface - SURFACE_MATCH_EPSILON
-                        && box.maxY > surface - SURFACE_MATCH_EPSILON) {
-                    return false;
-                }
+            if (minOnAxis(box, axis) < outside && maxOnAxis(box, axis) > outside) {
+                return false;
             }
         }
         return true;
+    }
+
+    private static double coordinateForAxis(Direction.Axis axis, double x, double y, double z) {
+        return switch (axis) {
+            case X -> x;
+            case Y -> y;
+            case Z -> z;
+        };
+    }
+
+    private static double blockCoordinate(BlockPos pos, Direction.Axis axis) {
+        return switch (axis) {
+            case X -> pos.getX();
+            case Y -> pos.getY();
+            case Z -> pos.getZ();
+        };
+    }
+
+    private static double minOnAxis(AABB box, Direction.Axis axis) {
+        return switch (axis) {
+            case X -> box.minX;
+            case Y -> box.minY;
+            case Z -> box.minZ;
+        };
+    }
+
+    private static double maxOnAxis(AABB box, Direction.Axis axis) {
+        return switch (axis) {
+            case X -> box.maxX;
+            case Y -> box.maxY;
+            case Z -> box.maxZ;
+        };
+    }
+
+    private static boolean isPositive(Direction direction) {
+        return direction.getAxisDirection() == Direction.AxisDirection.POSITIVE;
+    }
+
+    private static double surfaceSeparation(Direction direction) {
+        return isPositive(direction) ? SURFACE_SEPARATION : -SURFACE_SEPARATION;
     }
 
     private static double clamp01(double value) {
@@ -395,8 +443,6 @@ public class CardDisplayEntity extends HangingEntity {
         }
         return Math.max(0.0D, Math.min(1.0D, value));
     }
-
-    // ---- behavior ----
 
     private int attachGrace = 5;
 
@@ -417,11 +463,8 @@ public class CardDisplayEntity extends HangingEntity {
         }
     }
 
-
     @Override
     public void playPlacementSound() {
-        // Called after spawn/placement for attached entities.
-        // You can play a sound or validate here later.
     }
 
     @Override
@@ -438,11 +481,9 @@ public class CardDisplayEntity extends HangingEntity {
 
     @Override
     public void dropItem(ServerLevel world, @Nullable Entity breaker) {
-        // Called when the hanging entity is broken “properly”.
         dropAsItem(world, null);
     }
 
-    /** Drop the stored card stack */
     public void dropAsItem(ServerLevel world, @Nullable DamageSource source) {
         ItemStack st = getStack();
         if (!st.isEmpty()) {
@@ -453,7 +494,6 @@ public class CardDisplayEntity extends HangingEntity {
 
     @Override
     public boolean hurtServer(ServerLevel world, DamageSource source, float amount) {
-        // Break like a frame: drop and remove
         this.dropAsItem(world, source);
         this.discard();
         return true;
@@ -478,8 +518,6 @@ public class CardDisplayEntity extends HangingEntity {
         return InteractionResult.CONSUME;
     }
 
-
-    // ---- persistence ----
     @Override
     protected void addAdditionalSaveData(ValueOutput view) {
         super.addAdditionalSaveData(view);
@@ -492,6 +530,7 @@ public class CardDisplayEntity extends HangingEntity {
             view.putBoolean("SurfaceAnchored", true);
             view.putFloat("SurfaceOffset", getSurfaceOffset());
             view.putFloat("SurfaceX", getSurfaceX());
+            view.putFloat("SurfaceY", getSurfaceY());
             view.putFloat("SurfaceZ", getSurfaceZ());
         }
     }
@@ -507,6 +546,7 @@ public class CardDisplayEntity extends HangingEntity {
             setSurfaceAnchor(
                     view.getFloatOr("SurfaceOffset", 1.0F),
                     view.getFloatOr("SurfaceX", 0.5F),
+                    view.getFloatOr("SurfaceY", 0.5F),
                     view.getFloatOr("SurfaceZ", 0.5F)
             );
         } else {
@@ -515,5 +555,4 @@ public class CardDisplayEntity extends HangingEntity {
         Direction f = view.read("Facing", Direction.LEGACY_ID_CODEC).orElse(this.getNearestViewDirection());
         this.setDirection(f);
     }
-
 }
