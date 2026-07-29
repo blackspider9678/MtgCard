@@ -185,7 +185,8 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         }
 
         // tiny push away from the block face to avoid z-fighting
-        matrices.translate(0f, 0f, 0.01f);
+        float normalOffset = (s.facing == Direction.UP || s.facing == Direction.DOWN) ? 0.002f : 0.01f;
+        matrices.translate(0f, 0f, normalOffset);
 
         // rotate around the face normal (local Z axis after orient)
         float degrees = (s.rotStep == 1) ? 90f : 0f;

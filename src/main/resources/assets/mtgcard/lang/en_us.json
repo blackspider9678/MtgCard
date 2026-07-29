@@ -1,5 +1,6 @@
 {
   "itemGroup.mtgcard": "Mtg Card",
+  "entity.mtgcard.card_display": "Card Display",
   "item.mtgcard.card": "Magic Card",
   "item.mtgcard.mtg_pack": "Booster Pack",
   "tcg_game.mtgcard.all": "All",
