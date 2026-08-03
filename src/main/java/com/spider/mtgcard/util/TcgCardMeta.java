@@ -13,6 +13,7 @@ public final class TcgCardMeta {
     public static final String TCG_META = "tcg_meta";
     public static final String TCG_FLAGS = "tcg_flags";
     public static final String MTG_META = "mtg_meta";
+    private static final int MAX_DOUBLE_TEXT_LENGTH = 64;
 
     public static record Info(
             String game,
@@ -41,6 +42,16 @@ public final class TcgCardMeta {
         public boolean isMtg() {
             return "mtg".equalsIgnoreCase(game);
         }
+    }
+
+    public static record DatabaseKeyInfo(
+            String game,
+            String id,
+            String name,
+            String set,
+            String collectorNumber,
+            boolean foil
+    ) {
     }
 
     public static Info read(ItemStack stack) {
@@ -99,6 +110,27 @@ public final class TcgCardMeta {
                 readLegality(tcg, mtg, "commander"),
                 readPriceUsd(tcg, mtg),
                 firstInt(tcg, mtg, "tcg_face", "face", "mtg_face")
+        );
+    }
+
+    public static DatabaseKeyInfo readDatabaseKeyInfo(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return new DatabaseKeyInfo("", "", "", "", "", false);
+
+        CompoundTag root = StackData.readCustom(stack);
+        CompoundTag tcg = root.getCompound(TCG_META).orElseGet(CompoundTag::new);
+        CompoundTag mtg = root.getCompound(MTG_META).orElseGet(CompoundTag::new);
+        boolean hasMtg = root.getCompound(MTG_META).isPresent();
+
+        String game = firstString(tcg, null, "game");
+        if (game.isBlank() && hasMtg) game = "mtg";
+
+        return new DatabaseKeyInfo(
+                game,
+                firstString(tcg, mtg, "id", "card_id", "scryfall_id", "custom_id"),
+                firstString(tcg, mtg, "name"),
+                firstString(tcg, mtg, "set", "set_code"),
+                firstString(tcg, mtg, "collector_number", "number"),
+                readFoil(root)
         );
     }
 
@@ -338,9 +370,9 @@ public final class TcgCardMeta {
 
         String s = tag.getString(key).orElse("").trim();
         if (!s.isEmpty()) {
-            try {
-                return Double.parseDouble(s);
-            } catch (NumberFormatException ignored) {
+            Double parsed = parseReasonableDouble(s);
+            if (parsed != null) {
+                return parsed;
             }
         }
 
@@ -351,6 +383,28 @@ public final class TcgCardMeta {
         if (i.isPresent()) return i.get();
 
         return def;
+    }
+
+    private static Double parseReasonableDouble(String value) {
+        if (value.length() > MAX_DOUBLE_TEXT_LENGTH) return null;
+
+        boolean sawDigit = false;
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c >= '0' && c <= '9') {
+                sawDigit = true;
+            } else if (c != '+' && c != '-' && c != '.' && c != 'e' && c != 'E') {
+                return null;
+            }
+        }
+        if (!sawDigit) return null;
+
+        try {
+            double parsed = Double.parseDouble(value);
+            return Double.isFinite(parsed) ? parsed : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     private static void putIfBlank(CompoundTag tag, String key, String value) {

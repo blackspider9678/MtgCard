@@ -868,6 +868,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
     public void render(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
         this.renderBackground(ctx, mouseX, mouseY, delta);
         super.render(ctx, mouseX, mouseY, delta);
+        renderDbCountOverlays(ctx);
 
         renderDeckboxTabTooltip(ctx, mouseX, mouseY);
         this.renderTooltip(ctx, mouseX, mouseY);
@@ -876,18 +877,22 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         renderHoverPreview(ctx, mouseX, mouseY, delta);
     }
 
-    @Override
-    protected void renderSlot(GuiGraphics ctx, Slot slot, int mouseX, int mouseY) {
-        super.renderSlot(ctx, slot, mouseX, mouseY);
+    private void renderDbCountOverlays(GuiGraphics ctx) {
+        if (this.menu == null || this.menu.slots == null) return;
 
-        if (!isDbWindowMenuSlot(slot)) return;
-        ItemStack stack = slot.getItem();
-        if (stack == null || stack.isEmpty()) return;
+        int max = Math.min(CardDatabaseScreenHandler.DB_ROWS * CardDatabaseScreenHandler.DB_COLS, this.menu.slots.size());
+        for (int i = 0; i < max; i++) {
+            Slot slot = this.menu.slots.get(i);
+            if (!isDbWindowMenuSlot(slot)) continue;
 
-        long count = CardDatabaseCards.databaseCount(stack);
-        if (count <= 1L) return;
+            ItemStack stack = slot.getItem();
+            if (stack == null || stack.isEmpty()) continue;
 
-        drawDbCount(ctx, slot, formatDbCount(count));
+            long count = CardDatabaseCards.databaseCount(stack);
+            if (count <= 1L) continue;
+
+            drawDbCount(ctx, slot, formatDbCount(count));
+        }
     }
 
     private boolean isDbWindowMenuSlot(Slot slot) {

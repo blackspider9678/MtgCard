@@ -1,9 +1,11 @@
 // com/spider/mtgcard/db/CardDBSession.java
 package com.spider.mtgcard.db;
 
+import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.api.CardDatabaseCards;
 import com.spider.mtgcard.db.search.SearchEngine;
 import com.spider.mtgcard.item.ModItemTags;
+import com.spider.mtgcard.util.StackData;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
@@ -12,12 +14,14 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.ServerLevel;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.UUID;
 
 /** Per-player logical DB (infinite list + 54-slot window + scroll). */
 public final class CardDBSession implements CardDBView {
     private static final int ROWS=6, COLS=9, PAGE=ROWS*COLS;
+    private static final long SLOW_LOAD_LOG_MS = 1_000L;
 
     private final ServerLevel world;
     private final UUID playerId;
@@ -247,8 +251,7 @@ public final class CardDBSession implements CardDBView {
     public static CardDBSession forPlayer(ServerPlayer player) {
         var sw = player.level();
         var s = new CardDBSession(sw, player.getUUID());
-        s.load();
-        s.applyBackingToWindow();
+        s.ensureLoaded(player);
         return s;
     }
 
@@ -260,31 +263,37 @@ public final class CardDBSession implements CardDBView {
     /* ---------- Persistence ---------- */
 
     private void load() {
+        long startedNs = System.nanoTime();
         var state = PlayerCardDBState.get(world);
         var list = state.getIntake(playerId);
         this.intakeAll.clear();
         if (list != null) CardDBState.applyIntakeToList(this.intakeAll, list);
-        normalizeStorage();
+        int loaded = this.intakeAll.size();
+        boolean changed = normalizeStorage();
         this.windowOffset = 0;
         this.projectingSearch = false;
-        persist();
+        if (changed) persist();
+        logSlowLoad("load", loaded, changed, startedNs);
     }
 
     public void ensureLoaded(ServerPlayer sp) {
         if (!(world instanceof ServerLevel sw)) return;
 
+        long startedNs = System.nanoTime();
         this.owner = sp.getUUID();
         var st = PlayerCardDBState.get(sw);
         var saved = st.getIntake(owner);
 
         this.intakeAll.clear();
         CardDBState.applyIntakeToList(this.intakeAll, saved);
-        normalizeStorage();
+        int loaded = this.intakeAll.size();
+        boolean changed = normalizeStorage();
         this.windowOffset = 0;
         this.projectingSearch = false;
         applyBackingToWindow();
         this.window.setChanged();
-        persist();
+        if (changed) persist();
+        logSlowLoad("ensureLoaded", loaded, changed, startedNs);
     }
 
     private void persist() {
@@ -445,6 +454,7 @@ public final class CardDBSession implements CardDBView {
         if (intakeAll.isEmpty()) return false;
 
         ArrayList<ItemStack> original = new ArrayList<>(intakeAll);
+        LinkedHashMap<String, ItemStack> grouped = new LinkedHashMap<>(Math.max(16, original.size()));
         intakeAll.clear();
 
         boolean changed = false;
@@ -453,10 +463,36 @@ public final class CardDBSession implements CardDBView {
                 changed = true;
                 continue;
             }
-            if (!addToGroupedStorage(stack)) {
+
+            long count = CardDatabaseCards.databaseCount(stack);
+            if (count <= 0L) {
+                changed = true;
+                continue;
+            }
+
+            ItemStack storedCopy = CardDatabaseCards.copyForDatabase(stack, count);
+            if (storedCopy.isEmpty()) {
+                changed = true;
+                continue;
+            }
+
+            String key = CardDatabaseCards.databaseKey(storedCopy);
+            if (key.isBlank()) {
+                changed = true;
+                continue;
+            }
+
+            ItemStack existing = grouped.get(key);
+            if (existing == null) {
+                grouped.put(key, storedCopy);
+            } else {
+                long merged = CardDatabaseCards.saturatedAdd(CardDatabaseCards.databaseCount(existing), count);
+                CardDatabaseCards.setDatabaseCount(existing, merged);
                 changed = true;
             }
         }
+
+        intakeAll.addAll(grouped.values());
 
         if (original.size() != intakeAll.size()) return true;
         for (int i = 0; i < original.size(); i++) {
@@ -466,8 +502,16 @@ public final class CardDBSession implements CardDBView {
             if (CardDatabaseCards.databaseCount(before) != CardDatabaseCards.databaseCount(after)) return true;
             if (before.getCount() != 1) return true;
             if (!readUid(before).isBlank()) return true;
+            if (!hasCachedDatabaseFields(before)) return true;
         }
         return changed;
+    }
+
+    private static boolean hasCachedDatabaseFields(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        var root = StackData.readCustom(stack);
+        return root.getLong(CardDatabaseCards.DB_COUNT_KEY).orElse(0L) > 0L
+                && !root.getString(CardDatabaseCards.DB_STACK_KEY).orElse("").isBlank();
     }
 
     private boolean addToGroupedStorage(ItemStack source) {
@@ -495,6 +539,14 @@ public final class CardDBSession implements CardDBView {
 
         intakeAll.add(storedCopy);
         return true;
+    }
+
+    private void logSlowLoad(String stage, int loadedCount, boolean changed, long startedNs) {
+        long elapsedMs = (System.nanoTime() - startedNs) / 1_000_000L;
+        if (elapsedMs >= SLOW_LOAD_LOG_MS) {
+            Mtgcard.LOGGER.warn("[MTGCard] Card Database {} took {} ms (loaded={}, stored={}, changed={})",
+                    stage, elapsedMs, loadedCount, intakeAll.size(), changed);
+        }
     }
 
     private ItemStack takeOneAtIndex(int index) {

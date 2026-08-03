@@ -104,7 +104,6 @@ public class CardDatabaseBlock extends BaseEntityBlock {
                 }
 
                 CardDBSession session = CardDBSession.forPlayer(sp);
-                session.ensureLoaded(sp);
                 session.setWindowOffset(0);
                 return new CardDatabaseScreenHandler(syncId, playerInv, session, pos);
             }

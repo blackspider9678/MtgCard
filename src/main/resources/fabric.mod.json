@@ -21,7 +21,10 @@
     ]
   },
   "mixins": [
-    "mtgcard.mousetweaks.mixins.json"
+    {
+      "config": "mtgcard.mousetweaks.mixins.json",
+      "environment": "client"
+    }
   ],
   "depends": {
     "fabricloader": ">=${loader_version}",

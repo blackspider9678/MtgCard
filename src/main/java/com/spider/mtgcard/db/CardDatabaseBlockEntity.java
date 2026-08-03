@@ -348,7 +348,7 @@ public class CardDatabaseBlockEntity extends BlockEntity {
     Map<String, Long> snapshot() { return new HashMap<>(store); }
 
     private static String keyOf(ItemStack stack) {
-        TcgCardMeta.Info meta = TcgCardMeta.read(stack);
+        TcgCardMeta.DatabaseKeyInfo meta = TcgCardMeta.readDatabaseKeyInfo(stack);
         return (meta.game() + "|" + meta.set() + "|" + meta.collectorNumber() + "|"
                 + (meta.foil() ? "F" : "N") + "|" + meta.name()).trim();
     }

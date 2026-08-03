@@ -23,15 +23,24 @@ public final class CardDatabaseCards {
 
     public static boolean canStore(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
-        TcgCardMeta.Info meta = TcgCardMeta.read(stack);
-        return !databaseKey(stack).isBlank()
+        TcgCardMeta.DatabaseKeyInfo meta = TcgCardMeta.readDatabaseKeyInfo(stack);
+        return !databaseKey(stack, meta).isBlank()
                 && (!meta.set().isBlank() || !meta.collectorNumber().isBlank() || !meta.id().isBlank() || !meta.name().isBlank());
     }
 
     public static String databaseKey(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return "";
 
-        TcgCardMeta.Info meta = TcgCardMeta.read(stack);
+        CompoundTag root = StackData.readCustom(stack);
+        if (root.getLong(DB_COUNT_KEY).orElse(0L) > 0L) {
+            String storedKey = root.getString(DB_STACK_KEY).orElse("").trim();
+            if (!storedKey.isBlank()) return storedKey;
+        }
+
+        return databaseKey(stack, TcgCardMeta.readDatabaseKeyInfo(stack));
+    }
+
+    private static String databaseKey(ItemStack stack, TcgCardMeta.DatabaseKeyInfo meta) {
         String itemId = itemId(stack);
         String game = normalize(TcgGameRegistry.normalizeFilterId(meta.game()));
 
@@ -51,7 +60,7 @@ public final class CardDatabaseCards {
             identity = "custom:" + canonicalCustomData(stack);
         }
 
-        return itemId + "|game:" + game + "|" + identity + "|foil:" + isFoilVariant(stack);
+        return itemId + "|game:" + game + "|" + identity + "|foil:" + isFoilVariant(stack, meta.foil());
     }
 
     public static boolean sameDatabaseCard(ItemStack a, ItemStack b) {
@@ -82,7 +91,7 @@ public final class CardDatabaseCards {
         long safeCount = Math.max(1L, count);
         CompoundTag root = StackData.readCustom(stack);
         root.putLong(DB_COUNT_KEY, safeCount);
-        root.putString(DB_STACK_KEY, databaseKey(stack));
+        root.putString(DB_STACK_KEY, databaseKey(stack, TcgCardMeta.readDatabaseKeyInfo(stack)));
         stack.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
         stack.setCount(1);
     }
@@ -170,8 +179,8 @@ public final class CardDatabaseCards {
         }
     }
 
-    private static boolean isFoilVariant(ItemStack stack) {
-        if (TcgCardMeta.read(stack).foil()) return true;
+    private static boolean isFoilVariant(ItemStack stack, boolean metadataFoil) {
+        if (metadataFoil) return true;
         Boolean glint = stack.get(DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
         return glint != null && glint;
     }
