@@ -15,6 +15,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 
@@ -49,6 +50,8 @@ public final class NeoForgeClientPayloadHandlers {
             case "deck_control_overlay" -> invokeOnCurrentScreen("onOverlayPayload", DeckControlPackets.OverlayS2C.class, payload);
             case "deck_control_cascade" -> invokeOnCurrentScreen("onCascadePayload", DeckControlPackets.CascadeS2C.class, payload);
             case "card_display_open" -> openCardDisplay((CardDisplayPayloads.OpenDisplayViewS2C) payload);
+            case "card_display_attachments_open" -> openCardDisplayAttachments((CardDisplayPayloads.OpenAttachmentsS2C) payload);
+            case "card_display_close_screens" -> closeCardDisplayScreens((CardDisplayPayloads.CloseDisplayScreensS2C) payload);
             case "deckbox_tab_names" -> deckboxTabNames((DeckboxTabNamesPayload) payload);
             case "deck_export_request" -> deckExport((DeckPayloads.DeckExportRequestS2C) payload);
             case "deck_list_request" -> deckList();
@@ -199,12 +202,72 @@ public final class NeoForgeClientPayloadHandlers {
     private static void openCardDisplay(CardDisplayPayloads.OpenDisplayViewS2C payload) {
         try {
             Class<?> screenClass = Class.forName("com.spider.mtgcard.client.CardLargeViewScreen");
-            Constructor<?> ctor = screenClass.getConstructor(ItemStack.class, int.class, int.class);
-            Object screen = ctor.newInstance(payload.stack(), -1, payload.entityId());
+            Constructor<?> ctor = screenClass.getConstructor(
+                    ItemStack.class,
+                    int.class,
+                    int.class,
+                    UUID.class,
+                    long.class,
+                    UUID.class,
+                    int.class
+            );
+            Object screen = ctor.newInstance(
+                    payload.stack(),
+                    -1,
+                    payload.entityId(),
+                    payload.hostId(),
+                    payload.version(),
+                    payload.selectedCardId(),
+                    payload.attachmentCount()
+            );
             if (screen instanceof Screen clientScreen) {
-                Minecraft.getInstance().setScreenAndShow(clientScreen);
+                Minecraft.getInstance().gui.setScreen(clientScreen);
             }
         } catch (ReflectiveOperationException ignored) {
+        }
+    }
+
+    private static void openCardDisplayAttachments(CardDisplayPayloads.OpenAttachmentsS2C payload) {
+        try {
+            Class<?> screenClass = Class.forName("com.spider.mtgcard.client.AttachedCardsScreen");
+            Constructor<?> ctor = screenClass.getConstructor(
+                    int.class,
+                    UUID.class,
+                    long.class,
+                    UUID.class,
+                    ItemStack.class,
+                    List.class
+            );
+            Object screen = ctor.newInstance(
+                    payload.entityId(),
+                    payload.hostId(),
+                    payload.version(),
+                    payload.selectedCardId(),
+                    payload.hostStack(),
+                    payload.attachments()
+            );
+            if (screen instanceof Screen clientScreen) {
+                Minecraft.getInstance().gui.setScreen(clientScreen);
+            }
+        } catch (ReflectiveOperationException ignored) {
+        }
+    }
+
+    private static void closeCardDisplayScreens(CardDisplayPayloads.CloseDisplayScreensS2C payload) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null && payload.message() != null && !payload.message().isBlank()) {
+            mc.player.sendSystemMessage(Component.literal(payload.message()));
+        }
+
+        Screen screen = mc.gui.screen();
+        if (screen == null) {
+            return;
+        }
+
+        String className = screen.getClass().getName();
+        if ("com.spider.mtgcard.client.CardLargeViewScreen".equals(className)
+                || "com.spider.mtgcard.client.AttachedCardsScreen".equals(className)) {
+            mc.gui.setScreen(null);
         }
     }
 
