@@ -5,6 +5,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.client.java.CardArtManager;
+import com.spider.mtgcard.display.CardDisplayAttachmentData;
 import com.spider.mtgcard.display.CardDisplayEntity;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LightTexture;
@@ -27,6 +28,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity, CardDisplayEntityRenderer.State> {
 
@@ -41,7 +43,10 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
     private static final long CACHE_EXPIRE_TICKS = 200L;
     private static final double COUNTER_RENDER_DISTANCE_SQR = 12.0D * 12.0D;
 
-    private record CounterIcon(Identifier texture) {}
+    public record CounterIcon(Identifier texture) {}
+
+    public record CardState(UUID id, ItemStack stack, Identifier texId, int texW, int texH,
+                             int rotStep, int faceIndex, boolean foil, List<CounterIcon> counters) {}
 
     private static final class CachedRenderData {
         ItemStack stack = ItemStack.EMPTY;
@@ -56,11 +61,12 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         long lastSeenTick = 0L;
     }
 
-    private final Map<Integer, CachedRenderData> renderCache = new HashMap<>();
+    private final Map<String, CachedRenderData> renderCache = new HashMap<>();
     private long nextCachePruneTick = 0L;
 
     public static class State extends EntityRenderState {
         public ItemStack stack = ItemStack.EMPTY;
+        public List<CardState> cards = List.of();
         public Identifier texId = TEX_WHITE;
         public int texW = BACK_W;
         public int texH = BACK_H;
@@ -97,39 +103,76 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         s.cameraDistanceSq = getCameraDistanceSq(entity);
 
         if (s.stack == null || s.stack.isEmpty()) {
-            renderCache.remove(entity.getId());
+            removeEntityCache(entity.getId());
             s.texId = TEX_WHITE;
             s.texW = 16;
             s.texH = 16;
             s.faceIndex = 0;
             s.counters = List.of();
+            s.cards = List.of();
             return;
         }
 
-        CachedRenderData cached = renderCache.computeIfAbsent(entity.getId(), id -> new CachedRenderData());
+        ArrayList<CardState> cards = new ArrayList<>();
+        appendCardState(cards, entity.getId(), entity.getStackKey(), s.stack, s.rotStep, gameTime);
+        for (CardDisplayAttachmentData.Attachment attachment : entity.getCardAttachments()) {
+            appendCardState(cards, entity.getId(), attachment.id(), attachment.stack(), attachment.rotStep(), gameTime);
+        }
+
+        s.cards = List.copyOf(cards);
+        if (cards.isEmpty()) {
+            s.texId = TEX_WHITE;
+            s.texW = 16;
+            s.texH = 16;
+            s.faceIndex = 0;
+            s.foil = false;
+            s.counters = List.of();
+        } else {
+            CardState host = cards.getFirst();
+            s.texId = host.texId();
+            s.texW = host.texW();
+            s.texH = host.texH();
+            s.faceIndex = host.faceIndex();
+            s.foil = host.foil();
+            s.counters = host.counters();
+        }
+    }
+
+    private void appendCardState(ArrayList<CardState> out, int entityId, UUID cardId, ItemStack stack, int rotStep, long gameTime) {
+        if (stack == null || stack.isEmpty()) {
+            return;
+        }
+
+        UUID safeId = cardId == null ? new UUID(0L, 0L) : cardId;
+        String cacheKey = cacheKey(entityId, safeId);
+        CachedRenderData cached = renderCache.computeIfAbsent(cacheKey, id -> new CachedRenderData());
         cached.lastSeenTick = gameTime;
 
-        if (!ItemStack.matches(s.stack, cached.stack)) {
-            refreshStaticData(cached, s.stack);
+        if (!ItemStack.matches(stack, cached.stack)) {
+            refreshStaticData(cached, stack);
             cached.nextTextureRefreshTick = Long.MIN_VALUE;
         }
 
-        refreshTextureData(cached, s.stack, gameTime);
-
-        s.faceIndex = cached.faceIndex;
-        s.texId = cached.texId;
-        s.texW = cached.texW;
-        s.texH = cached.texH;
-        s.foil = cached.foil;
-        s.counters = cached.counters;
+        refreshTextureData(cached, stack, gameTime);
+        out.add(new CardState(
+                safeId,
+                stack.copy(),
+                cached.texId,
+                cached.texW,
+                cached.texH,
+                rotStep & 1,
+                cached.faceIndex,
+                cached.foil,
+                cached.counters
+        ));
     }
 
     private void renderCounterStripOnCard(
-            State s,
+            List<CounterIcon> counters,
             PoseStack matrices,
             SubmitNodeCollector queue
     ) {
-        if (s.counters == null || s.counters.isEmpty()) return;
+        if (counters == null || counters.isEmpty()) return;
 
         // Layout in local quad space
         final float padX = 0.04f;
@@ -143,11 +186,11 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         matrices.pushPose();
         matrices.translate(0f, 0f, 0.012f);
 
-        for (int i = 0; i < s.counters.size(); i++) {
+        for (int i = 0; i < counters.size(); i++) {
             float x = startX;
             float y = startY - i * (icon + gapY);
 
-            Identifier iconTex = s.counters.get(i).texture();
+            Identifier iconTex = counters.get(i).texture();
             var layer = RenderTypes.entityCutoutNoCull(iconTex);
 
             queue.submitCustomGeometry(matrices, layer, (entry, vc) -> {
@@ -173,28 +216,34 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
 
     @Override
     public void submit(State s, PoseStack matrices, SubmitNodeCollector queue, CameraRenderState cameraState) {
-        if (s.stack == null || s.stack.isEmpty()) return;
+        if (s.cards == null || s.cards.isEmpty()) return;
 
-        var layer = RenderTypes.entityCutoutNoCull(s.texId);
+        int attachmentCount = Math.max(0, s.cards.size() - 1);
+        for (int i = s.cards.size() - 1; i >= 0; i--) {
+            renderStackCard(s, s.cards.get(i), i, attachmentCount, matrices, queue);
+        }
+    }
+
+    private void renderStackCard(State s, CardState card, int displayIndex, int attachmentCount,
+                                 PoseStack matrices, SubmitNodeCollector queue) {
+        var layer = RenderTypes.entityCutoutNoCull(card.texId());
 
         matrices.pushPose();
 
-        // Build a quad in XY plane facing +Z, then rotate it to match the entity face
         orientQuadToFace(matrices, s.facing);
         if (s.facing == Direction.UP || s.facing == Direction.DOWN) {
             matrices.mulPose(Axis.ZP.rotationDegrees(-s.flatYawStep * 90f));
         }
 
-        // tiny push away from the block face to avoid z-fighting
-        float normalOffset = (s.facing == Direction.UP || s.facing == Direction.DOWN) ? 0.002f : 0.01f;
-        matrices.translate(0f, 0f, normalOffset);
+        float baseNormalOffset = (s.facing == Direction.UP || s.facing == Direction.DOWN) ? 0.002f : 0.01f;
+        float layerOffset = 0.0015f * (s.cards.size() - displayIndex);
+        float yOffset = (float) CardDisplayEntity.stackLocalYOffset(displayIndex, attachmentCount);
+        matrices.translate(0f, yOffset, baseNormalOffset + layerOffset);
 
-        // rotate around the face normal (local Z axis after orient)
-        float degrees = (s.rotStep == 1) ? 90f : 0f;
+        float degrees = (card.rotStep() == 1) ? 90f : 0f;
         matrices.mulPose(Axis.ZP.rotationDegrees(-degrees));
 
-        // aspect ratio sizing (XY plane)
-        float ar = (float) s.texW / (float) s.texH;
+        float ar = (float) card.texW() / (float) card.texH();
         float halfW, halfH;
         if (ar >= 1f) {
             halfW = 0.5f;
@@ -204,7 +253,6 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
             halfH = 0.5f;
         }
 
-        // Flip V so textures are not upside down
         final float u0 = 0f, u1 = 1f;
         final float v0 = 1f, v1 = 0f;
 
@@ -218,8 +266,8 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
             put(vc, mat,  halfW, -halfH, 0f, u1, v0, fullLight, OverlayTexture.NO_OVERLAY);
         });
 
-        if (s.foil) {
-            var sweep = com.spider.mtgcard.client.render.CardFoilUtil.computeSweep(System.currentTimeMillis(), s.texW);
+        if (card.foil()) {
+            var sweep = com.spider.mtgcard.client.render.CardFoilUtil.computeSweep(System.currentTimeMillis(), card.texW());
             if (sweep != null) {
                 float overlayX0 = -halfW + (halfW * 2f * sweep.u0());
                 float overlayX1 = -halfW + (halfW * 2f * sweep.u1());
@@ -227,7 +275,7 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
                 matrices.pushPose();
                 matrices.translate(0f, 0f, 0.001f);
 
-                var foilLayer = RenderTypes.entityTranslucent(s.texId);
+                var foilLayer = RenderTypes.entityTranslucent(card.texId());
                 queue.submitCustomGeometry(matrices, foilLayer, (entry, vc) -> {
                     Matrix4f mat = entry.pose();
                     int fullLight = LightTexture.FULL_BRIGHT;
@@ -242,9 +290,8 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
             }
         }
 
-        // After drawing the big card quad
         if (s.cameraDistanceSq <= COUNTER_RENDER_DISTANCE_SQR) {
-            renderCounterStripOnCard(s, matrices, queue);
+            renderCounterStripOnCard(card.counters(), matrices, queue);
         }
 
         matrices.popPose();
@@ -257,13 +304,22 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
 
         nextCachePruneTick = gameTime + CACHE_EXPIRE_TICKS;
 
-        Iterator<Map.Entry<Integer, CachedRenderData>> it = renderCache.entrySet().iterator();
+        Iterator<Map.Entry<String, CachedRenderData>> it = renderCache.entrySet().iterator();
         while (it.hasNext()) {
-            Map.Entry<Integer, CachedRenderData> entry = it.next();
+            Map.Entry<String, CachedRenderData> entry = it.next();
             if (gameTime - entry.getValue().lastSeenTick > CACHE_EXPIRE_TICKS) {
                 it.remove();
             }
         }
+    }
+
+    private void removeEntityCache(int entityId) {
+        String prefix = entityId + ":";
+        renderCache.keySet().removeIf(key -> key.startsWith(prefix));
+    }
+
+    private static String cacheKey(int entityId, UUID cardId) {
+        return entityId + ":" + cardId;
     }
 
     private static double getCameraDistanceSq(CardDisplayEntity entity) {

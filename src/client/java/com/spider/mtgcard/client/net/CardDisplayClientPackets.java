@@ -1,9 +1,11 @@
 package com.spider.mtgcard.client.net;
 
 import com.spider.mtgcard.client.CardLargeViewScreen;
+import com.spider.mtgcard.client.AttachedCardsScreen;
 import com.spider.mtgcard.net.payload.CardDisplayPayloads;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 
 public final class CardDisplayClientPackets {
 
@@ -18,8 +20,43 @@ public final class CardDisplayClientPackets {
                     mc.setScreen(new com.spider.mtgcard.client.CardLargeViewScreen(
                             payload.stack(),
                             -1,
-                            payload.entityId()
+                            payload.entityId(),
+                            payload.hostId(),
+                            payload.version(),
+                            payload.selectedCardId(),
+                            payload.attachmentCount()
                     ));
+                })
+        );
+
+        ClientPlayNetworking.registerGlobalReceiver(
+                CardDisplayPayloads.OpenAttachmentsS2C.ID,
+                (payload, ctx) -> ctx.client().execute(() -> {
+                    var mc = Minecraft.getInstance();
+                    if (mc == null) return;
+
+                    mc.setScreen(new AttachedCardsScreen(
+                            payload.entityId(),
+                            payload.hostId(),
+                            payload.version(),
+                            payload.selectedCardId(),
+                            payload.hostStack(),
+                            payload.attachments()
+                    ));
+                })
+        );
+
+        ClientPlayNetworking.registerGlobalReceiver(
+                CardDisplayPayloads.CloseDisplayScreensS2C.ID,
+                (payload, ctx) -> ctx.client().execute(() -> {
+                    var mc = Minecraft.getInstance();
+                    if (mc == null) return;
+                    if (mc.player != null && payload.message() != null && !payload.message().isBlank()) {
+                        mc.player.displayClientMessage(Component.literal(payload.message()), false);
+                    }
+                    if (mc.screen instanceof CardLargeViewScreen || mc.screen instanceof AttachedCardsScreen) {
+                        mc.setScreen(null);
+                    }
                 })
         );
     }

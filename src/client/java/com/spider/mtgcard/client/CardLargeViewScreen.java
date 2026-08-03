@@ -223,13 +223,28 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
     private static final Map<Identifier, TexSize> ICON_SIZE_CACHE = new HashMap<>();
 
     private final int displayEntityId; // -1 = hand mode, otherwise entity id
+    private final UUID displayHostId;
+    private final long displayVersion;
+    private final UUID selectedDisplayCardId;
+    private final int attachmentCount;
+    private int attachmentsX, attachmentsY, attachmentsW, attachmentsH;
 
 
     public CardLargeViewScreen(ItemStack original, int handSlot, int displayEntityId) {
+        this(original, handSlot, displayEntityId, new UUID(0L, 0L), 0L, new UUID(0L, 0L), 0);
+    }
+
+    public CardLargeViewScreen(ItemStack original, int handSlot, int displayEntityId,
+                               UUID displayHostId, long displayVersion, UUID selectedDisplayCardId,
+                               int attachmentCount) {
         super(Component.literal("Card"));
         this.stack = original.copy();
         this.handSlot = handSlot;
         this.displayEntityId = displayEntityId; // âœ… IMPORTANT
+        this.displayHostId = displayHostId == null ? new UUID(0L, 0L) : displayHostId;
+        this.displayVersion = Math.max(0L, displayVersion);
+        this.selectedDisplayCardId = selectedDisplayCardId == null ? this.displayHostId : selectedDisplayCardId;
+        this.attachmentCount = Math.max(0, attachmentCount);
         this.hidden = readHidden(this.stack);
 
         this.faceIndex = readFaceIndex(this.stack);
@@ -688,7 +703,8 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
 
         // server delete (mode-aware)
         if (isDisplayMode()) {
-            ClientPlayNetworking.send(new com.spider.mtgcard.net.payload.CardDisplayPayloads.DisplayDeleteCounterC2S(displayEntityId, key));
+            ClientPlayNetworking.send(new com.spider.mtgcard.net.payload.CardDisplayPayloads.DisplayDeleteCounterC2S(
+                    displayEntityId, displayHostId, selectedDisplayCardId, key));
         } else {
             ClientPlayNetworking.send(new com.spider.mtgcard.net.payload.DeleteCounterPayload(handSlot, key));
         }
@@ -834,6 +850,11 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         // Info button toggle
         if (btn == 0 && isMouseOverInfo(mx, my)) {
             toggleInfoPanel();
+            return true;
+        }
+
+        if (btn == 0 && isMouseOverAttachments(mx, my)) {
+            openAttachmentsScreen();
             return true;
         }
 
@@ -1256,6 +1277,21 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
                 && my >= rotY && my <= (rotY + rotH);
     }
 
+    private boolean isMouseOverAttachments(double mx, double my) {
+        return isDisplayMode() && currentAttachmentCount() > 0
+                && mx >= attachmentsX && mx <= attachmentsX + attachmentsW
+                && my >= attachmentsY && my <= attachmentsY + attachmentsH;
+    }
+
+    private void openAttachmentsScreen() {
+        if (!isDisplayMode() || currentAttachmentCount() <= 0) return;
+        ClientPlayNetworking.send(new com.spider.mtgcard.net.payload.CardDisplayPayloads.OpenAttachmentsC2S(
+                displayEntityId,
+                displayHostId,
+                selectedDisplayCardId
+        ));
+    }
+
     private boolean isOverLegalityArea(double mx, double my) {
         return mx >= legAreaX && mx <= legAreaX + legAreaW
                 && my >= legAreaY && my <= legAreaY + legAreaH;
@@ -1470,6 +1506,7 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
 
         // buttons
         drawRotateButtonClean(ctx, mouseX, mouseY);
+        drawAttachmentsButton(ctx, mouseX, mouseY);
         drawHideButton(ctx, mouseX, mouseY);
 
         if (isDoubleFaced()) {
@@ -1487,7 +1524,8 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
 
     private void sendHiddenUpdate(boolean hidden) {
         if (isDisplayMode()) {
-            ClientPlayNetworking.send(new com.spider.mtgcard.net.payload.CardDisplayPayloads.DisplaySetHiddenC2S(displayEntityId, hidden));
+            ClientPlayNetworking.send(new com.spider.mtgcard.net.payload.CardDisplayPayloads.DisplaySetHiddenC2S(
+                    displayEntityId, displayHostId, selectedDisplayCardId, hidden));
         } else {
             ClientPlayNetworking.send(new com.spider.mtgcard.net.payload.SetHiddenPayload(handSlot, hidden));
         }
@@ -1497,11 +1535,47 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
     private int hideX, hideY, hideW, hideH;
     private static final int HIDE_W = 54;
     private static final int HIDE_H = 18;
+    private static final int ATTACH_BTN_H = 18;
 
+
+    private void drawAttachmentsButton(GuiGraphics ctx, int mouseX, int mouseY) {
+        int count = currentAttachmentCount();
+        if (!isDisplayMode() || count <= 0) {
+            attachmentsX = attachmentsY = attachmentsW = attachmentsH = 0;
+            return;
+        }
+
+        String label = "Attached Cards (" + count + ")";
+        int bw = Math.max(116, this.font.width(label) + 14);
+        int bx = this.width - 8 - bw;
+        int by = 8;
+
+        attachmentsX = bx;
+        attachmentsY = by;
+        attachmentsW = bw;
+        attachmentsH = ATTACH_BTN_H;
+
+        boolean hover = isMouseOverAttachments(mouseX, mouseY);
+        int border = hover ? 0xFF70E0FF : 0xFF404040;
+        int bg = hover ? 0xCC1A1A1A : 0xAA101010;
+
+        ctx.fill(bx - 1, by - 1, bx + bw + 1, by + ATTACH_BTN_H + 1, border);
+        ctx.fill(bx, by, bx + bw, by + ATTACH_BTN_H, bg);
+
+        int tx = bx + (bw - this.font.width(label)) / 2;
+        int ty = by + (ATTACH_BTN_H - this.font.lineHeight) / 2;
+        ctx.drawString(this.font, label, tx, ty, 0xFFFFFFFF, false);
+
+        if (hover) {
+            ctx.setTooltipForNextFrame(this.font,
+                    Component.literal("Manage attached cards"),
+                    mouseX, mouseY);
+        }
+    }
 
     private void drawHideButton(GuiGraphics ctx, int mouseX, int mouseY) {
         int bx = this.width - 8 - HIDE_W;
-        int by = 8;
+        int by = (isDisplayMode() && currentAttachmentCount() > 0) ? 8 + ATTACH_BTN_H + 6 : 8;
 
         hideX = bx; hideY = by; hideW = HIDE_W; hideH = HIDE_H;
 
@@ -2555,9 +2629,26 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         return this.displayEntityId >= 0;
     }
 
+    private int currentAttachmentCount() {
+        if (!isDisplayMode()) {
+            return attachmentCount;
+        }
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc != null && mc.level != null) {
+            var entity = mc.level.getEntity(displayEntityId);
+            if (entity instanceof com.spider.mtgcard.display.CardDisplayEntity display
+                    && display.hasStackKey(displayHostId)) {
+                return display.getAttachmentCount();
+            }
+        }
+        return attachmentCount;
+    }
+
     private void sendFaceUpdate(int faceIdx) {
         if (isDisplayMode()) {
-            ClientPlayNetworking.send(new com.spider.mtgcard.net.payload.CardDisplayPayloads.DisplaySetFaceC2S(displayEntityId, faceIdx));
+            ClientPlayNetworking.send(new com.spider.mtgcard.net.payload.CardDisplayPayloads.DisplaySetFaceC2S(
+                    displayEntityId, displayHostId, selectedDisplayCardId, faceIdx));
         } else {
             ClientPlayNetworking.send(new SetFacePayload(handSlot, faceIdx));
         }
@@ -2565,7 +2656,8 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
 
     private void sendCounterValueUpdate(String key, int value) {
         if (isDisplayMode()) {
-            ClientPlayNetworking.send(new com.spider.mtgcard.net.payload.CardDisplayPayloads.DisplaySetCounterValueC2S(displayEntityId, key, value));
+            ClientPlayNetworking.send(new com.spider.mtgcard.net.payload.CardDisplayPayloads.DisplaySetCounterValueC2S(
+                    displayEntityId, displayHostId, selectedDisplayCardId, key, value));
         } else {
             ClientPlayNetworking.send(new SetCounterValuePayload(handSlot, key, value));
         }
@@ -2573,7 +2665,8 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
 
     private void sendCounterMetaUpdate(String key, String displayName, String iconKey) {
         if (isDisplayMode()) {
-            ClientPlayNetworking.send(new com.spider.mtgcard.net.payload.CardDisplayPayloads.DisplaySetCounterMetaC2S(displayEntityId, key, displayName, iconKey));
+            ClientPlayNetworking.send(new com.spider.mtgcard.net.payload.CardDisplayPayloads.DisplaySetCounterMetaC2S(
+                    displayEntityId, displayHostId, selectedDisplayCardId, key, displayName, iconKey));
         } else {
             ClientPlayNetworking.send(new SetCounterMetaPayload(handSlot, key, displayName, iconKey));
         }

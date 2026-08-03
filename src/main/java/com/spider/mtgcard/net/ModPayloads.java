@@ -77,10 +77,15 @@ public final class ModPayloads {
         PayloadTypeRegistry.playC2S().register(CardDisplayPayloads.DisplaySetHiddenC2S.ID, CardDisplayPayloads.DisplaySetHiddenC2S.CODEC);
 
         PayloadTypeRegistry.playS2C().register(CardDisplayPayloads.OpenDisplayViewS2C.ID, CardDisplayPayloads.OpenDisplayViewS2C.CODEC);
+        PayloadTypeRegistry.playS2C().register(CardDisplayPayloads.OpenAttachmentsS2C.ID, CardDisplayPayloads.OpenAttachmentsS2C.CODEC);
+        PayloadTypeRegistry.playS2C().register(CardDisplayPayloads.CloseDisplayScreensS2C.ID, CardDisplayPayloads.CloseDisplayScreensS2C.CODEC);
         PayloadTypeRegistry.playC2S().register(CardDisplayPayloads.DisplaySetFaceC2S.ID, CardDisplayPayloads.DisplaySetFaceC2S.CODEC);
         PayloadTypeRegistry.playC2S().register(CardDisplayPayloads.DisplaySetCounterValueC2S.ID, CardDisplayPayloads.DisplaySetCounterValueC2S.CODEC);
         PayloadTypeRegistry.playC2S().register(CardDisplayPayloads.DisplaySetCounterMetaC2S.ID, CardDisplayPayloads.DisplaySetCounterMetaC2S.CODEC);
         PayloadTypeRegistry.playC2S().register(CardDisplayPayloads.DisplayDeleteCounterC2S.ID, CardDisplayPayloads.DisplayDeleteCounterC2S.CODEC);
+        PayloadTypeRegistry.playC2S().register(CardDisplayPayloads.OpenAttachmentsC2S.ID, CardDisplayPayloads.OpenAttachmentsC2S.CODEC);
+        PayloadTypeRegistry.playC2S().register(CardDisplayPayloads.AttachmentDetachC2S.ID, CardDisplayPayloads.AttachmentDetachC2S.CODEC);
+        PayloadTypeRegistry.playC2S().register(CardDisplayPayloads.AttachmentReorderC2S.ID, CardDisplayPayloads.AttachmentReorderC2S.CODEC);
 
         // ---- From old ModNetworking (moved here) ----
         // NOTE: SetFacePayload is expected to be SLOT-based: (slot, face)
@@ -141,16 +146,13 @@ public final class ModPayloads {
         ServerPlayNetworking.registerGlobalReceiver(CardDisplayPayloads.DisplaySetHiddenC2S.ID, (payload, ctx) -> {
             ctx.server().execute(() -> {
                 var player = ctx.player();
-                var world = player.level();
+                if (!(player.level() instanceof net.minecraft.server.level.ServerLevel sw)) return;
 
-                var ent = world.getEntity(payload.entityId());
-                if (!(ent instanceof com.spider.mtgcard.display.CardDisplayEntity display)) return;
+                var display = CardDisplayServerNetworking.getDisplayEntity(player, sw, payload.entityId(), payload.hostId());
+                if (display == null) return;
 
-                ItemStack st = display.getStack().copy();
-                if (st.isEmpty()) return;
-
-                com.spider.mtgcard.util.StackData.writeHidden(st, payload.hidden());
-                display.setStack(st); // tracked data syncs
+                display.mutateDisplayCardStack(payload.cardId(), st ->
+                        com.spider.mtgcard.util.StackData.writeHidden(st, payload.hidden()));
             });
         });
 
@@ -228,16 +230,64 @@ public final class ModPayloads {
         ServerPlayNetworking.registerGlobalReceiver(CardDisplayPayloads.DisplayDeleteCounterC2S.ID, (payload, ctx) -> {
             ctx.server().execute(() -> {
                 var player = ctx.player();
-                var world = player.level();
+                if (!(player.level() instanceof net.minecraft.server.level.ServerLevel sw)) return;
 
-                var ent = world.getEntity(payload.entityId());
-                if (!(ent instanceof com.spider.mtgcard.display.CardDisplayEntity display)) return;
+                var display = CardDisplayServerNetworking.getDisplayEntity(player, sw, payload.entityId(), payload.hostId());
+                if (display == null) return;
 
-                ItemStack st = display.getStack().copy();
-                if (st.isEmpty()) return;
+                display.mutateDisplayCardStack(payload.cardId(), st ->
+                        com.spider.mtgcard.util.StackData.deleteCounterKey(st, payload.key()));
+            });
+        });
 
-                com.spider.mtgcard.util.StackData.deleteCounterKey(st, payload.key());
-                display.setStack(st); // tracked data sync
+        ServerPlayNetworking.registerGlobalReceiver(CardDisplayPayloads.OpenAttachmentsC2S.ID, (payload, ctx) -> {
+            ctx.server().execute(() -> {
+                var player = ctx.player();
+                if (!(player.level() instanceof net.minecraft.server.level.ServerLevel sw)) return;
+
+                var display = CardDisplayServerNetworking.getDisplayEntity(player, sw, payload.entityId(), payload.hostId());
+                if (display == null) {
+                    closeDisplayScreens(player, "Attachment stack is no longer available.");
+                    return;
+                }
+
+                display.sendAttachmentScreen(player, payload.selectedCardId());
+            });
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(CardDisplayPayloads.AttachmentDetachC2S.ID, (payload, ctx) -> {
+            ctx.server().execute(() -> {
+                var player = ctx.player();
+                if (!(player.level() instanceof net.minecraft.server.level.ServerLevel sw)) return;
+
+                var display = CardDisplayServerNetworking.getDisplayEntity(player, sw, payload.entityId(), payload.hostId());
+                if (display == null) {
+                    closeDisplayScreens(player, "Attachment stack is no longer available.");
+                    return;
+                }
+
+                display.detachAttachment(player, payload.attachmentId(), payload.version(), payload.currentOrder());
+            });
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(CardDisplayPayloads.AttachmentReorderC2S.ID, (payload, ctx) -> {
+            ctx.server().execute(() -> {
+                var player = ctx.player();
+                if (!(player.level() instanceof net.minecraft.server.level.ServerLevel sw)) return;
+
+                var display = CardDisplayServerNetworking.getDisplayEntity(player, sw, payload.entityId(), payload.hostId());
+                if (display == null) {
+                    closeDisplayScreens(player, "Attachment stack is no longer available.");
+                    return;
+                }
+
+                display.reorderAttachments(
+                        player,
+                        payload.version(),
+                        payload.order(),
+                        payload.selectedCardId(),
+                        payload.returnToLargeView()
+                );
             });
         });
 
@@ -416,6 +466,15 @@ public final class ModPayloads {
 
     public static void tickUnpackProgressBars(MinecraftServer server) {
         PackProgressBars.tick(server);
+    }
+
+    private static void closeDisplayScreens(ServerPlayer player, String message) {
+        if (player == null) return;
+        String safeMessage = message == null ? "" : message;
+        if (!safeMessage.isBlank()) {
+            player.sendSystemMessage(Component.literal(safeMessage));
+        }
+        ServerPlayNetworking.send(player, new CardDisplayPayloads.CloseDisplayScreensS2C(safeMessage));
     }
 
     // Portable world root that works for both dedicated and dev client
