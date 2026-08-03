@@ -28,6 +28,7 @@ public final class CardCounterHoverHud {
     private static CardDisplayEntity hovered = null;
     private static int hoverHoldTicks = 0; // small hysteresis
     private static ItemStack lastHoverStack = ItemStack.EMPTY;
+    private static UUID lastHoverCardId = null;
     private static List<Row> cachedRows = List.of();
 
     public static void init() {
@@ -54,6 +55,7 @@ public final class CardCounterHoverHud {
             else {
                 hovered = null;
                 lastHoverStack = ItemStack.EMPTY;
+                lastHoverCardId = null;
                 cachedRows = List.of();
             }
         }
@@ -62,14 +64,17 @@ public final class CardCounterHoverHud {
     private static void renderHud(GuiGraphics ctx) {
         if (hovered == null) return;
 
-        ItemStack st = hovered.getStack();
+        Minecraft client = Minecraft.getInstance();
+        int selected = client.player == null ? 0 : hovered.findSelectedDisplayIndex(client.player);
+        if (selected < 0) selected = 0;
+        UUID cardId = hovered.getDisplayCardId(selected);
+        ItemStack st = hovered.getDisplayCardStack(cardId);
         if (st == null || st.isEmpty()) return;
 
         // build rows: icon + value + name (optional)
-        List<Row> rows = getCachedRows(st);
+        List<Row> rows = getCachedRows(cardId, st);
         if (rows.isEmpty()) return;
 
-        Minecraft client = Minecraft.getInstance();
         int screenH = client.getWindow().getGuiScaledHeight();
         int x = PAD_X;
         int y = (screenH - rows.size() * ROW_H) / 2;
@@ -107,8 +112,9 @@ public final class CardCounterHoverHud {
 
     private record Row(String key, String label, Identifier iconTex, String valueText) {}
 
-    private static List<Row> getCachedRows(ItemStack st) {
-        if (!ItemStack.matches(st, lastHoverStack)) {
+    private static List<Row> getCachedRows(UUID cardId, ItemStack st) {
+        if (!Objects.equals(cardId, lastHoverCardId) || !ItemStack.matches(st, lastHoverStack)) {
+            lastHoverCardId = cardId;
             lastHoverStack = st.copy();
             cachedRows = buildCounterRows(st);
         }

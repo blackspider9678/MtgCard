@@ -9,6 +9,9 @@ import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+
+import java.util.UUID;
 
 public final class CardDisplayServerNetworking {
 
@@ -18,10 +21,10 @@ public final class CardDisplayServerNetworking {
             ctx.server().execute(() -> {
                 if (!(ctx.player().level() instanceof ServerLevel sw)) return;
 
-                CardDisplayEntity e = getDisplayEntity(sw, payload.entityId(), ctx.player().getX(), ctx.player().getY(), ctx.player().getZ());
+                CardDisplayEntity e = getDisplayEntity(ctx.player(), sw, payload.entityId(), payload.hostId());
                 if (e == null) return;
 
-                mutateEntityStack(e, st -> setFace(st, payload.face()));
+                mutateEntityStack(e, payload.cardId(), st -> setFace(st, payload.face()));
             });
         });
 
@@ -29,10 +32,10 @@ public final class CardDisplayServerNetworking {
             ctx.server().execute(() -> {
                 if (!(ctx.player().level() instanceof ServerLevel sw)) return;
 
-                CardDisplayEntity e = getDisplayEntity(sw, payload.entityId(), ctx.player().getX(), ctx.player().getY(), ctx.player().getZ());
+                CardDisplayEntity e = getDisplayEntity(ctx.player(), sw, payload.entityId(), payload.hostId());
                 if (e == null) return;
 
-                mutateEntityStack(e, st -> setCounterValue(st, payload.key(), payload.value()));
+                mutateEntityStack(e, payload.cardId(), st -> setCounterValue(st, payload.key(), payload.value()));
             });
         });
 
@@ -40,34 +43,30 @@ public final class CardDisplayServerNetworking {
             ctx.server().execute(() -> {
                 if (!(ctx.player().level() instanceof ServerLevel sw)) return;
 
-                CardDisplayEntity e = getDisplayEntity(sw, payload.entityId(), ctx.player().getX(), ctx.player().getY(), ctx.player().getZ());
+                CardDisplayEntity e = getDisplayEntity(ctx.player(), sw, payload.entityId(), payload.hostId());
                 if (e == null) return;
 
-                mutateEntityStack(e, st -> setCounterMeta(st, payload.key(), payload.displayName(), payload.iconKey()));
+                mutateEntityStack(e, payload.cardId(), st -> setCounterMeta(st, payload.key(), payload.displayName(), payload.iconKey()));
             });
         });
     }
 
-    private static CardDisplayEntity getDisplayEntity(ServerLevel sw, int entityId, double px, double py, double pz) {
+    public static CardDisplayEntity getDisplayEntity(ServerPlayer player, ServerLevel sw, int entityId, UUID hostId) {
         var ent = sw.getEntity(entityId);
         if (!(ent instanceof CardDisplayEntity e)) return null;
+        if (e.isRemoved() || e.getStack().isEmpty()) return null;
+        if (!e.hasStackKey(hostId)) return null;
 
-        // Basic anti-spoof: must be nearby (tweak radius as desired)
-        double dx = e.getX() - px;
-        double dy = e.getY() - py;
-        double dz = e.getZ() - pz;
+        double dx = e.getX() - player.getX();
+        double dy = e.getY() - player.getY();
+        double dz = e.getZ() - player.getZ();
         if (dx*dx + dy*dy + dz*dz > 64.0) return null; // 8 blocks
 
         return e;
     }
 
-    private static void mutateEntityStack(CardDisplayEntity e, java.util.function.Consumer<ItemStack> edit) {
-        ItemStack cur = e.getStack();
-        if (cur.isEmpty()) return;
-
-        ItemStack copy = cur.copy();
-        edit.accept(copy);
-        e.setStack(copy);
+    public static void mutateEntityStack(CardDisplayEntity e, UUID cardId, java.util.function.Consumer<ItemStack> edit) {
+        e.mutateDisplayCardStack(cardId, edit);
     }
 
     // ---- your CUSTOM_DATA editing helpers unchanged ----
@@ -84,7 +83,8 @@ public final class CardDisplayServerNetworking {
     private static void setFace(ItemStack st, int faceIdx) {
         var comp = st.get(DataComponents.CUSTOM_DATA);
         CompoundTag root = (comp == null) ? new CompoundTag() : comp.copyTag();
-        TcgCardMeta.writeFace(root, faceIdx);
+        int max = Math.max(0, TcgCardMeta.faceCount(st) - 1);
+        TcgCardMeta.writeFace(root, Math.max(0, Math.min(faceIdx, max)));
         st.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
     }
 
