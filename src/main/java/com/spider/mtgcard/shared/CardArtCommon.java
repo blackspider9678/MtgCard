@@ -110,7 +110,20 @@ public final class CardArtCommon {
     public static String extractImageUrl(CompoundTag meta, int faceIndex) {
         if (meta == null) return "";
 
-        Optional<ListTag> facesOpt = meta.getList("card_faces");
+        String faceUrl = extractImageUrlFromFaces(meta, "card_faces", faceIndex);
+        if (!faceUrl.isEmpty()) return faceUrl;
+        faceUrl = extractImageUrlFromFaces(meta, "faces", faceIndex);
+        if (!faceUrl.isEmpty()) return faceUrl;
+
+        String directRoot = meta.getString("image_png").orElse("");
+        if (!directRoot.isEmpty()) return directRoot;
+        Optional<CompoundTag> urisRoot = meta.getCompound("image_uris");
+        if (urisRoot.isPresent()) return choose(urisRoot.get());
+        return "";
+    }
+
+    private static String extractImageUrlFromFaces(CompoundTag meta, String facesKey, int faceIndex) {
+        Optional<ListTag> facesOpt = meta.getList(facesKey);
         if (facesOpt.isPresent() && !facesOpt.get().isEmpty()) {
             int idx = Math.max(0, Math.min(faceIndex, facesOpt.get().size() - 1));
             Optional<CompoundTag> face0 = facesOpt.get().getCompound(idx);
@@ -124,10 +137,6 @@ public final class CardArtCommon {
                 }
             }
         }
-        String directRoot = meta.getString("image_png").orElse("");
-        if (!directRoot.isEmpty()) return directRoot;
-        Optional<CompoundTag> urisRoot = meta.getCompound("image_uris");
-        if (urisRoot.isPresent()) return choose(urisRoot.get());
         return "";
     }
 

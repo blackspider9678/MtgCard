@@ -12,6 +12,7 @@ import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.StringTag;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.storage.LevelResource;
 
@@ -33,8 +34,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * CardArtManager — unchanged public API.
- * - Supports custom world art (mtg_meta.world_art_front/world_art_back) for custom cards.
- * - Still supports Scryfall URLs (image_png/card_faces[i].image_png).
+ * - Supports custom world art (tcg_meta/mtg_meta world_art_front/world_art_back).
+ * - Still supports image URLs (image_png/card_faces[i].image_png/faces[i].image_png).
  * - Writes art_index.json in integrated server; in remote MP we rely on server pushes.
  *
  * NEW:
@@ -352,7 +353,7 @@ public final class CardArtManager {
     /** Returns a TextureRef if already cached or loaded; otherwise requests and returns null. */
     public static TextureRef getOrRequestFace(ItemStack stack, int faceIndex) {
         CompoundTag root = StackData.readCustom(stack);
-        CompoundTag meta = root.getCompound("mtg_meta").orElseGet(CompoundTag::new);
+        CompoundTag meta = artMetaForStack(root);
         String game = gameForStack(stack);
 
         // world art path
@@ -392,6 +393,27 @@ public final class CardArtManager {
         String fileName = DISK_INDEX.getOrDefault(artKey, artKey + ".webp");
         enqueueRequest(game, artKey, url, fileName, CardArtCommon.encodeFallbackKeys(fallbackKeys), "");
         return null;
+    }
+
+    private static CompoundTag artMetaForStack(CompoundTag root) {
+        if (root == null) return new CompoundTag();
+
+        CompoundTag fallback = root.getCompound(TcgCardMeta.MTG_META).orElseGet(CompoundTag::new);
+        CompoundTag preferred = root.getCompound(TcgCardMeta.TCG_META).orElseGet(CompoundTag::new);
+
+        CompoundTag merged = fallback.copy();
+        for (String key : preferred.keySet()) {
+            var value = preferred.get(key);
+            if (value == null) continue;
+            if (value instanceof StringTag && preferred.getString(key).orElse("").isBlank() && merged.contains(key)) {
+                continue;
+            }
+            if (value instanceof ListTag list && list.size() == 0 && merged.contains(key)) {
+                continue;
+            }
+            merged.put(key, value.copy());
+        }
+        return merged;
     }
 
     /** Resolve world-art by key: bind from disk if present, else request from server. */
@@ -453,7 +475,13 @@ public final class CardArtManager {
     }
 
     private static String extractFaceWorldArt(CompoundTag meta, int faceIndex) {
-        Optional<ListTag> facesOpt = meta.getList("card_faces");
+        String value = extractFaceWorldArt(meta, "card_faces", faceIndex);
+        if (!value.isBlank()) return value;
+        return extractFaceWorldArt(meta, "faces", faceIndex);
+    }
+
+    private static String extractFaceWorldArt(CompoundTag meta, String facesKey, int faceIndex) {
+        Optional<ListTag> facesOpt = meta.getList(facesKey);
         if (facesOpt.isEmpty() || facesOpt.get().isEmpty()) return "";
 
         int idx = Math.max(0, Math.min(faceIndex, facesOpt.get().size() - 1));
