@@ -11,6 +11,7 @@ import com.spider.mtgcard.client.input.GuiCardFaceFlipHandler;
 import com.spider.mtgcard.client.input.GuiCardFaceFlipper;
 import com.spider.mtgcard.client.java.CardArtManager;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.renderer.RenderPipelines;
 import com.spider.mtgcard.client.compat.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -23,7 +24,6 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.FormattedText;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import org.lwjgl.glfw.GLFW;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -1991,7 +1991,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
         // Close sort menu on ESC (or inventory key) before anything else
         if (sortMenuOpen) {
-            if (code == GLFW.GLFW_KEY_ESCAPE || code == GLFW.GLFW_KEY_E) {
+            if (code == InputConstants.KEY_ESCAPE || code == InputConstants.KEY_E) {
                 closeSortMenu();
                 return true;
             }
@@ -2001,10 +2001,10 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         if (tab == Tab.STORE && searchField != null && searchField.isFocused()) {
 
             // Consume inventory key while typing
-            if (code == GLFW.GLFW_KEY_E) return true;
+            if (code == InputConstants.KEY_E) return true;
 
             // Enter triggers search
-            if (code == GLFW.GLFW_KEY_ENTER || code == GLFW.GLFW_KEY_KP_ENTER) {
+            if (code == InputConstants.KEY_RETURN || code == InputConstants.KEY_NUMPADENTER) {
 
                 // ✅ debounce ONLY here (when sending)
                 if (!canSendSearchNow()) {
@@ -2037,7 +2037,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         // Let vanilla handle everything else (including typing into widgets)
         if (super.keyPressed(key)) return true;
 
-        if (code == GLFW.GLFW_KEY_F9) {
+        if (code == InputConstants.KEY_F9) {
             wireframe = !wireframe;
             return true;
         }

@@ -1,6 +1,7 @@
 package com.spider.mtgcard.client;
 
 import com.spider.mtgcard.client.compat.LegacyScreen;
+import com.spider.mtgcard.client.compat.ClientCompat;
 import com.spider.mtgcard.client.input.GuiCardFaceFlipHandler;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.config.MtgcardConfig;
@@ -12,6 +13,7 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.input.MouseButtonEvent;
 import com.spider.mtgcard.client.compat.GuiGraphics;
@@ -33,7 +35,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.core.BlockPos;
 import org.jetbrains.annotations.Nullable;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.*;
 
@@ -1182,10 +1183,8 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
     }
 
     private boolean isShiftDown() {
-        var win = net.minecraft.client.Minecraft.getInstance().getWindow();
-        long h = win.handle();
-        return org.lwjgl.glfw.GLFW.glfwGetKey(h, org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT_SHIFT) == org.lwjgl.glfw.GLFW.GLFW_PRESS
-                || org.lwjgl.glfw.GLFW.glfwGetKey(h, org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT_SHIFT) == org.lwjgl.glfw.GLFW.GLFW_PRESS;
+        return ClientCompat.isKeyDown(InputConstants.KEY_LSHIFT)
+                || ClientCompat.isKeyDown(InputConstants.KEY_RSHIFT);
     }
 
     private boolean handleLegalityScroll(double mouseX, double mouseY, double verticalAmount) {
@@ -1223,7 +1222,7 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
     public boolean keyPressed(KeyEvent key) {
         int kc = kiKeyCode(key);
 
-        if (kc == GLFW.GLFW_KEY_ESCAPE) {
+        if (kc == InputConstants.KEY_ESCAPE) {
             this.onClose();
             return true;
         }
@@ -1240,19 +1239,19 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         }
 
         // TAB = toggle info panel
-        if (kc == GLFW.GLFW_KEY_TAB) {
+        if (kc == InputConstants.KEY_TAB) {
             toggleInfoPanel();
             return true;
         }
 
         // R = flip
-        if (isDoubleFaced() && kc == GLFW.GLFW_KEY_R) {
+        if (isDoubleFaced() && kc == InputConstants.KEY_R) {
             startFlip(faceIndex ^ 1);
             return true;
         }
 
         // E = rotate right
-        if (kc == GLFW.GLFW_KEY_E) {
+        if (kc == InputConstants.KEY_E) {
             rotateRight();
             return true;
         }

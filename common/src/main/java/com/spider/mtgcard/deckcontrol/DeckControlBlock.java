@@ -4,6 +4,7 @@ import com.mojang.serialization.MapCodec;
 import com.spider.mtgcard.registry.ModBlockEntities;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
@@ -12,7 +13,6 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.ShovelItem;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
@@ -46,7 +46,9 @@ public class DeckControlBlock extends BaseEntityBlock implements SimpleWaterlogg
     public static final EnumProperty<DeckControlWindowColor> COLOR =
             EnumProperty.create("color", DeckControlWindowColor.class);
 
-    public static final MapCodec<DeckControlBlock> CODEC = simpleCodec(DeckControlBlock::new);
+    public static final MapCodec<DeckControlBlock> CODEC = MapCodec.unit(
+            () -> new DeckControlBlock(net.minecraft.world.level.block.state.BlockBehaviour.Properties.of())
+    );
 
     public DeckControlBlock(Properties settings) {
         super(settings);
@@ -60,13 +62,12 @@ public class DeckControlBlock extends BaseEntityBlock implements SimpleWaterlogg
     }
 
     @Override
-    protected MapCodec<? extends BaseEntityBlock> codec() {
-        return CODEC;
-    }
-
-    @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         builder.add(FACING, LIT, COLOR, WATERLOGGED);
+    }
+
+    protected MapCodec<? extends BaseEntityBlock> codec() {
+        return CODEC;
     }
 
     @Override
@@ -234,7 +235,7 @@ public class DeckControlBlock extends BaseEntityBlock implements SimpleWaterlogg
         Item item = stack.getItem();
 
         // Any shovel = unlit (keep color stored)
-        if (item instanceof ShovelItem) {
+        if (stack.is(ItemTags.SHOVELS)) {
             if (world.isClientSide()) return InteractionResult.SUCCESS;
 
             if (state.getValue(LIT)) {

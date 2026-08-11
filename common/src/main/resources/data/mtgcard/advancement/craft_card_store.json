@@ -1,11 +1,11 @@
 {
   "parent": "mtgcard:root",
   "criteria": {
-    "crafted": {
+    "has_the_recipe": {
       "conditions": {
-        "recipe_id": "mtgcard:card_store"
+        "recipes": "mtgcard:card_store"
       },
-      "trigger": "minecraft:recipe_crafted"
+      "trigger": "minecraft:recipe_unlocked"
     }
   },
   "display": {

@@ -26,19 +26,10 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.BlockEntityRendererRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.MenuScreens;
-import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderers;
 import net.minecraft.client.renderer.entity.EntityRenderers;
-import org.lwjgl.glfw.GLFW;
-import org.lwjgl.glfw.GLFWDropCallback;
-
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
 
 public final class MtgcardClient implements ClientModInitializer {
-
-    private static GLFWDropCallback DROP_CB;
 
     @Override
     public void onInitializeClient() {
@@ -74,7 +65,6 @@ public final class MtgcardClient implements ClientModInitializer {
 
         // Window-dependent and renderer registration after client is started
         ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
-            installDropCallback(client);
             lateClientInit();
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -101,34 +91,5 @@ public final class MtgcardClient implements ClientModInitializer {
         PackClientEvents.init();
 
         Mtgcard.LOGGER.info("[MtgcardClient] late init done");
-    }
-
-    private static void installDropCallback(Minecraft client) {
-        long handle = client.getWindow().handle();
-
-        // Free old one if reloading
-        if (DROP_CB != null) DROP_CB.free();
-
-        DROP_CB = GLFWDropCallback.create((window, count, names) -> {
-            List<Path> paths = new ArrayList<>();
-            for (int i = 0; i < count; i++) {
-                String name = GLFWDropCallback.getName(names, i);
-                if (name != null && !name.isBlank()) {
-                    paths.add(Path.of(name));
-                }
-            }
-            if (paths.isEmpty()) return;
-
-            client.execute(() -> {
-                Screen s = client.gui.screen();
-                if (s instanceof CustomImportScreen cis) {
-                    cis.handleFileDrop(paths);
-                } else if (s != null) {
-                    s.onFilesDrop(paths);
-                }
-            });
-        });
-
-        GLFW.glfwSetDropCallback(handle, DROP_CB);
     }
 }

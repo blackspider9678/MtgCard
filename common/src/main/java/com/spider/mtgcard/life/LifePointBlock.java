@@ -31,7 +31,7 @@ import org.jetbrains.annotations.Nullable;
 
 public class LifePointBlock extends BaseEntityBlock {
     public static final EnumProperty<Direction> FACING = BlockStateProperties.HORIZONTAL_FACING;
-    public static final MapCodec<LifePointBlock> CODEC = simpleCodec(LifePointBlock::new);
+    public static final MapCodec<LifePointBlock> CODEC = MapCodec.unit(() -> new LifePointBlock(Properties.of()));
 
     public LifePointBlock(Properties settings) {
         super(settings);
@@ -55,7 +55,6 @@ public class LifePointBlock extends BaseEntityBlock {
         return null;
     }
 
-    @Override
     protected MapCodec<? extends BaseEntityBlock> codec() {
         return CODEC;
     }

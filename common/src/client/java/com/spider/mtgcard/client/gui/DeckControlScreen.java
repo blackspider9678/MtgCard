@@ -29,8 +29,8 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.core.BlockPos;
 import com.mojang.math.Axis;
+import com.mojang.blaze3d.platform.InputConstants;
 import org.joml.Matrix3x2f;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -1232,32 +1232,32 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
         // PLACE overlay keys
         if (overlay == OverlayMode.PLACE_CARD) {
 
-            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            if (keyCode == InputConstants.KEY_ESCAPE) {
                 overlay = OverlayMode.NONE;
                 clearOverlayHoverCache();
                 return true;
             }
 
-            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+            if (keyCode == InputConstants.KEY_RETURN || keyCode == InputConstants.KEY_NUMPADENTER) {
                 performPlaceSelected();
                 return true;
             }
 
-            if (keyCode == GLFW.GLFW_KEY_T) {
+            if (keyCode == InputConstants.KEY_T) {
                 placeBottom = false;
                 placeFromTop = 1;
                 return true;
             }
-            if (keyCode == GLFW.GLFW_KEY_B) {
+            if (keyCode == InputConstants.KEY_B) {
                 placeBottom = true;
                 return true;
             }
-            if (keyCode == GLFW.GLFW_KEY_UP) {
+            if (keyCode == InputConstants.KEY_UP) {
                 placeBottom = false;
                 placeFromTop = clamp(placeFromTop + 1, 1, 99);
                 return true;
             }
-            if (keyCode == GLFW.GLFW_KEY_DOWN) {
+            if (keyCode == InputConstants.KEY_DOWN) {
                 placeBottom = false;
                 placeFromTop = clamp(placeFromTop - 1, 1, 99);
                 return true;
@@ -1265,7 +1265,7 @@ public class DeckControlScreen extends LegacyContainerScreen<DeckControlScreenHa
         }
 
         // Other overlays: Esc closes
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE && overlay != OverlayMode.NONE) {
+        if (keyCode == InputConstants.KEY_ESCAPE && overlay != OverlayMode.NONE) {
             if (overlay == OverlayMode.CASCADE && cascadePendingClient) {
                 ClientPlayNetworking.send(new DeckControlPackets.CascadeResolveC2S(menu.getPos(), false));
                 cascadePendingClient = false;

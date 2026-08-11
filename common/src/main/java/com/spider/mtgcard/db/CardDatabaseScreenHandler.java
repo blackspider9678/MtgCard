@@ -4,6 +4,7 @@ import com.spider.mtgcard.api.CardDatabaseCards;
 import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.item.ModItemTags;
 import com.spider.mtgcard.screen.ModScreenHandlers;
+import com.spider.mtgcard.util.MinecraftCompat;
 import com.spider.mtgcard.util.TcgCardMeta;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -559,7 +560,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
         BundleContents contents = bundle.getOrDefault(DataComponents.BUNDLE_CONTENTS, BundleContents.EMPTY);
         java.util.ArrayList<ItemStack> out = new java.util.ArrayList<>();
 
-        contents.itemCopyStream()
+        MinecraftCompat.bundleItemCopies(contents)
                 .filter(stack -> stack != null && !stack.isEmpty())
                 .forEach(stack -> out.add(stack.copy()));
 
@@ -1235,7 +1236,7 @@ public class CardDatabaseScreenHandler extends AbstractContainerMenu {
 
         boolean merged = player.getInventory().add(stack);
         if (!merged && !stack.isEmpty()) {
-            player.drop(stack, false);
+            MinecraftCompat.drop(player, stack, false);
         }
     }
 

@@ -25,8 +25,7 @@ import org.jetbrains.annotations.Nullable;
 public class DisplayBlock extends BaseEntityBlock {
 
     public static final EnumProperty<Direction> FACING = BlockStateProperties.HORIZONTAL_FACING;
-    public static final MapCodec<DisplayBlock> CODEC = simpleCodec(DisplayBlock::new);
-
+    public static final MapCodec<DisplayBlock> CODEC = MapCodec.unit(() -> new DisplayBlock(Properties.of()));
     public static final EnumProperty<DisplayShape> SHAPE =
             EnumProperty.create("shape", DisplayShape.class);
 
@@ -66,7 +65,6 @@ public class DisplayBlock extends BaseEntityBlock {
         super.affectNeighborsAfterRemoval(state, world, pos, moved);
     }
 
-    @Override
     protected MapCodec<? extends BaseEntityBlock> codec() {
         return CODEC;
     }

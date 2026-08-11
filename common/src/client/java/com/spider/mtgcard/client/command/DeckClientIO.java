@@ -3,6 +3,7 @@ package com.spider.mtgcard.client.command;
 import com.spider.mtgcard.deckbox.DeckboxBlockItem;
 import com.spider.mtgcard.deckbox.DeckboxBlockEntity;
 import com.spider.mtgcard.item.ModItemTags;
+import com.spider.mtgcard.util.MinecraftCompat;
 import com.spider.mtgcard.util.TcgCardMeta;
 import net.minecraft.core.NonNullList;
 import net.fabricmc.loader.api.FabricLoader;
@@ -276,7 +277,7 @@ public final class DeckClientIO {
 
     private static void collectBundleContents(ItemStack bundle, Map<String, MutableAgg> agg) {
         BundleContents contents = bundle.getOrDefault(DataComponents.BUNDLE_CONTENTS, BundleContents.EMPTY);
-        contents.itemCopyStream()
+        MinecraftCompat.bundleItemCopies(contents)
                 .filter(bundled -> bundled != null && !bundled.isEmpty())
                 .forEach(bundled -> collectStack(bundled.copy(), agg));
     }

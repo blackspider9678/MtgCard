@@ -18,6 +18,7 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.state.BlockState;
@@ -32,6 +33,7 @@ import java.util.function.Function;
 public final class ModBlocks {
 
     private static boolean inited = false;
+    private static boolean poplarDeckboxEnabled = false;
     private static final List<String> DECKBOX_REGISTRY_PATHS = List.of(
             "deckbox",
             "oak_deckbox",
@@ -107,12 +109,23 @@ public final class ModBlocks {
         return stack != null && stack.getItem() instanceof DeckboxBlockItem;
     }
 
+    public static void enablePoplarDeckboxIfAvailable() {
+        if (!inited && hasVanillaBlock("poplar_planks")) {
+            poplarDeckboxEnabled = true;
+        }
+    }
+
     public static void init() {
         if (inited) return;
         inited = true;
 
         // ---- Deckbox ----
-        for (String path : DECKBOX_REGISTRY_PATHS) {
+        List<String> deckboxPaths = new ArrayList<>(DECKBOX_REGISTRY_PATHS);
+        if (poplarDeckboxEnabled) {
+            deckboxPaths.add(deckboxPaths.indexOf("bamboo_deckbox"), "poplar_deckbox");
+        }
+
+        for (String path : deckboxPaths) {
             var deckbox = registerBlockWithItem(
                     path,
                     BlockBehaviour.Properties.of()
@@ -120,7 +133,7 @@ public final class ModBlocks {
                             .strength(2.5f)
                             .noOcclusion()
                             .isRedstoneConductor((s, w, p) -> false)
-                            .pushReaction(PushReaction.DESTROY),
+                            .pushReaction(pushReaction("POPPED", "DESTROY")),
                     DeckboxBlock::new,
                     (block, itemSettings) -> new DeckboxBlockItem(block, itemSettings.stacksTo(1))
             );
@@ -140,8 +153,7 @@ public final class ModBlocks {
                 .noOcclusion()
                 .isRedstoneConductor((s, w, p) -> false)
                 .isSuffocating((s, w, p) -> false)
-                .isViewBlocking((s, w, p) -> false)
-                .pushReaction(PushReaction.DESTROY)
+                .pushReaction(pushReaction("POPPED", "DESTROY"))
                 .lightLevel(state -> {
                     if (!state.getValue(DeckControlBlock.LIT)) return 0;
                     return switch (state.getValue(DeckControlBlock.COLOR)) {
@@ -184,7 +196,7 @@ public final class ModBlocks {
                 "display_block",
                 BlockBehaviour.Properties.of()
                         .strength(2.0f)
-                        .pushReaction(PushReaction.BLOCK),
+                        .pushReaction(pushReaction("IMMOVEABLE", "BLOCK")),
                 DisplayBlock::new,
                 (block, itemSettings) -> new DisplayBlockItem(block, itemSettings)
         );
@@ -199,6 +211,20 @@ public final class ModBlocks {
     }
 
     // ---------------- helpers ----------------
+
+    private static PushReaction pushReaction(String modernName, String legacyName) {
+        for (String name : new String[] { modernName, legacyName }) {
+            try {
+                return PushReaction.valueOf(name);
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+        return PushReaction.values()[0];
+    }
+
+    private static boolean hasVanillaBlock(String path) {
+        return BuiltInRegistries.BLOCK.containsKey(Identifier.fromNamespaceAndPath("minecraft", path));
+    }
 
     private static <T extends Block> T registerBlockItem(
             String path,

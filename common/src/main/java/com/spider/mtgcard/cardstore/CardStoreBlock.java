@@ -28,14 +28,13 @@ import org.jetbrains.annotations.Nullable;
 public class CardStoreBlock extends BaseEntityBlock {
 
     public static final EnumProperty<Direction> FACING = BlockStateProperties.HORIZONTAL_FACING;
-    public static final MapCodec<CardStoreBlock> CODEC = simpleCodec(CardStoreBlock::new);
+    public static final MapCodec<CardStoreBlock> CODEC = MapCodec.unit(() -> new CardStoreBlock(Properties.of()));
 
     public CardStoreBlock(Properties settings) {
         super(settings);
         this.registerDefaultState(this.getStateDefinition().any().setValue(FACING, Direction.NORTH));
     }
 
-    @Override
     protected MapCodec<? extends BaseEntityBlock> codec() {
         return CODEC;
     }

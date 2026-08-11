@@ -2,6 +2,7 @@ package com.spider.mtgcard.dice;
 
 import com.spider.mtgcard.data.ModDataComponents;
 import com.spider.mtgcard.screen.ModScreenHandlers;
+import com.spider.mtgcard.util.MinecraftCompat;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.server.level.ServerPlayer;
@@ -109,7 +110,7 @@ public class DiceCustomizerScreenHandler extends AbstractContainerMenu {
 
             ItemStack toGive = result.copy();
             if (!player.getInventory().add(toGive)) {
-                player.drop(result, false);
+                MinecraftCompat.drop(player, result, false);
             }
             broadcastChanges();
             return true;

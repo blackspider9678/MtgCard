@@ -1,11 +1,11 @@
 package com.spider.mtgcard.client.input;
 
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import com.spider.mtgcard.client.compat.ClientCompat;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import org.lwjgl.glfw.GLFW;
 import com.mojang.blaze3d.platform.InputConstants;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -36,15 +36,15 @@ public final class ModKeybinds {
 
         TOGGLE_CARD_PEEK = new KeyMapping(
                 "key.mtgcard.toggle_card_peek",
-                InputConstants.Type.KEYSYM,
-                GLFW.GLFW_KEY_F7,
+                ClientCompat.keyboardType(),
+                InputConstants.KEY_F7,
                 cat
         );
 
         FLIP_CARD_FACE = new KeyMapping(
                 "key.mtgcard.flip_card_face",
-                InputConstants.Type.KEYSYM,
-                GLFW.GLFW_KEY_F8,
+                ClientCompat.keyboardType(),
+                InputConstants.KEY_F8,
                 cat
         );
     }

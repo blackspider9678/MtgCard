@@ -1,6 +1,7 @@
 package com.spider.mtgcard.client.gui;
 
 import com.spider.mtgcard.client.compat.LegacyContainerScreen;
+import com.spider.mtgcard.client.compat.ClientCompat;
 import com.spider.mtgcard.client.compat.MtgGuiScaleHelper;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.client.net.DBClientPackets;
@@ -8,6 +9,7 @@ import com.spider.mtgcard.api.CardDatabaseCards;
 import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.db.CardDatabaseScreenHandler;
 import com.spider.mtgcard.client.compat.GuiGraphics;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -20,7 +22,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import org.lwjgl.glfw.GLFW;
 
 
 public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreenHandler> {
@@ -371,10 +372,8 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
     }
 
     private boolean shiftDown() {
-        if (this.minecraft == null || this.minecraft.getWindow() == null) return false;
-        long handle = this.minecraft.getWindow().handle();
-        return GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
-                || GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
+        return ClientCompat.isKeyDown(InputConstants.KEY_LSHIFT)
+                || ClientCompat.isKeyDown(InputConstants.KEY_RSHIFT);
     }
 
     private void triggerSearchFromUI(boolean rememberSort) {
@@ -578,7 +577,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
 
         // Optional: Enter triggers search manually (auto-search still works)
         int code = key.input();
-        if ((code == GLFW.GLFW_KEY_ENTER || code == GLFW.GLFW_KEY_KP_ENTER)
+        if ((code == InputConstants.KEY_RETURN || code == InputConstants.KEY_NUMPADENTER)
                 && this.search != null && this.search.isFocused()) {
             triggerSearchFromUI(false);
             return true;

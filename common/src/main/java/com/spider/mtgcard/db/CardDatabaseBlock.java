@@ -26,17 +26,15 @@ import net.minecraft.world.level.block.state.BlockBehaviour.Properties;
 import net.minecraft.world.phys.BlockHitResult;
 
 public class CardDatabaseBlock extends BaseEntityBlock {
-    public static final MapCodec<CardDatabaseBlock> CODEC = simpleCodec(CardDatabaseBlock::new);
-
     public static final EnumProperty<Direction> FACING = BlockStateProperties.HORIZONTAL_FACING;
+    public static final MapCodec<CardDatabaseBlock> CODEC = MapCodec.unit(() -> new CardDatabaseBlock(Properties.of()));
 
     public CardDatabaseBlock(Properties settings) {
         super(settings);
         this.registerDefaultState(this.getStateDefinition().any().setValue(FACING, Direction.NORTH));
     }
 
-    @Override
-    public MapCodec<? extends BaseEntityBlock> codec() {
+    protected MapCodec<? extends BaseEntityBlock> codec() {
         return CODEC;
     }
 

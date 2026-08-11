@@ -2,6 +2,7 @@ package com.spider.mtgcard.content.pack;
 
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.config.MtgcardConfig;
+import com.spider.mtgcard.util.MinecraftCompat;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.component.BundleContents;
@@ -43,7 +44,7 @@ final class PackInventoryUtil {
             );
         }
 
-        ItemEntity dropped = player.drop(reward, true);
+        ItemEntity dropped = MinecraftCompat.drop(player, reward, true);
         sync(player);
         if (dropped != null) {
             if (packDebug) {
@@ -128,7 +129,7 @@ final class PackInventoryUtil {
             return new DeliveryResult(true, added ? "inventory" : "inventory_unknown");
         }
 
-        ItemEntity dropped = player.drop(reward, false);
+        ItemEntity dropped = MinecraftCompat.drop(player, reward, false);
         sync(player);
         if (dropped != null) {
             if (packDebug) {

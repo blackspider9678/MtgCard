@@ -1,6 +1,7 @@
 package com.spider.mtgcard.client.life;
 
 import com.spider.mtgcard.client.compat.LegacyScreen;
+import com.spider.mtgcard.client.compat.ClientCompat;
 import com.spider.mtgcard.api.LifeFormatRegistry;
 import com.spider.mtgcard.life.LifeFormat;
 import com.spider.mtgcard.life.LifePointPackets;
@@ -19,7 +20,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.core.BlockPos;
 import org.joml.Vector2f;
-import org.lwjgl.glfw.GLFW;
 
 import com.mojang.blaze3d.platform.InputConstants;
 
@@ -2878,9 +2878,8 @@ public final class LifePointScreen extends LegacyScreen {
     // -------------------------------------------------------------------------
 
     private boolean isShiftDownNow() {
-        var win = Minecraft.getInstance().getWindow();
-        return InputConstants.isKeyDown(win, GLFW.GLFW_KEY_LEFT_SHIFT)
-                || InputConstants.isKeyDown(win, GLFW.GLFW_KEY_RIGHT_SHIFT);
+        return ClientCompat.isKeyDown(InputConstants.KEY_LSHIFT)
+                || ClientCompat.isKeyDown(InputConstants.KEY_RSHIFT);
     }
 
     @Override

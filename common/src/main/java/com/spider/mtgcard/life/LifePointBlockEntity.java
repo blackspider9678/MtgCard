@@ -414,7 +414,7 @@ public class LifePointBlockEntity extends BlockEntity {
 
     private static void configureGlowShulker(Shulker sh, double size) {
         sh.setSilent(true);
-        sh.setInvulnerable(true);
+        com.spider.mtgcard.util.MinecraftCompat.setInvulnerable(sh, true);
         sh.setNoGravity(true);
         sh.setNoAi(true);
 

@@ -61,6 +61,7 @@ public final class FabricRegistries {
     }
 
     private static void registerBlocks() {
+        ModBlocks.enablePoplarDeckboxIfAvailable();
         ModBlocks.init();
 
         Registry.register(BuiltInRegistries.BLOCK, id("life_point"), LifePointRegistry.LIFE_POINT_BLOCK);

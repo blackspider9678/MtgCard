@@ -31,8 +31,9 @@ public class GraveyardBlock extends BaseEntityBlock {
 
     public static final BooleanProperty OPEN = BooleanProperty.create("open");
     public static final EnumProperty<Direction> FACING = BlockStateProperties.HORIZONTAL_FACING;
-
-    public static final MapCodec<GraveyardBlock> CODEC = simpleCodec(GraveyardBlock::new);
+    public static final MapCodec<GraveyardBlock> CODEC = MapCodec.unit(
+            () -> new GraveyardBlock(BlockBehaviour.Properties.of())
+    );
 
     public GraveyardBlock(BlockBehaviour.Properties settings) {
         super(settings);
@@ -61,7 +62,6 @@ public class GraveyardBlock extends BaseEntityBlock {
         return state.rotate(mirror.getRotation(state.getValue(FACING)));
     }
 
-    @Override
     protected MapCodec<? extends BaseEntityBlock> codec() {
         return CODEC;
     }

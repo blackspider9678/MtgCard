@@ -1,7 +1,10 @@
 // CustomImportScreen.java
 package com.spider.mtgcard.client.gui;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.NativeImage;
+import com.mojang.blaze3d.platform.cursor.CursorTypes;
+import com.spider.mtgcard.client.compat.ClientCompat;
 import com.spider.mtgcard.client.compat.MtgGuiScaleHelper;
 import com.spider.mtgcard.db.search.ScryfallSyntax;
 import com.spider.mtgcard.net.CustomCardPackets;
@@ -22,7 +25,6 @@ import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import org.lwjgl.glfw.GLFW;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -847,20 +849,12 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
 
     private Button removeBtn, linkFrontBtn, linkBackBtn, clearLinkBtn;
 
-    // Shared GLFW cursors (created once)
     private static final int CURSOR_ARROW = 0;
     private static final int CURSOR_IBEAM = 1;
-    private static void ensureCursors() {
-        if (MOUSE_CURSOR_ARROW == 0L)  MOUSE_CURSOR_ARROW = GLFW.glfwCreateStandardCursor(GLFW.GLFW_ARROW_CURSOR);
-        if (MOUSE_CURSOR_IBEAM == 0L)  MOUSE_CURSOR_IBEAM = GLFW.glfwCreateStandardCursor(GLFW.GLFW_IBEAM_CURSOR);
-    }
     private static void applyCursor(int which) {
-        ensureCursors();
         var win = Minecraft.getInstance().getWindow();
         if (win == null) return;
-        long handle = win.handle();
-        long cur = (which == CURSOR_IBEAM) ? MOUSE_CURSOR_IBEAM : MOUSE_CURSOR_ARROW;
-        GLFW.glfwSetCursor(handle, cur);
+        win.selectCursor(which == CURSOR_IBEAM ? CursorTypes.IBEAM : CursorTypes.ARROW);
     }
 
 
@@ -3151,7 +3145,6 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
 
         @Override
         protected void renderWidget(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
-            ensureCursors();
             if (this.isMouseOver(mouseX, mouseY)) applyCursor(CURSOR_IBEAM);
             else applyCursor(CURSOR_ARROW);
 
@@ -3632,7 +3625,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
     public boolean keyPressed(KeyEvent key) {
         // Allow Esc to cancel link mode globally
         int kc = kiKeyCode(key);
-        if (kc == 256 /* ESC */ && linkPendingMode != LinkMode.NONE) {
+        if (kc == InputConstants.KEY_ESCAPE && linkPendingMode != LinkMode.NONE) {
             linkPendingMode = LinkMode.NONE;
             return true;
         }
@@ -3690,25 +3683,18 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
     }
 
     // --- (once) cursor helpers ---
-    private static long MOUSE_CURSOR_ARROW = 0L, MOUSE_CURSOR_IBEAM = 0L;
-
     private static void setCursor(int which) {
-        var win = Minecraft.getInstance().getWindow();
-        long handle = win.handle();
-        long cur = (which == CURSOR_IBEAM) ? MOUSE_CURSOR_IBEAM : MOUSE_CURSOR_ARROW;
-        GLFW.glfwSetCursor(handle, cur);
+        applyCursor(which);
     }
     private static boolean isShiftDown() {
-        long h = Minecraft.getInstance().getWindow().handle();
-        return GLFW.glfwGetKey(h, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
-                || GLFW.glfwGetKey(h, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
+        return ClientCompat.isKeyDown(InputConstants.KEY_LSHIFT)
+                || ClientCompat.isKeyDown(InputConstants.KEY_RSHIFT);
     }
     private static boolean isCtrlOrCmdDown() {
-        long h = Minecraft.getInstance().getWindow().handle();
-        boolean ctrl = GLFW.glfwGetKey(h, GLFW.GLFW_KEY_LEFT_CONTROL) == GLFW.GLFW_PRESS
-                || GLFW.glfwGetKey(h, GLFW.GLFW_KEY_RIGHT_CONTROL) == GLFW.GLFW_PRESS;
-        boolean cmd  = GLFW.glfwGetKey(h, GLFW.GLFW_KEY_LEFT_SUPER)   == GLFW.GLFW_PRESS
-                || GLFW.glfwGetKey(h, GLFW.GLFW_KEY_RIGHT_SUPER)  == GLFW.GLFW_PRESS;
+        boolean ctrl = ClientCompat.isKeyDown(InputConstants.KEY_LCONTROL)
+                || ClientCompat.isKeyDown(InputConstants.KEY_RCONTROL);
+        boolean cmd  = ClientCompat.isKeyDown(ClientCompat.keyConstant("KEY_LGUI", "KEY_LSUPER"))
+                || ClientCompat.isKeyDown(ClientCompat.keyConstant("KEY_RGUI", "KEY_RSUPER"));
         return ctrl || cmd;
     }
 

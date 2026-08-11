@@ -9,6 +9,7 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.gui.components.Button;
 import com.spider.mtgcard.client.compat.GuiGraphics;
 import net.minecraft.client.input.KeyEvent;
@@ -19,7 +20,6 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -180,19 +180,19 @@ public class AttachedCardsScreen extends LegacyScreen implements GuiCardFaceFlip
     @Override
     public boolean keyPressed(KeyEvent key) {
         int kc = keyCode(key);
-        if (kc == GLFW.GLFW_KEY_ESCAPE) {
+        if (kc == InputConstants.KEY_ESCAPE) {
             saveAndReturn();
             return true;
         }
-        if (kc == GLFW.GLFW_KEY_UP) {
+        if (kc == InputConstants.KEY_UP) {
             moveSelected(-1);
             return true;
         }
-        if (kc == GLFW.GLFW_KEY_DOWN) {
+        if (kc == InputConstants.KEY_DOWN) {
             moveSelected(1);
             return true;
         }
-        if (kc == GLFW.GLFW_KEY_R && mtgcard$flipHoveredCardFace(Minecraft.getInstance())) {
+        if (kc == InputConstants.KEY_R && mtgcard$flipHoveredCardFace(Minecraft.getInstance())) {
             return true;
         }
         return super.keyPressed(key);

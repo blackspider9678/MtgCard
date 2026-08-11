@@ -43,7 +43,9 @@ public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBl
     private static final String LEGACY_BLOCK_ENTITY_TAG = "BlockEntityTag";
     private static final String ITEM_TINT_KEY = "mtgcard_deckbox_tint";
 
-    public static final MapCodec<DeckboxBlock> CODEC = simpleCodec(DeckboxBlock::new);
+    public static final MapCodec<DeckboxBlock> CODEC = MapCodec.unit(
+            () -> new DeckboxBlock(net.minecraft.world.level.block.state.BlockBehaviour.Properties.of())
+    );
     public static final BooleanProperty OPEN = BooleanProperty.create("open");
     public static final EnumProperty<Direction> FACING = BlockStateProperties.FACING;
 
@@ -155,7 +157,6 @@ public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBl
         builder.add(FACING, SPIN, OPEN, WATERLOGGED);
     }
 
-    @Override
     protected MapCodec<? extends BaseEntityBlock> codec() {
         return CODEC;
     }

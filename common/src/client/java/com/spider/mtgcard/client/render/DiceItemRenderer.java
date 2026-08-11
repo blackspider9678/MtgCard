@@ -2,6 +2,7 @@ package com.spider.mtgcard.client.render;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.serialization.MapCodec;
+import com.spider.mtgcard.client.compat.ClientCompat;
 import com.spider.mtgcard.data.ModDataComponents;
 import com.spider.mtgcard.dice.DiceAppearance;
 import com.spider.mtgcard.item.DiceItem;
@@ -65,7 +66,7 @@ public class DiceItemRenderer implements SpecialModelRenderer<DiceItemRenderer.D
 
         if (glint || data.appearance().foil()) {
             matrices.pushPose();
-            queue.submitCustomGeometry(matrices, RenderTypes.glint(), (matrix, buffer) -> {
+            queue.submitCustomGeometry(matrices, ClientCompat.itemGlint(texture.id()), (matrix, buffer) -> {
                 Matrix4f pose = matrix.pose();
                 buffer.addVertex(pose, 1.0F, 0.0F, 0.0F).setColor(0xFFFFFFFF).setUv(1.0F, 1.0F).setOverlay(overlay).setLight(light).setNormal(matrix, 0.0F, 0.0F, 1.0F);
                 buffer.addVertex(pose, 1.0F, 1.0F, 0.0F).setColor(0xFFFFFFFF).setUv(1.0F, 0.0F).setOverlay(overlay).setLight(light).setNormal(matrix, 0.0F, 0.0F, 1.0F);

@@ -8,6 +8,8 @@ base {
     archivesName = "${rootProject.archives_base_name}-neoforge"
 }
 
+version = rootProject.neoforge_mod_version
+
 def commonMainJava = fileTree('../common/src/main/java') {
     include 'com/spider/mtgcard/**'
     exclude 'com/spider/mtgcard/command/DeckServer_Command.java'
@@ -114,17 +116,15 @@ dependencies {
 }
 
 processResources {
-    inputs.property 'version', rootProject.version
-    inputs.property 'minecraft_version', rootProject.minecraft_version
-    inputs.property 'minecraft_version_range', rootProject.minecraft_version_range
+    inputs.property 'version', project.version
+    inputs.property 'minecraft_version_range', rootProject.neoforge_minecraft_version_range
     inputs.property 'neoforge_version', rootProject.neoforge_version
     inputs.property 'neoforge_loader_version_range', rootProject.neoforge_loader_version_range
     filteringCharset 'UTF-8'
 
     filesMatching('META-INF/neoforge.mods.toml') {
-        expand 'version': rootProject.version,
-                'minecraft_version': rootProject.minecraft_version,
-                'minecraft_version_range': rootProject.minecraft_version_range,
+        expand 'version': project.version,
+                'minecraft_version_range': rootProject.neoforge_minecraft_version_range,
                 'neoforge_version': rootProject.neoforge_version,
                 'neoforge_loader_version_range': rootProject.neoforge_loader_version_range
     }

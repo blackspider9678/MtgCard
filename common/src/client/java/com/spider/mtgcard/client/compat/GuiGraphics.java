@@ -1,6 +1,5 @@
 package com.spider.mtgcard.client.compat;
 
-import com.mojang.blaze3d.pipeline.RenderPipeline;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -12,6 +11,7 @@ import net.minecraft.world.inventory.tooltip.TooltipComponent;
 import net.minecraft.world.item.ItemStack;
 import org.joml.Matrix3x2fStack;
 
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Optional;
 
@@ -132,20 +132,41 @@ public final class GuiGraphics {
         delegate.textWithWordWrap(font, text, x, y, width, color, shadow);
     }
 
-    public void blit(RenderPipeline pipeline, Identifier texture, int x, int y, float u, float v, int width, int height, int textureWidth, int textureHeight) {
-        delegate.blit(pipeline, texture, x, y, u, v, width, height, textureWidth, textureHeight);
+    public void blit(Object pipeline, Identifier texture, int x, int y, float u, float v, int width, int height, int textureWidth, int textureHeight) {
+        invokeBlit(pipeline, texture, x, y, u, v, width, height, textureWidth, textureHeight);
     }
 
-    public void blit(RenderPipeline pipeline, Identifier texture, int x, int y, float u, float v, int width, int height, int textureWidth, int textureHeight, int color) {
-        delegate.blit(pipeline, texture, x, y, u, v, width, height, textureWidth, textureHeight, color);
+    public void blit(Object pipeline, Identifier texture, int x, int y, float u, float v, int width, int height, int textureWidth, int textureHeight, int color) {
+        invokeBlit(pipeline, texture, x, y, u, v, width, height, textureWidth, textureHeight, color);
     }
 
-    public void blit(RenderPipeline pipeline, Identifier texture, int x, int y, float u, float v, int width, int height, int regionWidth, int regionHeight, int textureWidth, int textureHeight) {
-        delegate.blit(pipeline, texture, x, y, u, v, width, height, regionWidth, regionHeight, textureWidth, textureHeight);
+    public void blit(Object pipeline, Identifier texture, int x, int y, float u, float v, int width, int height, int regionWidth, int regionHeight, int textureWidth, int textureHeight) {
+        invokeBlit(pipeline, texture, x, y, u, v, width, height, regionWidth, regionHeight, textureWidth, textureHeight);
     }
 
-    public void blit(RenderPipeline pipeline, Identifier texture, int x, int y, float u, float v, int width, int height, int regionWidth, int regionHeight, int textureWidth, int textureHeight, int color) {
-        delegate.blit(pipeline, texture, x, y, u, v, width, height, regionWidth, regionHeight, textureWidth, textureHeight, color);
+    public void blit(Object pipeline, Identifier texture, int x, int y, float u, float v, int width, int height, int regionWidth, int regionHeight, int textureWidth, int textureHeight, int color) {
+        invokeBlit(pipeline, texture, x, y, u, v, width, height, regionWidth, regionHeight, textureWidth, textureHeight, color);
+    }
+
+    private void invokeBlit(Object pipeline, Identifier texture, Object... args) {
+        Object[] invocation = new Object[args.length + 2];
+        invocation[0] = pipeline;
+        invocation[1] = texture;
+        System.arraycopy(args, 0, invocation, 2, args.length);
+
+        for (Method method : delegate.getClass().getMethods()) {
+            Class<?>[] types = method.getParameterTypes();
+            if (!method.getName().equals("blit") || types.length != invocation.length) continue;
+            if (!types[0].isInstance(pipeline) || !types[1].isInstance(texture)) continue;
+
+            try {
+                method.invoke(delegate, invocation);
+                return;
+            } catch (ReflectiveOperationException ignored) {
+            }
+        }
+
+        throw new IllegalStateException("No compatible GuiGraphicsExtractor.blit overload found");
     }
 
     public void renderItem(ItemStack stack, int x, int y) {
