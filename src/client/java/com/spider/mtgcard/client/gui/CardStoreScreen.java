@@ -6,6 +6,7 @@ import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.cardstore.CardStorePackets;
 import com.spider.mtgcard.cardstore.CardStoreScreenHandler;
 import com.spider.mtgcard.client.compat.LegacyContainerScreen;
+import com.spider.mtgcard.client.compat.MtgGuiScaleHelper;
 import com.spider.mtgcard.client.input.GuiCardFaceFlipHandler;
 import com.spider.mtgcard.client.input.GuiCardFaceFlipper;
 import com.spider.mtgcard.client.java.CardArtManager;
@@ -87,13 +88,13 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     // ---- virtual GUI size (MUST match ScreenHandler) ----
     private static final int GUI_W = 426;
     private static final int GUI_H = 240;
+    private static final int STORE_GUI_SCALE = 4;
 
     // ---- layout constants ----
     private static final int M = 10;
     private static final int TOP_H = 24;
     private static final int INFO_H = 14;
     private static final int GAP = 8;
-    private static final int LEFT_W = 240;
 
     // Fullscreen layout (independent of handler virtual GUI)
     private int fsX, fsY, fsW, fsH;
@@ -134,16 +135,44 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     private static final int LEFT_INNER_PAD = 12;
     private static final int GRID_GAP = 12;
     private static final int PAGER_H = 22;
+    private static final int GRID_INSET = 8;
+    private static final int MAX_GRID_COLUMNS = 10;
+    private static final int MIN_GRID_CELL_W = 44;
+    private static final float CARD_THUMB_ASPECT = 63.0F / 88.0F;
 
     private int previewBoxX() { return leftX + LEFT_INNER_PAD; }
     private int previewBoxY() { return leftY + LEFT_INNER_PAD; }
     private int previewBoxW() { return PREVIEW_COL_W; }
-    private int previewBoxH() { return leftH - (LEFT_INNER_PAD * 2); }
+    private int previewBoxH() { return Math.max(0, leftH - (LEFT_INNER_PAD * 2)); }
 
     private int gridAreaX() { return previewBoxX() + previewBoxW() + GRID_GAP; }
     private int gridAreaY() { return leftY + LEFT_INNER_PAD; }
-    private int gridAreaW() { return (leftX + leftW - LEFT_INNER_PAD) - gridAreaX(); }
-    private int gridAreaH() { return leftH - (LEFT_INNER_PAD * 2); }
+    private int gridAreaW() { return Math.max(0, (leftX + leftW - LEFT_INNER_PAD) - gridAreaX()); }
+    private int gridAreaH() { return Math.max(0, leftH - (LEFT_INNER_PAD * 2)); }
+
+    private int gridColumns(int gridW) {
+        if (gridW <= 0) return 1;
+        return Math.max(1, Math.min(MAX_GRID_COLUMNS, gridW / MIN_GRID_CELL_W));
+    }
+
+    private int gridCellPad(int cellW) {
+        return Math.max(4, Math.min(12, cellW / 10));
+    }
+
+    private int gridRowH(int gridW, int cols) {
+        int cellW = Math.max(1, (gridW + Math.max(1, cols) - 1) / Math.max(1, cols));
+        int pad = gridCellPad(cellW);
+        int cardW = Math.max(1, cellW - pad * 2);
+        return Math.max(MIN_GRID_CELL_W, Math.round(cardW / CARD_THUMB_ASPECT) + pad * 2);
+    }
+
+    private int gridCellLeft(int gridX, int gridW, int cols, int col) {
+        return gridX + (col * gridW) / Math.max(1, cols);
+    }
+
+    private int gridCellRight(int gridX, int gridW, int cols, int col) {
+        return gridX + ((col + 1) * gridW) / Math.max(1, cols);
+    }
 
     private UUID activePrintsRequest = new UUID(0L, 0L);
     private boolean gridLoading = false;
@@ -200,12 +229,12 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     }
 
     private int computeGridCapacity() {
-        int gridW = gridAreaW() - 16;
+        int gridW = gridAreaW() - (GRID_INSET * 2);
         int gridH = gridContentH() - 8;
         if (gridW <= 0 || gridH <= 0) return 1;
 
-        int cols = Math.max(1, gridW / CELL);
-        int rows = Math.max(1, gridH / CELL);
+        int cols = gridColumns(gridW);
+        int rows = Math.max(1, gridH / gridRowH(gridW, cols));
 
         int cap = cols * rows;
         return Math.max(1, Math.min(MAX_PAGE_SIZE, cap));
@@ -428,10 +457,10 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     }
 
     // CART list now lives in the LEFT panel's grid box area
-    private int cartListX() { return gridAreaX() + 8; }
-    private int cartListY() { return gridAreaY() + 8; }
-    private int cartListW() { return gridAreaW() - 16; }
-    private int cartListH() { return gridAreaH() - 16; } // full area (includes header)
+    private int cartListX() { return gridAreaX() + GRID_INSET; }
+    private int cartListY() { return gridAreaY() + GRID_INSET; }
+    private int cartListW() { return Math.max(0, gridAreaW() - (GRID_INSET * 2)); }
+    private int cartListH() { return Math.max(0, gridAreaH() - (GRID_INSET * 2)); } // full area (includes header)
     private int cartRowsY() { return cartListY() + CART_HEADER_H; }
     private int cartRowsH() { return Math.max(0, cartListH() - CART_HEADER_H); }// fill the whole grid box
 
@@ -472,11 +501,6 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         String s = set.trim();
         return (s.length() > 6) ? s.substring(0, 6) : s;
     }
-
-
-
-// remove LEFT_W usage; left becomes "whatever is left"
-
 
     public CardStoreScreen(CardStoreScreenHandler handler, Inventory inv, Component title) {
         super(handler, inv, title);
@@ -553,21 +577,16 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         }
     }
 
-
-
-
-    private static final int CELL = 40;      // cell size
-    private static final int CELL_PAD = 4;   // spacing
-    private static final int THUMB = 32;     // thumb draw size
-
     private void drawGrid(GuiGraphics ctx, int mouseX, int mouseY) {
-        int gridX = gridAreaX() + 8;
-        int gridY = gridAreaY() + 8;
-        int gridW = gridAreaW() - 16;
+        int gridX = gridAreaX() + GRID_INSET;
+        int gridY = gridAreaY() + GRID_INSET;
+        int gridW = gridAreaW() - (GRID_INSET * 2);
         int gridH = gridContentH() - 8;
+        if (gridW <= 0 || gridH <= 0) return;
 
-        int cols = Math.max(1, gridW / CELL);
-        int rowsVisible = Math.max(1, gridH / CELL);
+        int cols = gridColumns(gridW);
+        int rowH = gridRowH(gridW, cols);
+        int rowsVisible = Math.max(1, gridH / rowH);
         int maxVisible = cols * rowsVisible;
 
         int count = Math.min(grid.size(), maxVisible);
@@ -576,11 +595,16 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             int col = i % cols;
             int row = i / cols;
 
-            int cx = gridX + col * CELL;
-            int cy = gridY + row * CELL;
+            int cx = gridCellLeft(gridX, gridW, cols, col);
+            int cellRight = gridCellRight(gridX, gridW, cols, col);
+            int cellW = Math.max(1, cellRight - cx);
+            int cy = gridY + row * rowH;
+            int pad = gridCellPad(cellW);
 
             int bg = (i == selectedIndex) ? 0x66FFFFFF : 0x33000000;
-            ctx.fill(cx, cy, cx + CELL - CELL_PAD, cy + CELL - CELL_PAD, bg);
+            int bgRight = Math.max(cx + 1, cellRight - Math.max(1, pad / 2));
+            int bgBottom = Math.max(cy + 1, cy + rowH - Math.max(1, pad / 2));
+            ctx.fill(cx, cy, bgRight, bgBottom, bg);
 
             ItemStack s = grid.get(i).stack;
             var tex = CardArtManager.getOrRequestFace(s, 0);
@@ -590,15 +614,17 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
                 int texH = tex.texH();
 
                 float aspect = (float) texW / (float) texH;
-                int drawW = THUMB;
+                int maxDrawW = Math.max(1, cellW - pad * 2);
+                int maxDrawH = Math.max(1, rowH - pad * 2);
+                int drawW = maxDrawW;
                 int drawH = (int) (drawW / aspect);
-                if (drawH > THUMB) {
-                    drawH = THUMB;
+                if (drawH > maxDrawH) {
+                    drawH = maxDrawH;
                     drawW = (int) (drawH * aspect);
                 }
 
-                int dx = cx + (CELL - drawW) / 2;
-                int dy = cy + (CELL - drawH) / 2;
+                int dx = cx + (cellW - drawW) / 2;
+                int dy = cy + (rowH - drawH) / 2;
 
                 float sx = (float) drawW / (float) texW;
                 float sy = (float) drawH / (float) texH;
@@ -618,7 +644,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
                 );
                 m.popMatrix();
             } else {
-                ctx.renderItem(s, cx + 4, cy + 4);
+                ctx.renderItem(s, cx + pad, cy + pad);
             }
         }
     }
@@ -668,7 +694,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     @Override
     protected void init() {
-        if (applyFixedGuiScale(2)) return;
+        if (MtgGuiScaleHelper.applyAutoFitGuiScale(this, STORE_GUI_SCALE, GUI_W, GUI_H)) return;
 
         super.init();
 
@@ -704,7 +730,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
         leftX = contentX;
         leftY = contentY;
-        leftW = (rightX - GAP) - leftX;
+        leftW = Math.max(1, (rightX - GAP) - leftX);
         leftH = contentH;
 
         // ----- Inventory placement INSIDE right panel (bottom) -----
@@ -1261,20 +1287,24 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     }
 
     private int hitTestGridIndex(int mx, int my) {
-        int gridX = gridAreaX() + 8;
-        int gridY = gridAreaY() + 8;
-        int gridW = gridAreaW() - 16;
+        int gridX = gridAreaX() + GRID_INSET;
+        int gridY = gridAreaY() + GRID_INSET;
+        int gridW = gridAreaW() - (GRID_INSET * 2);
         int gridH = gridContentH() - 8;
+        if (gridW <= 0 || gridH <= 0) return -1;
 
         if (mx < gridX || my < gridY || mx >= gridX + gridW || my >= gridY + gridH) return -1;
 
-        int cols = Math.max(1, gridW / CELL);
-        int col = (mx - gridX) / CELL;
-        int row = (my - gridY) / CELL;
+        int cols = gridColumns(gridW);
+        int rowH = gridRowH(gridW, cols);
+        int col = (int) (((long) (mx - gridX) * cols) / gridW);
+        int row = (my - gridY) / rowH;
+        int rowsVisible = Math.max(1, gridH / rowH);
 
         int idx = row * cols + col;
-        int maxVisible = cols * Math.max(1, gridH / CELL);
+        int maxVisible = cols * rowsVisible;
 
+        if (col < 0 || col >= cols || row < 0 || row >= rowsVisible) return -1;
         if (idx < 0 || idx >= maxVisible) return -1;
         if (idx >= grid.size()) return -1;
 
