@@ -1,5 +1,7 @@
 package com.spider.mtgcard.item;
 
+import com.spider.mtgcard.data.ModDataComponents;
+import com.spider.mtgcard.dice.DiceAppearance;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Item.Properties;
@@ -22,6 +24,16 @@ public class DiceItem extends Item {
     public DiceItem(Properties settings, int sides) {
         super(settings);
         this.sides = sides;
+    }
+
+    public int getSides() {
+        return sides;
+    }
+
+    @Override
+    public boolean isFoil(ItemStack stack) {
+        DiceAppearance appearance = stack.get(ModDataComponents.DICE_APPEARANCE);
+        return (appearance != null && appearance.foil()) || super.isFoil(stack);
     }
 
     @Override

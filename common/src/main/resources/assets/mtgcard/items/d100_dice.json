@@ -1,6 +1,18 @@
 {
   "model": {
-    "type" : "minecraft:model",
-    "model": "mtgcard:item/d100_dice"
+    "type": "minecraft:condition",
+    "property": "minecraft:has_component",
+    "component": "mtgcard:dice_appearance",
+    "on_true": {
+      "type": "minecraft:special",
+      "base": "mtgcard:item/d100_dice",
+      "model": {
+        "type": "mtgcard:dice"
+      }
+    },
+    "on_false": {
+      "type": "minecraft:model",
+      "model": "mtgcard:item/d100_dice"
+    }
   }
 }

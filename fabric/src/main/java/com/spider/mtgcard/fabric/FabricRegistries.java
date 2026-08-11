@@ -12,6 +12,7 @@ import com.spider.mtgcard.registry.ModBlockEntities;
 import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.registry.ModParticles;
 import com.spider.mtgcard.screen.ModScreenHandlers;
+import com.spider.mtgcard.trade.ModLootFunctions;
 import net.minecraft.core.Registry;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -28,6 +29,7 @@ public final class FabricRegistries {
         registered = true;
 
         registerDataComponents();
+        registerLootFunctions();
         registerBlocks();
         registerItems();
         registerBlockEntities();
@@ -42,6 +44,19 @@ public final class FabricRegistries {
                 BuiltInRegistries.DATA_COMPONENT_TYPE,
                 ModDataComponents.CARD_ART_ID_ID,
                 ModDataComponents.configureCardArtId(DataComponentType.<String>builder()).build()
+        );
+        Registry.register(
+                BuiltInRegistries.DATA_COMPONENT_TYPE,
+                ModDataComponents.DICE_APPEARANCE_ID,
+                ModDataComponents.DICE_APPEARANCE
+        );
+    }
+
+    private static void registerLootFunctions() {
+        Registry.register(
+                BuiltInRegistries.LOOT_FUNCTION_TYPE,
+                ModLootFunctions.RANDOMIZE_DICE_APPEARANCE_ID,
+                ModLootFunctions.RANDOMIZE_DICE_APPEARANCE
         );
     }
 
@@ -100,6 +115,7 @@ public final class FabricRegistries {
         Registry.register(BuiltInRegistries.MENU, id("graveyard"), ModScreenHandlers.GRAVEYARD);
         Registry.register(BuiltInRegistries.MENU, id("card_store"), ModScreenHandlers.CARD_STORE);
         Registry.register(BuiltInRegistries.MENU, id("card_database_sh"), ModScreenHandlers.CARD_DB);
+        Registry.register(BuiltInRegistries.MENU, id("dice_customizer"), ModScreenHandlers.DICE_CUSTOMIZER);
     }
 
     private static void registerParticles() {

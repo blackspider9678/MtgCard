@@ -10,25 +10,35 @@ import com.spider.mtgcard.client.gui.CardStoreScreen;
 import com.spider.mtgcard.client.gui.CustomImportScreen;
 import com.spider.mtgcard.client.gui.DeckControlScreen;
 import com.spider.mtgcard.client.gui.DeckboxScreen;
+import com.spider.mtgcard.client.gui.DiceCustomizerScreen;
 import com.spider.mtgcard.client.gui.GraveyardScreen;
 import com.spider.mtgcard.client.hud.CardPeekHud;
 import com.spider.mtgcard.client.input.ModKeybinds;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.client.life.LifePointFrontTextRenderer;
 import com.spider.mtgcard.client.render.CardDatabaseBlockEntityRenderer;
+import com.spider.mtgcard.client.render.DiceItemRenderer;
+import com.spider.mtgcard.dice.DiceCustomizerPackets;
+import com.spider.mtgcard.registry.ModRegistry;
 import com.spider.mtgcard.registry.ModBlockEntities;
 import com.spider.mtgcard.screen.ModScreenHandlers;
 import com.spider.mtgcard.util.ArtImageStorage;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.LoomScreen;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
+import net.neoforged.neoforge.client.event.RegisterSpecialModelRendererEvent;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
+import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWDropCallback;
 
@@ -47,7 +57,9 @@ public final class MtgcardNeoForgeClient {
         modBus.addListener(MtgcardNeoForgeClient::registerKeyMappings);
         modBus.addListener(MtgcardNeoForgeClient::registerMenuScreens);
         modBus.addListener(MtgcardNeoForgeClient::registerRenderers);
+        modBus.addListener(MtgcardNeoForgeClient::registerSpecialModelRenderers);
         NeoForge.EVENT_BUS.addListener(MtgcardNeoForgeClient::onClientTick);
+        NeoForge.EVENT_BUS.addListener(MtgcardNeoForgeClient::onScreenInit);
         NeoForge.EVENT_BUS.addListener(MtgcardNeoForgeClient::renderCardPeekHud);
     }
 
@@ -64,6 +76,7 @@ public final class MtgcardNeoForgeClient {
         event.register(ModScreenHandlers.DECKCONTROL, DeckControlScreen::new);
         event.register(ModScreenHandlers.GRAVEYARD, GraveyardScreen::new);
         event.register(ModScreenHandlers.CARD_STORE, CardStoreScreen::new);
+        event.register(ModScreenHandlers.DICE_CUSTOMIZER, DiceCustomizerScreen::new);
     }
 
     private static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
@@ -72,6 +85,10 @@ public final class MtgcardNeoForgeClient {
         event.registerBlockEntityRenderer(ModBlockEntities.CARD_DB, CardDatabaseBlockEntityRenderer::new);
         event.registerBlockEntityRenderer(ModBlockEntities.DECK_CONTROL, DeckControlEntityRenderer::new);
         event.registerBlockEntityRenderer(ModBlockEntities.LIFE_POINT, LifePointFrontTextRenderer::new);
+    }
+
+    private static void registerSpecialModelRenderers(RegisterSpecialModelRendererEvent event) {
+        event.register(ModRegistry.id("dice"), DiceItemRenderer.Unbaked.MAP_CODEC);
     }
 
     private static void registerKeyMappings(RegisterKeyMappingsEvent event) {
@@ -89,6 +106,23 @@ public final class MtgcardNeoForgeClient {
         installDropCallback(client);
         ModKeybinds.tick(client);
         CardArtManager.pumpQueue();
+    }
+
+    private static void onScreenInit(ScreenEvent.Init.Post event) {
+        Screen screen = event.getScreen();
+        if (!(screen instanceof LoomScreen)) {
+            return;
+        }
+
+        int loomLeft = (screen.width - 176) / 2;
+        int loomTop = (screen.height - 166) / 2;
+        int buttonX = Math.min(screen.width - 98, loomLeft + 180);
+        int buttonY = Math.max(4, loomTop + 4);
+
+        event.addListener(Button.builder(
+                Component.translatable("screen.mtgcard.dice_customizer.button"),
+                button -> ClientPlayNetworking.send(new DiceCustomizerPackets.OpenDiceCustomizerC2S())
+        ).bounds(buttonX, buttonY, 94, 20).build());
     }
 
     private static void installDropCallback(Minecraft client) {

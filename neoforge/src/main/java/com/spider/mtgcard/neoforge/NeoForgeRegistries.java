@@ -12,6 +12,7 @@ import com.spider.mtgcard.registry.ModBlockEntities;
 import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.registry.ModParticles;
 import com.spider.mtgcard.screen.ModScreenHandlers;
+import com.spider.mtgcard.trade.ModLootFunctions;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
@@ -33,6 +34,20 @@ public final class NeoForgeRegistries {
                     Registries.DATA_COMPONENT_TYPE,
                     ModDataComponents.CARD_ART_ID_ID,
                     () -> ModDataComponents.configureCardArtId(DataComponentType.<String>builder()).build()
+            );
+            event.register(
+                    Registries.DATA_COMPONENT_TYPE,
+                    ModDataComponents.DICE_APPEARANCE_ID,
+                    () -> ModDataComponents.DICE_APPEARANCE
+            );
+            return;
+        }
+
+        if (event.getRegistryKey().equals(Registries.LOOT_FUNCTION_TYPE)) {
+            event.register(
+                    Registries.LOOT_FUNCTION_TYPE,
+                    ModLootFunctions.RANDOMIZE_DICE_APPEARANCE_ID,
+                    () -> ModLootFunctions.RANDOMIZE_DICE_APPEARANCE
             );
             return;
         }
@@ -91,6 +106,7 @@ public final class NeoForgeRegistries {
             event.register(Registries.MENU, id("graveyard"), () -> ModScreenHandlers.GRAVEYARD);
             event.register(Registries.MENU, id("card_store"), () -> ModScreenHandlers.CARD_STORE);
             event.register(Registries.MENU, id("card_database_sh"), () -> ModScreenHandlers.CARD_DB);
+            event.register(Registries.MENU, id("dice_customizer"), () -> ModScreenHandlers.DICE_CUSTOMIZER);
             return;
         }
 

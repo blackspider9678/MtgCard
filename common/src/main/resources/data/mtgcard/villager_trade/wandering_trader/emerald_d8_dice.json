@@ -1,4 +1,9 @@
 {
+  "given_item_modifiers": [
+    {
+      "function": "mtgcard:randomize_dice_appearance"
+    }
+  ],
   "gives": {
     "id": "mtgcard:d8_dice"
   },

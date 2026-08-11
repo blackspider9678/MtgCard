@@ -1,10 +1,10 @@
 package com.spider.mtgcard.screen;
 
-import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.cardstore.CardStoreScreenHandler;
 import com.spider.mtgcard.db.CardDatabaseScreenHandler;
 import com.spider.mtgcard.deckbox.DeckboxScreenHandler;
 import com.spider.mtgcard.deckcontrol.DeckControlScreenHandler;
+import com.spider.mtgcard.dice.DiceCustomizerScreenHandler;
 import com.spider.mtgcard.graveyard.GraveyardScreenHandler;
 import net.fabricmc.fabric.api.menu.v1.ExtendedMenuType;
 import net.minecraft.core.BlockPos;
@@ -20,6 +20,7 @@ public final class ModScreenHandlers {
     public static ExtendedMenuType<GraveyardScreenHandler, BlockPos> GRAVEYARD;
     public static ExtendedMenuType<CardStoreScreenHandler, CardStoreScreenHandler.OpenData> CARD_STORE;
     public static ExtendedMenuType<CardDatabaseScreenHandler, BlockPos> CARD_DB;
+    public static MenuType<DiceCustomizerScreenHandler> DICE_CUSTOMIZER;
 
     public static void register() {
         if (registered) return;
@@ -34,6 +35,8 @@ public final class ModScreenHandlers {
         CARD_STORE = new ExtendedMenuType<>(CardStoreScreenHandler::new, CardStoreScreenHandler.OpenData.STREAM_CODEC);
 
         CARD_DB = new ExtendedMenuType<>(CardDatabaseScreenHandler::new, BlockPos.STREAM_CODEC);
+
+        DICE_CUSTOMIZER = new MenuType<>(DiceCustomizerScreenHandler::new, FeatureFlags.VANILLA_SET);
     }
 
     private ModScreenHandlers() {}
