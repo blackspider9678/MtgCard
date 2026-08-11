@@ -7,9 +7,15 @@ import com.spider.mtgcard.client.gui.DeckboxScreen;
 import com.spider.mtgcard.client.gui.GraveyardScreen;
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
+import mezz.jei.api.registration.IRecipeCatalystRegistration;
+import mezz.jei.api.registration.IRecipeCategoryRegistration;
+import mezz.jei.api.registration.IRecipeRegistration;
 import mezz.jei.api.registration.IGuiHandlerRegistration;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.Items;
+
+import java.util.List;
 
 @JeiPlugin
 public final class MtgcardJeiPlugin implements IModPlugin {
@@ -18,6 +24,21 @@ public final class MtgcardJeiPlugin implements IModPlugin {
     @Override
     public Identifier getPluginUid() {
         return PLUGIN_ID;
+    }
+
+    @Override
+    public void registerCategories(IRecipeCategoryRegistration registration) {
+        registration.addRecipeCategories(new DiceCustomizerJeiCategory(registration.getJeiHelpers().getGuiHelper()));
+    }
+
+    @Override
+    public void registerRecipes(IRecipeRegistration registration) {
+        registration.addRecipes(DiceCustomizerJeiCategory.TYPE, List.of(DiceCustomizerJeiCategory.Recipe.create()));
+    }
+
+    @Override
+    public void registerRecipeCatalysts(IRecipeCatalystRegistration registration) {
+        registration.addCraftingStation(DiceCustomizerJeiCategory.TYPE, Items.LOOM);
     }
 
     @Override
