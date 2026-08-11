@@ -1,0 +1,7 @@
+{
+  "parent": "mtgcard:block/deckbox_open",
+  "textures": {
+    "3": "minecraft:block/poplar_planks",
+    "particle": "minecraft:block/poplar_planks"
+  }
+}

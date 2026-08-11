@@ -11,6 +11,10 @@
     "mtgcard:mangrove_deckbox",
     "mtgcard:cherry_deckbox",
     "mtgcard:pale_oak_deckbox",
+    {
+      "id": "mtgcard:poplar_deckbox",
+      "required": false
+    },
     "mtgcard:bamboo_deckbox",
     "mtgcard:crimson_deckbox",
     "mtgcard:warped_deckbox"
