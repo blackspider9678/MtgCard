@@ -22,6 +22,9 @@
   },
   "mixins": [
     {
+      "config": "mtgcard.mixins.json"
+    },
+    {
       "config": "mtgcard.mousetweaks.mixins.json",
       "environment": "client"
     }

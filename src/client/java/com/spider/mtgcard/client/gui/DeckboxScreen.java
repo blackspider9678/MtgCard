@@ -106,6 +106,19 @@ public class DeckboxScreen extends LegacyContainerScreen<DeckboxScreenHandler> {
         drawSideSlotHints(ctx, mouseX, mouseY);
     }
 
+    @Override
+    protected void renderSlot(GuiGraphics ctx, Slot slot, int mouseX, int mouseY) {
+        if (isDeckboxStorageSlot(slot) && CardSlotArtRenderer.renderSlotArt(this, ctx, this.font, slot)) {
+            return;
+        }
+        super.renderSlot(ctx, slot, mouseX, mouseY);
+    }
+
+    private boolean isDeckboxStorageSlot(Slot slot) {
+        int menuIndex = this.menu.slots.indexOf(slot);
+        return menuIndex >= 0 && menuIndex < com.spider.mtgcard.deckbox.DeckboxBlockEntity.INVENTORY_SIZE;
+    }
+
     private void drawSideSlotHints(GuiGraphics ctx, int mouseX, int mouseY) {
         Slot slot = this.hoveredSlot;
         if (slot == null) return;

@@ -877,6 +877,24 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
         renderHoverPreview(ctx, mouseX, mouseY, delta);
     }
 
+    @Override
+    protected void renderSlot(GuiGraphics ctx, Slot slot, int mouseX, int mouseY) {
+        if (isCardArtStorageSlot(slot) && CardSlotArtRenderer.renderSlotArt(this, ctx, this.font, slot)) {
+            return;
+        }
+        super.renderSlot(ctx, slot, mouseX, mouseY);
+    }
+
+    private boolean isCardArtStorageSlot(Slot slot) {
+        if (slot == null || this.menu == null) return false;
+
+        int menuIndex = this.menu.slots.indexOf(slot);
+        int dbWindowSlots = CardDatabaseScreenHandler.DB_ROWS * CardDatabaseScreenHandler.DB_COLS;
+        int playerSlots = 36;
+
+        return menuIndex >= 0 && (menuIndex < dbWindowSlots || menuIndex >= dbWindowSlots + playerSlots);
+    }
+
     private void renderDbCountOverlays(GuiGraphics ctx) {
         if (this.menu == null || this.menu.slots == null) return;
 

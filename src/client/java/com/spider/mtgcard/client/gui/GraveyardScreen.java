@@ -126,6 +126,19 @@ public class GraveyardScreen extends LegacyContainerScreen<GraveyardScreenHandle
     }
 
     @Override
+    protected void renderSlot(GuiGraphics ctx, Slot slot, int mouseX, int mouseY) {
+        if (isGraveyardStorageSlot(slot) && CardSlotArtRenderer.renderSlotArt(this, ctx, this.font, slot)) {
+            return;
+        }
+        super.renderSlot(ctx, slot, mouseX, mouseY);
+    }
+
+    private boolean isGraveyardStorageSlot(Slot slot) {
+        int menuIndex = this.menu.slots.indexOf(slot);
+        return menuIndex >= 0 && menuIndex < GraveyardScreenHandler.TOTAL;
+    }
+
+    @Override
     protected void renderBg(GuiGraphics ctx, float delta, int mouseX, int mouseY) {
         // draw full background texture (assumes texture is 512x512)
         ctx.blit(
