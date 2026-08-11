@@ -35,6 +35,7 @@ def commonClientJava = fileTree('../common/src/client/java') {
     include 'com/spider/mtgcard/client/display/CardDisplayEntityRenderer.java'
     include 'com/spider/mtgcard/client/displayblock/**'
     include 'com/spider/mtgcard/client/gui/CardDatabaseScreen.java'
+    include 'com/spider/mtgcard/client/gui/CardSlotArtRenderer.java'
     include 'com/spider/mtgcard/client/gui/CardStoreScreen.java'
     include 'com/spider/mtgcard/client/gui/CustomImportScreen.java'
     include 'com/spider/mtgcard/client/gui/DeckControlScreen.java'

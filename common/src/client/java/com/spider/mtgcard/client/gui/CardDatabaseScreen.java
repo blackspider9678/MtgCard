@@ -8,6 +8,7 @@ import com.spider.mtgcard.api.CardDatabaseCards;
 import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.db.CardDatabaseScreenHandler;
 import com.spider.mtgcard.client.compat.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.gui.components.Button;
@@ -820,6 +821,32 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
 
         // Hover preview
         renderHoverPreview(ctx, mouseX, mouseY, delta);
+    }
+
+    @Override
+    protected void extractSlot(GuiGraphicsExtractor graphics, Slot slot, int mouseX, int mouseY) {
+        if (isCardArtStorageSlot(slot)
+                && !isQuickCraftingSlot(slot)
+                && CardSlotArtRenderer.renderSlotArt(new GuiGraphics(graphics), this.font, slot)) {
+            return;
+        }
+        super.extractSlot(graphics, slot, mouseX, mouseY);
+    }
+
+    private boolean isCardArtStorageSlot(Slot slot) {
+        if (slot == null || this.menu == null) return false;
+
+        int menuIndex = this.menu.slots.indexOf(slot);
+        int dbWindowSlots = CardDatabaseScreenHandler.DB_ROWS * CardDatabaseScreenHandler.DB_COLS;
+        int playerSlots = 36;
+
+        return menuIndex >= 0 && (menuIndex < dbWindowSlots || menuIndex >= dbWindowSlots + playerSlots);
+    }
+
+    private boolean isQuickCraftingSlot(Slot slot) {
+        return this.isQuickCrafting
+                && this.quickCraftSlots.contains(slot)
+                && !this.menu.getCarried().isEmpty();
     }
 
     private void renderDbCounts(GuiGraphics ctx) {
