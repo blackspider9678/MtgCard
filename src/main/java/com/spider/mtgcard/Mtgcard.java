@@ -6,6 +6,7 @@ import com.spider.mtgcard.cardstore.CardStorePackets;
 import com.spider.mtgcard.command.MtgRootCommand;
 import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.content.pack.PackServerEvents;
+import com.spider.mtgcard.data.ModDataComponents;
 import com.spider.mtgcard.guidebook.GuideBook;
 import com.spider.mtgcard.item.ModItemGroup;
 import com.spider.mtgcard.item.ModItems;
@@ -33,6 +34,9 @@ public final class Mtgcard implements ModInitializer {
     public void onInitialize() {
         Mtgcard.LOGGER.info("[Mtgcard] Mod Unpacked");
         ArtImageStorage.ensureWebpCodecsRegistered();
+
+        // Register custom item data components before resource reloads or server-side crafting can reference them.
+        ModDataComponents.init();
 
         // 1) Register ALL payload CODECs (safe on both sides, must happen before receiver registration)
         ModPayloads.registerTypes();

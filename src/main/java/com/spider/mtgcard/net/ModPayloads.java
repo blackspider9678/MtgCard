@@ -4,6 +4,7 @@ package com.spider.mtgcard.net;
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.cardstore.CardStorePackets;
 import com.spider.mtgcard.content.pack.PackProgressBars;
+import com.spider.mtgcard.dice.DiceCustomizerPackets;
 import com.spider.mtgcard.graveyard.GraveyardBlockEntity;
 import com.spider.mtgcard.net.payload.*;
 import com.spider.mtgcard.shared.MtgCardPaths;
@@ -72,6 +73,9 @@ public final class ModPayloads {
         // ---- Card Store types ----
         CardStorePackets.registerTypes();
 
+        // ---- Dice Customizer types ----
+        DiceCustomizerPackets.registerTypes();
+
         // ---- Hidden flags / display payloads ----
         PayloadTypeRegistry.playC2S().register(SetHiddenPayload.ID, SetHiddenPayload.CODEC);
         PayloadTypeRegistry.playC2S().register(CardDisplayPayloads.DisplaySetHiddenC2S.ID, CardDisplayPayloads.DisplaySetHiddenC2S.CODEC);
@@ -118,6 +122,9 @@ public final class ModPayloads {
 
         // Card Store receivers (SERVER side)
         CardStorePackets.registerServer();
+
+        // Dice Customizer receivers (SERVER side)
+        DiceCustomizerPackets.registerServer();
 
         // -------------------------
         // Stack-based mutations

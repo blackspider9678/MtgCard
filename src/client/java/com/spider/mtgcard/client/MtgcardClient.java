@@ -67,6 +67,7 @@ public final class MtgcardClient implements ClientModInitializer {
         MenuScreens.register(ModScreenHandlers.DECKCONTROL, DeckControlScreen::new);
         MenuScreens.register(ModScreenHandlers.GRAVEYARD, GraveyardScreen::new);
         MenuScreens.register(ModScreenHandlers.CARD_STORE, CardStoreScreen::new);
+        MenuScreens.register(ModScreenHandlers.DICE_CUSTOMIZER, DiceCustomizerScreen::new);
 
         GuideBookClientNet.init();
         ModKeybinds.init();
