@@ -6,6 +6,7 @@ import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.deckbox.DeckboxScreenHandler;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import com.spider.mtgcard.util.TcgCardMeta;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
@@ -102,6 +103,20 @@ public class DeckboxScreen extends LegacyContainerScreen<DeckboxScreenHandler> {
         this.renderTooltip(ctx, mouseX, mouseY);
         renderHoverPreview(ctx, mouseX, mouseY, delta);
         drawSideSlotHints(ctx, mouseX, mouseY);
+    }
+
+    @Override
+    protected void extractSlot(GuiGraphicsExtractor graphics, Slot slot, int mouseX, int mouseY) {
+        if (isDeckboxStorageSlot(slot)
+                && CardSlotArtRenderer.renderSlotArt(this, new GuiGraphics(graphics), this.font, slot)) {
+            return;
+        }
+        super.extractSlot(graphics, slot, mouseX, mouseY);
+    }
+
+    private boolean isDeckboxStorageSlot(Slot slot) {
+        int menuIndex = this.menu.slots.indexOf(slot);
+        return menuIndex >= 0 && menuIndex < com.spider.mtgcard.deckbox.DeckboxBlockEntity.INVENTORY_SIZE;
     }
 
     private void drawSideSlotHints(GuiGraphics ctx, int mouseX, int mouseY) {

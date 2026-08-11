@@ -21,6 +21,7 @@
     ]
   },
   "mixins": [
+    "mtgcard.mixins.json",
     "mtgcard.mousetweaks.mixins.json"
   ],
   "depends": {

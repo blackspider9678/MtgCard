@@ -9,6 +9,7 @@ import com.spider.mtgcard.util.TcgCardMeta;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
@@ -119,6 +120,20 @@ public class GraveyardScreen extends LegacyContainerScreen<GraveyardScreenHandle
         this.renderTooltip(ctx, mouseX, mouseY);
 
         renderHoverPreview(ctx, mouseX, mouseY, delta);
+    }
+
+    @Override
+    protected void extractSlot(GuiGraphicsExtractor graphics, Slot slot, int mouseX, int mouseY) {
+        if (isGraveyardStorageSlot(slot)
+                && CardSlotArtRenderer.renderSlotArt(this, new GuiGraphics(graphics), this.font, slot)) {
+            return;
+        }
+        super.extractSlot(graphics, slot, mouseX, mouseY);
+    }
+
+    private boolean isGraveyardStorageSlot(Slot slot) {
+        int menuIndex = this.menu.slots.indexOf(slot);
+        return menuIndex >= 0 && menuIndex < GraveyardScreenHandler.TOTAL;
     }
 
     @Override
