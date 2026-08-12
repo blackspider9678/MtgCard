@@ -10,6 +10,7 @@ import com.spider.mtgcard.displayblock.DisplayBlock;
 import com.spider.mtgcard.displayblock.DisplayBlockItem;
 import com.spider.mtgcard.graveyard.GraveyardBlock;
 import com.spider.mtgcard.life.LifePointRegistry;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.material.MapColor;
@@ -32,19 +33,62 @@ import java.util.function.Function;
 public final class ModBlocks {
 
     private static boolean inited = false;
-    private static final List<String> DECKBOX_REGISTRY_PATHS = List.of(
-            "deckbox",
-            "oak_deckbox",
-            "birch_deckbox",
-            "jungle_deckbox",
-            "acacia_deckbox",
-            "dark_oak_deckbox",
-            "mangrove_deckbox",
-            "cherry_deckbox",
-            "pale_oak_deckbox",
-            "bamboo_deckbox",
-            "crimson_deckbox",
-            "warped_deckbox"
+    private static final String BIOMESOPLENTY = "biomesoplenty";
+    private static final String BIOMESWEVEGONE = "biomeswevegone";
+    private static final List<DeckboxVariant> DECKBOX_REGISTRY_PATHS = List.of(
+            vanillaDeckbox("deckbox"),
+            vanillaDeckbox("oak_deckbox"),
+            vanillaDeckbox("birch_deckbox"),
+            vanillaDeckbox("jungle_deckbox"),
+            vanillaDeckbox("acacia_deckbox"),
+            vanillaDeckbox("dark_oak_deckbox"),
+            vanillaDeckbox("mangrove_deckbox"),
+            vanillaDeckbox("cherry_deckbox"),
+            vanillaDeckbox("pale_oak_deckbox"),
+            vanillaDeckbox("bamboo_deckbox"),
+            vanillaDeckbox("crimson_deckbox"),
+            vanillaDeckbox("warped_deckbox"),
+
+            optionalDeckbox(BIOMESOPLENTY, "biomesoplenty_origin_oak_deckbox"),
+            optionalDeckbox(BIOMESOPLENTY, "biomesoplenty_fir_deckbox"),
+            optionalDeckbox(BIOMESOPLENTY, "biomesoplenty_pine_deckbox"),
+            optionalDeckbox(BIOMESOPLENTY, "biomesoplenty_maple_deckbox"),
+            optionalDeckbox(BIOMESOPLENTY, "biomesoplenty_redwood_deckbox"),
+            optionalDeckbox(BIOMESOPLENTY, "biomesoplenty_mahogany_deckbox"),
+            optionalDeckbox(BIOMESOPLENTY, "biomesoplenty_jacaranda_deckbox"),
+            optionalDeckbox(BIOMESOPLENTY, "biomesoplenty_palm_deckbox"),
+            optionalDeckbox(BIOMESOPLENTY, "biomesoplenty_willow_deckbox"),
+            optionalDeckbox(BIOMESOPLENTY, "biomesoplenty_dead_deckbox"),
+            optionalDeckbox(BIOMESOPLENTY, "biomesoplenty_magic_deckbox"),
+            optionalDeckbox(BIOMESOPLENTY, "biomesoplenty_umbran_deckbox"),
+            optionalDeckbox(BIOMESOPLENTY, "biomesoplenty_hellbark_deckbox"),
+            optionalDeckbox(BIOMESOPLENTY, "biomesoplenty_empyreal_deckbox"),
+
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_aspen_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_baobab_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_blue_enchanted_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_cika_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_cypress_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_ebony_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_fir_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_florus_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_green_enchanted_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_holly_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_ironwood_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_jacaranda_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_mahogany_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_maple_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_palm_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_pine_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_rainbow_eucalyptus_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_redwood_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_sakura_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_skyris_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_spirit_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_white_mangrove_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_willow_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_witch_hazel_deckbox"),
+            optionalDeckbox(BIOMESWEVEGONE, "biomeswevegone_zelkova_deckbox")
     );
     private static final List<Block> DECKBOX_BLOCKS = new ArrayList<>();
     private static final List<Item> DECKBOX_ITEMS = new ArrayList<>();
@@ -98,7 +142,10 @@ public final class ModBlocks {
         inited = true;
 
         // ---- Deckbox ----
-        for (String path : DECKBOX_REGISTRY_PATHS) {
+        for (DeckboxVariant variant : DECKBOX_REGISTRY_PATHS) {
+            if (!variant.shouldRegister()) continue;
+
+            String path = variant.path();
             var deckbox = registerBlockWithItem(
                     path,
                     BlockBehaviour.Properties.of()
@@ -181,6 +228,20 @@ public final class ModBlocks {
     }
 
     // ---------------- helpers ----------------
+
+    private static DeckboxVariant vanillaDeckbox(String path) {
+        return new DeckboxVariant(path, null);
+    }
+
+    private static DeckboxVariant optionalDeckbox(String requiredModId, String path) {
+        return new DeckboxVariant(path, requiredModId);
+    }
+
+    private record DeckboxVariant(String path, String requiredModId) {
+        boolean shouldRegister() {
+            return requiredModId == null || FabricLoader.getInstance().isModLoaded(requiredModId);
+        }
+    }
 
     private static <T extends Block> T registerBlockItem(
             String path,

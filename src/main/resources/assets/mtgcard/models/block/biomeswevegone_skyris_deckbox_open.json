@@ -1,0 +1,7 @@
+{
+  "parent": "mtgcard:block/deckbox_open",
+  "textures": {
+    "3": "biomeswevegone:block/skyris/planks",
+    "particle": "biomeswevegone:block/skyris/planks"
+  }
+}
