@@ -1,0 +1,25 @@
+{
+  "fabric:load_conditions": [
+    {
+      "condition": "fabric:all_mods_loaded",
+      "values": [
+        "biomeswevegone"
+      ]
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "PGP",
+    "GCG",
+    "PGP"
+  ],
+  "key": {
+    "P": "biomeswevegone:willow_planks",
+    "G": "minecraft:gold_ingot",
+    "C": "#c:chests"
+  },
+  "result": {
+    "id": "mtgcard:biomeswevegone_willow_deckbox",
+    "count": 1
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "parent": "mtgcard:block/deckbox_closed",
+  "textures": {
+    "3": "biomesoplenty:block/fir_planks",
+    "particle": "biomesoplenty:block/fir_planks"
+  }
+}
