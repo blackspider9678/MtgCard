@@ -6,6 +6,7 @@ import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.content.pack.cache.ScryfallExactFetch;
 import com.spider.mtgcard.content.pack.cache.ScryfallModels;
 import com.spider.mtgcard.util.CardStackBuilders;
+import com.spider.mtgcard.util.CustomCardPricing;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.Item;
@@ -30,14 +31,7 @@ public final class CardStorePurchaseService {
     private static final Logger LOGGER = LoggerFactory.getLogger("MtgCard/CardStore");
 
     private static int priceItemsForCustomRarity(String rarity) {
-        if (rarity == null) return 1;
-        String r = rarity.trim().toLowerCase(Locale.ROOT);
-        return switch (r) {
-            case "uncommon" -> 2;
-            case "rare" -> 3;
-            case "mythic", "mythic rare", "mythic_rare" -> 4;
-            default -> 1; // common / unknown
-        };
+        return (int) Math.min(Integer.MAX_VALUE, CustomCardPricing.priceItemsForRarity(rarity));
     }
 
     private static boolean isCustomLine(String setCode, String collector) {
@@ -409,24 +403,6 @@ public final class CardStorePurchaseService {
 
     // -------- Pricing helpers --------
 
-    private static double chooseUnitPrice(ScryfallModels.Card c) {
-        if (c == null || c.price == null) return 0.0;
-        return Math.max(0.0, parsePriceOrZero(c.price.usd));
-    }
-
-    private static double parsePriceOrZero(String s) {
-        if (s == null) return 0.0;
-        String t = s.trim();
-        if (t.isEmpty() || t.equals("-") || t.equals("—")) return 0.0;
-        try {
-            double v = Double.parseDouble(t);
-            if (Double.isNaN(v) || Double.isInfinite(v)) return 0.0;
-            return v;
-        } catch (Throwable ignored) {
-            return 0.0;
-        }
-    }
-
     private static Item resolveCurrencyItem(MtgcardConfig cfg) {
         String id = (cfg == null || cfg.Price_Item == null || cfg.Price_Item.isBlank())
                 ? "minecraft:diamond"
@@ -444,80 +420,16 @@ public final class CardStorePurchaseService {
         return item;
     }
 
-    private enum PriceTier { NORMAL, FOIL, ETCHED }
-    private record PricePick(String value, PriceTier tier) {}
-
     private static int priceItemsForCard(ScryfallModels.Card c, boolean preferFoil) {
-        if (c == null || c.price == null) return 0;
+        if (c == null || c.price == null) return 1;
 
-        String basis = MtgcardConfig.get().Price_Basis;
-        String b = (basis == null ? "USD" : basis.trim().toUpperCase(Locale.ROOT));
-
-        String normal;
-        String foil;
-        String etched;
-
-        switch (b) {
-            case "EUR" -> {
-                normal = c.price.eur;
-                foil   = c.price.eurFoil;
-                etched = null;
-            }
-            case "TIX" -> {
-                normal = c.price.tix;
-                foil   = null;
-                etched = null;
-            }
-            case "USD" -> {
-                normal = c.price.usd;
-                foil   = c.price.usdFoil;
-                etched = c.price.usdEtched;
-            }
-            default -> {
-                normal = c.price.usd;
-                foil   = c.price.usdFoil;
-                etched = c.price.usdEtched;
-            }
-        }
-
-        PricePick pick = pickBestPrice(preferFoil, normal, foil, etched);
-        return roundPriceToWhole(pick.value());
-    }
-
-    private static boolean isValidPrice(String s) {
-        if (s == null) return false;
-        String t = s.trim();
-        return !(t.isEmpty() || t.equals("-") || t.equals("—"));
-    }
-
-    private static PricePick pickBestPrice(boolean preferFoil, String normal, String foil, String etched) {
-        if (preferFoil) {
-            if (isValidPrice(foil))   return new PricePick(foil, PriceTier.FOIL);
-            if (isValidPrice(etched)) return new PricePick(etched, PriceTier.ETCHED);
-            if (isValidPrice(normal)) return new PricePick(normal, PriceTier.NORMAL);
-        }
-        if (isValidPrice(normal)) return new PricePick(normal, PriceTier.NORMAL);
-        if (isValidPrice(foil))   return new PricePick(foil, PriceTier.FOIL);
-        if (isValidPrice(etched)) return new PricePick(etched, PriceTier.ETCHED);
-        return new PricePick("0", PriceTier.NORMAL);
-    }
-
-    private static int roundPriceToWhole(String price) {
-        if (price == null) return 0;
-        String s = price.trim();
-        if (s.isEmpty() || s.equals("-") || s.equals("—")) return 0;
-
-        try {
-            double v = Double.parseDouble(s);
-            if (Double.isNaN(v) || Double.isInfinite(v)) return 0;
-
-            long r = Math.round(v);
-            if (r < 0) r = 0;
-            if (r > Integer.MAX_VALUE) r = Integer.MAX_VALUE;
-            return (int) r;
-        } catch (Throwable ignored) {
-            return 0;
-        }
+        long items = CardStorePrice.toCurrencyItemsFromStrings(
+                preferFoil,
+                c.price.usd, c.price.usdFoil, c.price.usdEtched,
+                c.price.eur, c.price.eurFoil,
+                c.price.tix
+        );
+        return (int) Math.min(Integer.MAX_VALUE, Math.max(1L, items));
     }
 
     // -------- Inventory helpers --------
@@ -544,6 +456,9 @@ public final class CardStorePurchaseService {
             st.shrink(take);
             remaining -= take;
         }
+        inv.setChanged();
+        player.inventoryMenu.broadcastChanges();
+        player.containerMenu.broadcastChanges();
     }
 
     private CardStorePurchaseService() {}

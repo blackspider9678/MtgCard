@@ -46,6 +46,9 @@ public final class MtgcardConfig {
     // Card Database
     public boolean Card_Database_Debug = false;
 
+    // Card Store
+    public boolean Card_Store_Enabled = true;
+
     // Price display
     public String Price_Item = "minecraft:diamond";
     public String Price_Basis = "USD";
@@ -135,6 +138,14 @@ public final class MtgcardConfig {
                 needsSave = true;
             }
 
+            // --- card store ---
+            if (file.contains("card_store.enabled")) {
+                cfg.Card_Store_Enabled = file.getOrElse("card_store.enabled", cfg.Card_Store_Enabled);
+            } else {
+                file.set("card_store.enabled", cfg.Card_Store_Enabled);
+                needsSave = true;
+            }
+
             // --- price ---
             cfg.Price_Item = file.getOrElse("price.item", cfg.Price_Item);
             cfg.Price_Basis = file.getOrElse("price.basis", cfg.Price_Basis);
@@ -178,6 +189,8 @@ public final class MtgcardConfig {
                 file.set("pack.debug", cfg.Pack_Debug);
 
                 file.set("card_database.debug", cfg.Card_Database_Debug);
+
+                file.set("card_store.enabled", cfg.Card_Store_Enabled);
 
                 file.set("price.item", cfg.Price_Item);
                 file.set("price.basis", cfg.Price_Basis);
@@ -227,6 +240,11 @@ public final class MtgcardConfig {
                 "Card Database settings.\n" +
                         "debug: enables verbose Card Database bundle/input compatibility logs.");
         file.setComment("card_database.debug", "Enable verbose Card Database debug logging on the client and server.");
+
+        file.setComment("card_store",
+                "Card Store settings.\n" +
+                        "enabled: if false, the Card Store recipe is not loaded and placed stores cannot be opened.");
+        file.setComment("card_store.enabled", "Enable the Card Store block and recipe.");
 
         file.setComment("price",
                 "Price display settings (Large View panel).\n" +
@@ -302,6 +320,11 @@ public final class MtgcardConfig {
     public static boolean cardDatabaseDebugEnabled() {
         MtgcardConfig cfg = get();
         return cfg != null && cfg.Card_Database_Debug;
+    }
+
+    public static boolean cardStoreEnabled() {
+        MtgcardConfig cfg = get();
+        return cfg == null || cfg.Card_Store_Enabled;
     }
 
     private MtgcardConfig() {}

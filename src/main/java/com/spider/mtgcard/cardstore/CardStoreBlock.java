@@ -2,7 +2,9 @@
 package com.spider.mtgcard.cardstore;
 
 import com.mojang.serialization.MapCodec;
+import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.registry.ModBlockEntities;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.RenderShape;
@@ -65,6 +67,11 @@ public class CardStoreBlock extends BaseEntityBlock {
     public InteractionResult useWithoutItem(BlockState state, Level world, BlockPos pos,
                                             Player player, BlockHitResult hit) {
         if (world.isClientSide()) return InteractionResult.SUCCESS;
+
+        if (!MtgcardConfig.cardStoreEnabled()) {
+            player.displayClientMessage(Component.literal("Card Store is unavailable."), true);
+            return InteractionResult.CONSUME;
+        }
 
         BlockEntity be = world.getBlockEntity(pos);
         if (be instanceof MenuProvider factory) {
