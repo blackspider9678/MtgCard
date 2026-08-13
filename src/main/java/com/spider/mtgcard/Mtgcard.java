@@ -2,6 +2,7 @@ package com.spider.mtgcard;
 
 import com.spider.mtgcard.api.CardItemRegistry;
 import com.spider.mtgcard.api.TcgGameRegistry;
+import com.spider.mtgcard.cardstore.CardStoreEnabledResourceCondition;
 import com.spider.mtgcard.cardstore.CardStorePackets;
 import com.spider.mtgcard.command.MtgRootCommand;
 import com.spider.mtgcard.config.MtgcardConfig;
@@ -57,6 +58,7 @@ public final class Mtgcard implements ModInitializer {
 
         // Other server/common systems
         MtgcardConfig.load();
+        CardStoreEnabledResourceCondition.register();
         ArtServerPackets.registerServerReceiver();
         CardDisplayServerNetworking.registerReceivers();
 

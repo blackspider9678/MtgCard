@@ -62,6 +62,9 @@ public final class MtgcardConfig {
     public int Dice_Mob_Drop_Wither = 0;
     public Set<String> Dice_Mob_Drop_Blacklist = new LinkedHashSet<>();
 
+    // Card Store
+    public boolean Card_Store_Enabled = true;
+
     // Price display
     public String Price_Item = "minecraft:diamond";
     public String Price_Basis = "USD";
@@ -161,6 +164,9 @@ public final class MtgcardConfig {
             cfg.Dice_Mob_Drop_Wither = file.getOrElse("dice.mob_drops.bosses.wither_count", cfg.Dice_Mob_Drop_Wither);
             cfg.Dice_Mob_Drop_Blacklist = new LinkedHashSet<>(file.getOrElse("dice.mob_drops.blacklist", cfg.Dice_Mob_Drop_Blacklist));
 
+            // --- card store ---
+            cfg.Card_Store_Enabled = file.getOrElse("card_store.enabled", cfg.Card_Store_Enabled);
+
             // --- price ---
             cfg.Price_Item = file.getOrElse("price.item", cfg.Price_Item);
             cfg.Price_Basis = file.getOrElse("price.basis", cfg.Price_Basis);
@@ -213,6 +219,8 @@ public final class MtgcardConfig {
                 file.set("dice.mob_drops.bosses.ender_dragon_count", cfg.Dice_Mob_Drop_Ender_Dragon);
                 file.set("dice.mob_drops.bosses.wither_count", cfg.Dice_Mob_Drop_Wither);
                 file.set("dice.mob_drops.blacklist", new java.util.ArrayList<>(cfg.Dice_Mob_Drop_Blacklist));
+
+                file.set("card_store.enabled", cfg.Card_Store_Enabled);
 
                 file.set("price.item", cfg.Price_Item);
                 file.set("price.basis", cfg.Price_Basis);
@@ -298,6 +306,11 @@ public final class MtgcardConfig {
         file.setComment("dice.mob_drops.bosses.elder_guardian_count", "Guaranteed random dice drop count for the Elder Guardian.");
         file.setComment("dice.mob_drops.bosses.ender_dragon_count", "Guaranteed random dice drop count for the Ender Dragon.");
         file.setComment("dice.mob_drops.bosses.wither_count", "Guaranteed random dice drop count for the Wither.");
+
+        file.setComment("card_store",
+                "Card Store settings.\n" +
+                        "enabled: if false, the Card Store recipe is not loaded and placed stores cannot be opened.");
+        file.setComment("card_store.enabled", "Enable the Card Store block and recipe.");
 
         file.setComment("price",
                 "Price display settings (Large View panel).\n" +
@@ -459,6 +472,7 @@ public final class MtgcardConfig {
                     || !raw.contains("[pack.mob_drops.bosses]")
                     || !raw.contains("[dice.mob_drops]")
                     || !raw.contains("[dice.mob_drops.bosses]")
+                    || !raw.contains("[card_store]")
                     || countOccurrences(raw, "player_kill_only") < 2
                     || countOccurrences(raw, "blacklist =") < 2;
         } catch (Throwable e) {
@@ -474,6 +488,11 @@ public final class MtgcardConfig {
             index += needle.length();
         }
         return count;
+    }
+
+    public static boolean cardStoreEnabled() {
+        MtgcardConfig cfg = get();
+        return cfg == null || cfg.Card_Store_Enabled;
     }
 
     private MtgcardConfig() {}
