@@ -46,6 +46,9 @@ public final class MtgcardConfig {
     // Loot
     public boolean Loot_Packs_From_Fishing = true;
 
+    // Card Store
+    public boolean Card_Store_Enabled = true;
+
     // Price display
     public String Price_Item = "minecraft:diamond";
     public String Price_Basis = "USD";
@@ -129,9 +132,23 @@ public final class MtgcardConfig {
             // --- loot ---
             cfg.Loot_Packs_From_Fishing = file.getOrElse("loot.packs_from_fishing", cfg.Loot_Packs_From_Fishing);
 
+            // --- card store ---
+            boolean needsSave = false;
+            if (file.contains("card_store.enabled")) {
+                cfg.Card_Store_Enabled = file.getOrElse("card_store.enabled", cfg.Card_Store_Enabled);
+            } else {
+                file.set("card_store.enabled", cfg.Card_Store_Enabled);
+                needsSave = true;
+            }
+
             // --- price ---
             cfg.Price_Item = file.getOrElse("price.item", cfg.Price_Item);
             cfg.Price_Basis = file.getOrElse("price.basis", cfg.Price_Basis);
+
+            if (needsSave) {
+                addComments(file);
+                file.save();
+            }
 
             return cfg;
         } catch (Throwable e) {
@@ -167,6 +184,8 @@ public final class MtgcardConfig {
                 file.set("pack.debug", cfg.Pack_Debug);
 
                 file.set("loot.packs_from_fishing", cfg.Loot_Packs_From_Fishing);
+
+                file.set("card_store.enabled", cfg.Card_Store_Enabled);
 
                 file.set("price.item", cfg.Price_Item);
                 file.set("price.basis", cfg.Price_Basis);
@@ -217,6 +236,11 @@ public final class MtgcardConfig {
                         "packs_from_fishing: if true, fishing can award booster packs.");
 
         file.setComment("loot.packs_from_fishing", "Allow booster packs to be added to fishing loot.");
+
+        file.setComment("card_store",
+                "Card Store settings.\n" +
+                        "enabled: if false, the Card Store recipe is not loaded and placed stores cannot be opened.");
+        file.setComment("card_store.enabled", "Enable the Card Store block and recipe.");
 
         file.setComment("price",
                 "Price display settings (Large View panel).\n" +
@@ -292,6 +316,11 @@ public final class MtgcardConfig {
     public static boolean fishingPackLootEnabled() {
         MtgcardConfig cfg = get();
         return cfg == null || cfg.Loot_Packs_From_Fishing;
+    }
+
+    public static boolean cardStoreEnabled() {
+        MtgcardConfig cfg = get();
+        return cfg == null || cfg.Card_Store_Enabled;
     }
 
     private MtgcardConfig() {}
