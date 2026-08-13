@@ -1,0 +1,7 @@
+{
+  "parent": "mtgcard:block/deckbox_closed",
+  "textures": {
+    "3": "biomesoplenty:block/hellbark_planks",
+    "particle": "biomesoplenty:block/hellbark_planks"
+  }
+}
