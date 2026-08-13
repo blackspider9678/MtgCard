@@ -1,0 +1,23 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:mod_loaded",
+      "modid": "biomesoplenty"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "PGP",
+    "GCG",
+    "PGP"
+  ],
+  "key": {
+    "P": "biomesoplenty:umbran_planks",
+    "G": "minecraft:gold_ingot",
+    "C": "#c:chests"
+  },
+  "result": {
+    "id": "mtgcard:biomesoplenty_umbran_deckbox",
+    "count": 1
+  }
+}

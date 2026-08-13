@@ -1,0 +1,7 @@
+{
+  "parent": "mtgcard:block/deckbox_open",
+  "textures": {
+    "3": "biomesoplenty:block/jacaranda_planks",
+    "particle": "biomesoplenty:block/jacaranda_planks"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "parent": "mtgcard:block/deckbox_closed",
+  "textures": {
+    "3": "biomeswevegone:block/ebony/planks",
+    "particle": "biomeswevegone:block/ebony/planks"
+  }
+}
