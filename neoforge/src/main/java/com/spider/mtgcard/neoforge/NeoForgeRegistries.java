@@ -29,6 +29,15 @@ public final class NeoForgeRegistries {
     }
 
     private static void registerEntries(RegisterEvent event) {
+        if (event.getRegistryKey().equals(net.neoforged.neoforge.registries.NeoForgeRegistries.Keys.CONDITION_CODECS)) {
+            event.register(
+                    net.neoforged.neoforge.registries.NeoForgeRegistries.Keys.CONDITION_CODECS,
+                    id("card_store_enabled"),
+                    () -> CardStoreEnabledCondition.CODEC
+            );
+            return;
+        }
+
         if (event.getRegistryKey().equals(Registries.DATA_COMPONENT_TYPE)) {
             event.register(
                     Registries.DATA_COMPONENT_TYPE,

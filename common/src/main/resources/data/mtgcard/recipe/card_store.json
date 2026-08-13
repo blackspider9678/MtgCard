@@ -1,4 +1,14 @@
 {
+  "fabric:load_conditions": [
+    {
+      "condition": "mtgcard:card_store_enabled"
+    }
+  ],
+  "neoforge:conditions": [
+    {
+      "type": "mtgcard:card_store_enabled"
+    }
+  ],
   "type": "minecraft:crafting_shaped",
   "pattern": [
     "IGI",
