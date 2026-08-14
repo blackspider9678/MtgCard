@@ -33,6 +33,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.EnumProperty;
+import net.minecraft.world.level.entity.EntityTypeTest;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.AABB;
@@ -681,6 +682,10 @@ public class CardDisplayEntity extends HangingEntity {
             return calculateStackBoundingBox(pos, side, attachments);
         }
 
+        return calculateBaseBoundingBox(pos, side);
+    }
+
+    private AABB calculateBaseBoundingBox(BlockPos pos, Direction side) {
         if (isSurfaceAnchored()) {
             return calculateSurfaceBoundingBox(pos, side);
         }
@@ -690,6 +695,39 @@ public class CardDisplayEntity extends HangingEntity {
                 sizeForAxis(side.getAxis(), Direction.Axis.X),
                 sizeForAxis(side.getAxis(), Direction.Axis.Y),
                 sizeForAxis(side.getAxis(), Direction.Axis.Z));
+    }
+
+    @Override
+    protected AABB getPopBox() {
+        return calculateBaseBoundingBox(this.getPos(), this.getDirection());
+    }
+
+    @Override
+    protected AABB calculateSupportBox() {
+        return getPopBox().move(directionVector(this.getDirection()).scale(-0.5D)).deflate(1.0E-7D);
+    }
+
+    @Override
+    protected boolean canCoexist(boolean sameDirectionOnly) {
+        AABB popBox = getPopBox();
+        return this.level()
+                .getEntities(EntityTypeTest.forClass(HangingEntity.class), popBox, hanging -> {
+                    if (hanging == this) {
+                        return false;
+                    }
+
+                    boolean sameTypeConflict = !sameDirectionOnly && hanging.getType() == this.getType();
+                    boolean sameDirectionConflict = hanging.getDirection() == this.getDirection();
+                    if (!sameTypeConflict && !sameDirectionConflict) {
+                        return false;
+                    }
+
+                    AABB otherBox = hanging instanceof CardDisplayEntity card
+                            ? card.getPopBox()
+                            : hanging.getBoundingBox();
+                    return otherBox.intersects(popBox);
+                })
+                .isEmpty();
     }
 
     private AABB calculateSurfaceBoundingBox(BlockPos pos, Direction side) {
