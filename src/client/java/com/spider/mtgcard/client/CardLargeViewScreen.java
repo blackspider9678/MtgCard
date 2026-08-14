@@ -677,6 +677,14 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         refreshIconButton();
     }
 
+    private void clearCounterNameFocus() {
+        if (counterNameField == null) return;
+        counterNameField.setFocused(false);
+        if (this.getFocused() == counterNameField) {
+            this.setFocused(null);
+        }
+    }
+
     private void saveEditedCounter() {
         if (!counterEditorOpen || counterNameField == null) return;
         if (editingCounterKey == null) return; // <-- only edit existing now
@@ -1039,6 +1047,7 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         // select + switch editor into "editing existing" mode
         selectedCounterKey = key;
         beginEditCounter(key);
+        clearCounterNameFocus();
     }
 
     @Override

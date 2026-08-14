@@ -676,11 +676,6 @@ public class CardDisplayEntity extends HangingEntity {
 
     @Override
     protected AABB calculateBoundingBox(BlockPos pos, Direction side) {
-        int attachments = getAttachmentCount();
-        if (attachments > 0) {
-            return calculateStackBoundingBox(pos, side, attachments);
-        }
-
         if (isSurfaceAnchored()) {
             return calculateSurfaceBoundingBox(pos, side);
         }

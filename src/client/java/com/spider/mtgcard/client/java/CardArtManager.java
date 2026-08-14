@@ -2,6 +2,7 @@ package com.spider.mtgcard.client.java;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
+import com.spider.mtgcard.client.compat.flashback.FlashbackArtBridge;
 import com.spider.mtgcard.shared.CardArtCommon;
 import com.spider.mtgcard.shared.MtgCardPaths;
 import com.spider.mtgcard.util.StackData;
@@ -240,6 +241,77 @@ public final class CardArtManager {
         return mc.gameDirectory.toPath().resolve("mtgcard").resolve("art").resolve(cacheScope(mc));
     }
 
+    private static Path localMainArtRoot(String game) {
+        return Minecraft.getInstance().gameDirectory.toPath()
+                .resolve("mtgcard")
+                .resolve(MtgCardPaths.sanitizeGameFolder(game))
+                .resolve("main_art");
+    }
+
+    private static Path localCustomArtRoot(String game) {
+        return Minecraft.getInstance().gameDirectory.toPath()
+                .resolve("mtgcard")
+                .resolve(MtgCardPaths.sanitizeGameFolder(game))
+                .resolve("custom_art");
+    }
+
+    private static Path localLegacyArtRoot() {
+        return Minecraft.getInstance().gameDirectory.toPath().resolve("mtgcard").resolve("art");
+    }
+
+    private static List<Path> mainArtSearchDirs(String game) {
+        java.util.LinkedHashSet<Path> dirs = new java.util.LinkedHashSet<>();
+        dirs.add(mainArtCacheDir(game));
+
+        // Flashback playback looks integrated, but old MP art lives under the client run directory.
+        Path root = localMainArtRoot(game);
+        dirs.add(root);
+        addDirectChildDirs(dirs, root);
+
+        return List.copyOf(dirs);
+    }
+
+    private static List<Path> legacyArtSearchDirs() {
+        java.util.LinkedHashSet<Path> dirs = new java.util.LinkedHashSet<>();
+        dirs.add(legacyArtCacheDir());
+
+        Path root = localLegacyArtRoot();
+        dirs.add(root);
+        addDirectChildDirs(dirs, root);
+
+        return List.copyOf(dirs);
+    }
+
+    private static List<Path> customArtSearchDirs(String game, String setCode) {
+        java.util.LinkedHashSet<Path> dirs = new java.util.LinkedHashSet<>();
+        String safeSet = MtgCardPaths.sanitizeSetFolder(setCode);
+        dirs.add(customArtDir(game, safeSet));
+
+        Path root = localCustomArtRoot(game);
+        if (!safeSet.isBlank()) {
+            dirs.add(root.resolve(safeSet));
+        }
+
+        try (var scopes = Files.list(root)) {
+            scopes.filter(Files::isDirectory).forEach(scope -> {
+                if (!safeSet.isBlank()) {
+                    dirs.add(scope.resolve(safeSet));
+                }
+                addDirectChildDirs(dirs, scope);
+            });
+        } catch (Exception ignored) {
+        }
+
+        return List.copyOf(dirs);
+    }
+
+    private static void addDirectChildDirs(Set<Path> dirs, Path root) {
+        try (var stream = Files.list(root)) {
+            stream.filter(Files::isDirectory).forEach(dirs::add);
+        } catch (Exception ignored) {
+        }
+    }
+
     private static String cacheScope(Minecraft mc) {
         String scope = "singleplayer";
         if (mc.getCurrentServer() != null) {
@@ -382,7 +454,15 @@ public final class CardArtManager {
         if (Files.exists(file)) {
             DISK_INDEX.put(artKey, file.getFileName().toString());
             saveIndexAsync(game);
+            FlashbackArtBridge.rememberArt(game, artKey, "", file);
             queueDiskLoad(textureKey, file);
+            return null;
+        }
+
+        Path flashbackFile = FlashbackArtBridge.findCachedArt(game, artKey, fallbackKeys, "");
+        if (flashbackFile != null && Files.exists(flashbackFile)) {
+            FlashbackArtBridge.rememberArt(game, artKey, "", flashbackFile);
+            queueDiskLoad(textureKey, flashbackFile);
             return null;
         }
 
@@ -393,6 +473,19 @@ public final class CardArtManager {
         String fileName = DISK_INDEX.getOrDefault(artKey, artKey + ".webp");
         enqueueRequest(game, artKey, url, fileName, CardArtCommon.encodeFallbackKeys(fallbackKeys), "");
         return null;
+    }
+
+    public static void prefetchFlashbackArt(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return;
+        }
+
+        CompoundTag root = StackData.readCustom(stack);
+        CompoundTag meta = artMetaForStack(root);
+        int faces = Math.max(1, CardArtCommon.faceCount(meta));
+        for (int face = 0; face < faces; face++) {
+            getOrRequestFace(stack, face);
+        }
     }
 
     private static CompoundTag artMetaForStack(CompoundTag root) {
@@ -434,16 +527,23 @@ public final class CardArtManager {
             return cached;
         }
 
-        if (setCode != null && !setCode.isBlank()) {
-            ART_SET_INDEX.put(textureKey, MtgCardPaths.sanitizeSetFolder(setCode));
-        }
+        String safeSetCode = MtgCardPaths.sanitizeSetFolder(setCode);
+        ART_SET_INDEX.put(textureKey, safeSetCode);
 
-        Path file = resolveCustomCachedFile(game, artKey, setCode);
+        Path file = resolveCustomCachedFile(game, artKey, safeSetCode);
 
         if (Files.exists(file)) {
             DISK_INDEX.put(artKey, file.getFileName().toString());
             saveIndexAsync(game);
+            FlashbackArtBridge.rememberArt(game, artKey, safeSetCode, file);
             queueDiskLoad(textureKey, file);
+            return null;
+        }
+
+        Path flashbackFile = FlashbackArtBridge.findCachedArt(game, artKey, List.of(), safeSetCode);
+        if (flashbackFile != null && Files.exists(flashbackFile)) {
+            FlashbackArtBridge.rememberArt(game, artKey, safeSetCode, flashbackFile);
+            queueDiskLoad(textureKey, flashbackFile);
             return null;
         }
 
@@ -451,7 +551,7 @@ public final class CardArtManager {
         saveIndexAsync(game);
 
         // IMPORTANT: queue instead of sending immediately
-        enqueueRequest(game, artKey, "", artKey + ".webp", "", setCode);
+        enqueueRequest(game, artKey, "", artKey + ".webp", "", safeSetCode);
         return null;
     }
 
@@ -536,22 +636,50 @@ public final class CardArtManager {
         String textureKey = scopedArtKey(safeGame, artKey);
         IN_FLIGHT.remove(textureKey);
 
+        storeArtBytes(safeGame, artKey, ART_SET_INDEX.get(textureKey), imgBytes);
+    }
+
+    public static void onFlashbackEmbeddedArt(String game, String artKey, String setCode, byte[] imgBytes) {
+        String safeGame = MtgCardPaths.sanitizeGameFolder(game);
+        String textureKey = scopedArtKey(safeGame, artKey);
+        IN_FLIGHT.remove(textureKey);
+
+        storeArtBytes(safeGame, artKey, setCode, imgBytes);
+    }
+
+    private static void storeArtBytes(String game, String artKey, String setCode, byte[] imgBytes) {
+        if (artKey == null || artKey.isBlank() || imgBytes == null || imgBytes.length == 0) {
+            return;
+        }
+
+        String safeGame = MtgCardPaths.sanitizeGameFolder(game);
+        String safeArtKey = CardArtCommon.sanitizeArtKey(artKey);
+        if (safeArtKey.isBlank()) {
+            return;
+        }
+
+        String textureKey = scopedArtKey(safeGame, safeArtKey);
+        String safeSetCode = setCode == null || setCode.isBlank() ? "" : MtgCardPaths.sanitizeSetFolder(setCode);
+        if (!safeSetCode.isBlank()) {
+            ART_SET_INDEX.put(textureKey, safeSetCode);
+        }
+
         try {
             String ext = detectExt(imgBytes);
-            String fileName = artKey + "." + ext;
-            String setCode = ART_SET_INDEX.get(textureKey);
-            Path dir = (setCode == null || setCode.isBlank())
+            String fileName = safeArtKey + "." + ext;
+            Path dir = safeSetCode.isBlank()
                     ? mainArtCacheDir(safeGame)
-                    : customArtDir(safeGame, setCode);
+                    : customArtDir(safeGame, safeSetCode);
             Path file = dir.resolve(fileName);
 
             Files.createDirectories(file.getParent());
             Files.write(file, imgBytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-            com.spider.mtgcard.util.ArtImageStorage.deleteSiblingFormats(dir, artKey, ext);
+            com.spider.mtgcard.util.ArtImageStorage.deleteSiblingFormats(dir, safeArtKey, ext);
 
-            DISK_INDEX.put(artKey, fileName);
+            DISK_INDEX.put(safeArtKey, fileName);
             saveIndexAsync(safeGame);
 
+            FlashbackArtBridge.rememberArt(safeGame, safeArtKey, safeSetCode, file);
             queueDiskLoad(textureKey, file);
         } catch (Exception ignored) {}
     }
@@ -570,18 +698,21 @@ public final class CardArtManager {
     private static Path resolveMainCachedFile(String game, String artKey, List<String> fallbackKeys) {
         Path dir = mainArtCacheDir(game);
 
-        for (String candidate : artKeyCandidates(artKey, fallbackKeys)) {
-            Path indexed = resolveIndexedFile(dir, candidate);
-            if (indexed != null) return indexed;
+        for (Path searchDir : mainArtSearchDirs(game)) {
+            for (String candidate : artKeyCandidates(artKey, fallbackKeys)) {
+                Path indexed = resolveIndexedFile(searchDir, candidate);
+                if (indexed != null) return migrateLegacyArt(dir, artKey, indexed);
 
-            Path exact = resolveExactFile(dir, candidate);
-            if (exact != null) return exact;
+                Path exact = resolveExactFile(searchDir, candidate);
+                if (exact != null) return migrateLegacyArt(dir, artKey, exact);
+            }
         }
 
-        Path legacyDir = legacyArtCacheDir();
-        for (String candidate : artKeyCandidates(artKey, fallbackKeys)) {
-            Path legacy = resolveExactFile(legacyDir, candidate);
-            if (legacy != null) return migrateLegacyArt(dir, artKey, legacy);
+        for (Path legacyDir : legacyArtSearchDirs()) {
+            for (String candidate : artKeyCandidates(artKey, fallbackKeys)) {
+                Path legacy = resolveExactFile(legacyDir, candidate);
+                if (legacy != null) return migrateLegacyArt(dir, artKey, legacy);
+            }
         }
 
         return dir.resolve(artKey + ".webp");
@@ -589,21 +720,20 @@ public final class CardArtManager {
 
     private static Path resolveCustomCachedFile(String game, String artKey, String setCode) {
         Path setDir = customArtDir(game, setCode);
-        Path exact = resolveExactFile(setDir, artKey);
-        if (exact != null) return exact;
 
-        Path root = customArtRoot(game);
-        try (var dirs = Files.list(root)) {
-            for (Path dir : dirs.toList()) {
-                if (!Files.isDirectory(dir) || dir.equals(setDir)) continue;
-                exact = resolveExactFile(dir, artKey);
-                if (exact != null) return exact;
+        for (Path searchDir : customArtSearchDirs(game, setCode)) {
+            for (String candidate : artKeyCandidates(artKey)) {
+                Path exact = resolveExactFile(searchDir, candidate);
+                if (exact != null) return migrateLegacyArt(setDir, artKey, exact);
             }
-        } catch (Exception ignored) {
         }
 
-        Path legacy = resolveExactFile(legacyArtCacheDir(), artKey);
-        if (legacy != null) return migrateLegacyArt(setDir, artKey, legacy);
+        for (Path legacyDir : legacyArtSearchDirs()) {
+            for (String candidate : artKeyCandidates(artKey)) {
+                Path legacy = resolveExactFile(legacyDir, candidate);
+                if (legacy != null) return migrateLegacyArt(setDir, artKey, legacy);
+            }
+        }
 
         return setDir.resolve(artKey + ".webp");
     }

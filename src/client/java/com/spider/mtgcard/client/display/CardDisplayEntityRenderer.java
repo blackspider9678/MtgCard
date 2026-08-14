@@ -359,9 +359,9 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
             cached.texW = (ref.texW() > 0) ? ref.texW() : 256;
             cached.texH = (ref.texH() > 0) ? ref.texH() : 256;
         } else {
-            cached.texId = fallbackItemTexture(stack);
-            cached.texW = 256;
-            cached.texH = 256;
+            cached.texId = TEX_BACK;
+            cached.texW = BACK_W;
+            cached.texH = BACK_H;
         }
     }
 
@@ -383,11 +383,6 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
                 .setOverlay(overlay)
                 .setLight(light)
                 .setNormal(0f, 0f, 1f);
-    }
-
-    private static Identifier fallbackItemTexture(ItemStack stack) {
-        Identifier id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem());
-        return Identifier.fromNamespaceAndPath(id.getNamespace(), "textures/item/" + id.getPath() + ".png");
     }
 
     private static void orientQuadToFace(PoseStack matrices, Direction facing) {

@@ -204,8 +204,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedMenuP
     /* ---------------- Status helpers for ScreenHandler props ---------------- */
 
     public boolean hasLinkedDeckbox() {
-        if (level == null || linkedDeckboxPos == null) return false;
-        return level.getBlockEntity(linkedDeckboxPos) instanceof DeckboxBlockEntity;
+        return findOrLinkDeckbox() != null;
     }
 
     public int getLibraryCount() {
@@ -677,10 +676,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedMenuP
             if (be instanceof DeckboxBlockEntity db) return db;
 
             // linked deckbox gone
-            linkedDeckboxPos = null;
-
-            // locked? do not relink automatically
-            if (lockedLink) return null;
+            clearLinkAndUnlock();
         }
 
         if (lockedLink) return null;
@@ -718,10 +714,18 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedMenuP
     public void onNeighborDeckboxChanged(BlockPos deckboxPos) {
         if (level == null || level.isClientSide()) return;
 
+        if (linkedDeckboxPos != null
+                && !(level.getBlockEntity(linkedDeckboxPos) instanceof DeckboxBlockEntity)) {
+            clearLinkAndUnlock();
+        }
+
         if (linkedDeckboxPos != null) {
             if (!linkedDeckboxPos.equals(deckboxPos)) return;
         } else {
-            if (lockedLink) return;
+            if (lockedLink) {
+                lockedLink = false;
+                libraryOrder.clear();
+            }
             if (worldPosition.distManhattan(deckboxPos) != 1) return;
 
             linkedDeckboxPos = deckboxPos;

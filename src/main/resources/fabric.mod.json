@@ -22,7 +22,8 @@
   },
   "mixins": [
     "mtgcard.mixins.json",
-    "mtgcard.mousetweaks.mixins.json"
+    "mtgcard.mousetweaks.mixins.json",
+    "mtgcard.flashback.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=${loader_version}",
