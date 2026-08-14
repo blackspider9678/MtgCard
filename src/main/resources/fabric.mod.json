@@ -27,6 +27,10 @@
     {
       "config": "mtgcard.mousetweaks.mixins.json",
       "environment": "client"
+    },
+    {
+      "config": "mtgcard.flashback.mixins.json",
+      "environment": "client"
     }
   ],
   "depends": {

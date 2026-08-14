@@ -2,6 +2,7 @@ package com.spider.mtgcard.client.java;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
+import com.spider.mtgcard.client.compat.flashback.FlashbackArtBridge;
 import com.spider.mtgcard.shared.CardArtCommon;
 import com.spider.mtgcard.shared.MtgCardPaths;
 import com.spider.mtgcard.util.StackData;
@@ -382,7 +383,15 @@ public final class CardArtManager {
         if (Files.exists(file)) {
             DISK_INDEX.put(artKey, file.getFileName().toString());
             saveIndexAsync(game);
+            FlashbackArtBridge.rememberArt(game, artKey, "", file);
             queueDiskLoad(textureKey, file);
+            return null;
+        }
+
+        Path flashbackFile = FlashbackArtBridge.findCachedArt(game, artKey, fallbackKeys, "");
+        if (flashbackFile != null && Files.exists(flashbackFile)) {
+            FlashbackArtBridge.rememberArt(game, artKey, "", flashbackFile);
+            queueDiskLoad(textureKey, flashbackFile);
             return null;
         }
 
@@ -393,6 +402,19 @@ public final class CardArtManager {
         String fileName = DISK_INDEX.getOrDefault(artKey, artKey + ".webp");
         enqueueRequest(game, artKey, url, fileName, CardArtCommon.encodeFallbackKeys(fallbackKeys), "");
         return null;
+    }
+
+    public static void prefetchFlashbackArt(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return;
+        }
+
+        CompoundTag root = StackData.readCustom(stack);
+        CompoundTag meta = artMetaForStack(root);
+        int faces = Math.max(1, CardArtCommon.faceCount(meta));
+        for (int face = 0; face < faces; face++) {
+            getOrRequestFace(stack, face);
+        }
     }
 
     private static CompoundTag artMetaForStack(CompoundTag root) {
@@ -434,16 +456,23 @@ public final class CardArtManager {
             return cached;
         }
 
-        if (setCode != null && !setCode.isBlank()) {
-            ART_SET_INDEX.put(textureKey, MtgCardPaths.sanitizeSetFolder(setCode));
-        }
+        String safeSetCode = MtgCardPaths.sanitizeSetFolder(setCode);
+        ART_SET_INDEX.put(textureKey, safeSetCode);
 
-        Path file = resolveCustomCachedFile(game, artKey, setCode);
+        Path file = resolveCustomCachedFile(game, artKey, safeSetCode);
 
         if (Files.exists(file)) {
             DISK_INDEX.put(artKey, file.getFileName().toString());
             saveIndexAsync(game);
+            FlashbackArtBridge.rememberArt(game, artKey, safeSetCode, file);
             queueDiskLoad(textureKey, file);
+            return null;
+        }
+
+        Path flashbackFile = FlashbackArtBridge.findCachedArt(game, artKey, List.of(), safeSetCode);
+        if (flashbackFile != null && Files.exists(flashbackFile)) {
+            FlashbackArtBridge.rememberArt(game, artKey, safeSetCode, flashbackFile);
+            queueDiskLoad(textureKey, flashbackFile);
             return null;
         }
 
@@ -451,7 +480,7 @@ public final class CardArtManager {
         saveIndexAsync(game);
 
         // IMPORTANT: queue instead of sending immediately
-        enqueueRequest(game, artKey, "", artKey + ".webp", "", setCode);
+        enqueueRequest(game, artKey, "", artKey + ".webp", "", safeSetCode);
         return null;
     }
 
@@ -536,22 +565,51 @@ public final class CardArtManager {
         String textureKey = scopedArtKey(safeGame, artKey);
         IN_FLIGHT.remove(textureKey);
 
+        storeArtBytes(safeGame, artKey, ART_SET_INDEX.get(textureKey), imgBytes);
+    }
+
+    // Called by Flashback replay action handling when a replay contains embedded card art.
+    public static void onFlashbackEmbeddedArt(String game, String artKey, String setCode, byte[] imgBytes) {
+        String safeGame = MtgCardPaths.sanitizeGameFolder(game);
+        String textureKey = scopedArtKey(safeGame, artKey);
+        IN_FLIGHT.remove(textureKey);
+
+        storeArtBytes(safeGame, artKey, setCode, imgBytes);
+    }
+
+    private static void storeArtBytes(String game, String artKey, String setCode, byte[] imgBytes) {
+        if (artKey == null || artKey.isBlank() || imgBytes == null || imgBytes.length == 0) {
+            return;
+        }
+
+        String safeGame = MtgCardPaths.sanitizeGameFolder(game);
+        String safeArtKey = CardArtCommon.sanitizeArtKey(artKey);
+        if (safeArtKey.isBlank()) {
+            return;
+        }
+
+        String textureKey = scopedArtKey(safeGame, safeArtKey);
+        String safeSetCode = setCode == null || setCode.isBlank() ? "" : MtgCardPaths.sanitizeSetFolder(setCode);
+        if (!safeSetCode.isBlank()) {
+            ART_SET_INDEX.put(textureKey, safeSetCode);
+        }
+
         try {
             String ext = detectExt(imgBytes);
-            String fileName = artKey + "." + ext;
-            String setCode = ART_SET_INDEX.get(textureKey);
-            Path dir = (setCode == null || setCode.isBlank())
+            String fileName = safeArtKey + "." + ext;
+            Path dir = safeSetCode.isBlank()
                     ? mainArtCacheDir(safeGame)
-                    : customArtDir(safeGame, setCode);
+                    : customArtDir(safeGame, safeSetCode);
             Path file = dir.resolve(fileName);
 
             Files.createDirectories(file.getParent());
             Files.write(file, imgBytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-            com.spider.mtgcard.util.ArtImageStorage.deleteSiblingFormats(dir, artKey, ext);
+            com.spider.mtgcard.util.ArtImageStorage.deleteSiblingFormats(dir, safeArtKey, ext);
 
-            DISK_INDEX.put(artKey, fileName);
+            DISK_INDEX.put(safeArtKey, fileName);
             saveIndexAsync(safeGame);
 
+            FlashbackArtBridge.rememberArt(safeGame, safeArtKey, safeSetCode, file);
             queueDiskLoad(textureKey, file);
         } catch (Exception ignored) {}
     }
