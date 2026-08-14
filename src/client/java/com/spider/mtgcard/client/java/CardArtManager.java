@@ -5,6 +5,7 @@ import com.google.gson.reflect.TypeToken;
 import com.spider.mtgcard.client.compat.flashback.FlashbackArtBridge;
 import com.spider.mtgcard.shared.CardArtCommon;
 import com.spider.mtgcard.shared.MtgCardPaths;
+import com.spider.mtgcard.util.ArtImageStorage;
 import com.spider.mtgcard.util.StackData;
 import com.spider.mtgcard.util.TcgCardMeta;
 import net.minecraft.client.Minecraft;
@@ -666,23 +667,30 @@ public final class CardArtManager {
         }
 
         try {
-            String ext = detectExt(imgBytes);
-            String fileName = safeArtKey + "." + ext;
+            if (!ArtImageStorage.canDecode(imgBytes)) {
+                System.out.println("[MTGCard] Ignoring corrupt art response key=" + textureKey + " bytes=" + imgBytes.length);
+                return;
+            }
+
+            String ext = ArtImageStorage.detectExt(imgBytes);
+            if ("bin".equals(ext)) {
+                ext = ArtImageStorage.normalizeExt(safeArtKey);
+            }
             Path dir = safeSetCode.isBlank()
                     ? mainArtCacheDir(safeGame)
                     : customArtDir(safeGame, safeSetCode);
-            Path file = dir.resolve(fileName);
+            Path file = ArtImageStorage.write(dir, safeArtKey, new ArtImageStorage.StoredArt(imgBytes, ext));
+            String fileName = file.getFileName().toString();
 
-            Files.createDirectories(file.getParent());
-            Files.write(file, imgBytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-            com.spider.mtgcard.util.ArtImageStorage.deleteSiblingFormats(dir, safeArtKey, ext);
 
             DISK_INDEX.put(safeArtKey, fileName);
             saveIndexAsync(safeGame);
 
             FlashbackArtBridge.rememberArt(safeGame, safeArtKey, safeSetCode, file);
             queueDiskLoad(textureKey, file);
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            System.out.println("[MTGCard] Failed to store art key=" + textureKey + ": " + e);
+        }
     }
 
     private static Path resolveAnyCachedFile(String artKey) {
@@ -963,10 +971,58 @@ public final class CardArtManager {
                 if (img != null) {
                     try { img.close(); } catch (Throwable ignored) {}
                 }
-                System.out.println("[MTGCard] Failed to load art key=" + artKey + " from " + file + ": " + t);
+                removeCorruptCachedArt(artKey, file, t);
                 LOADING.remove(artKey);
             }
         });
+    }
+
+    private static void removeCorruptCachedArt(String textureKey, Path file, Throwable reason) {
+        System.out.println("[MTGCard] Failed to load art key=" + textureKey + " from " + file + ": " + reason);
+
+        String rawKey = unscopedArtKey(textureKey);
+        DISK_INDEX.remove(rawKey);
+        if (file != null && file.getFileName() != null) {
+            DISK_INDEX.remove(stripImageExt(file.getFileName().toString()));
+        }
+        saveIndexAsync(scopedGame(textureKey));
+
+        if (file != null) {
+            try {
+                if (Files.deleteIfExists(file)) {
+                    System.out.println("[MTGCard] Deleted corrupt cached art " + file);
+                }
+            } catch (Throwable deleteFailure) {
+                System.out.println("[MTGCard] Could not delete corrupt cached art " + file + ": " + deleteFailure);
+            }
+        }
+
+        IN_FLIGHT.remove(textureKey);
+        QUEUED.remove(textureKey);
+    }
+
+    private static String scopedGame(String textureKey) {
+        int colon = textureKey == null ? -1 : textureKey.indexOf(':');
+        return colon > 0 ? textureKey.substring(0, colon) : MtgCardPaths.GAME_MTG;
+    }
+
+    private static String unscopedArtKey(String textureKey) {
+        int colon = textureKey == null ? -1 : textureKey.indexOf(':');
+        return colon >= 0 ? textureKey.substring(colon + 1) : textureKey;
+    }
+
+    private static String stripImageExt(String fileName) {
+        if (fileName == null) {
+            return "";
+        }
+
+        String lower = fileName.toLowerCase(Locale.ROOT);
+        for (String ext : new String[]{".webp", ".png", ".jpg", ".jpeg"}) {
+            if (lower.endsWith(ext)) {
+                return fileName.substring(0, fileName.length() - ext.length());
+            }
+        }
+        return fileName;
     }
 
     private static void bindTexture(String artKey, NativeImage img) {

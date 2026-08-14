@@ -22,7 +22,6 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -172,6 +171,10 @@ public final class FlashbackArtBridge {
         if (!Files.isRegularFile(file)) {
             return;
         }
+        if (!isUsableImage(file)) {
+            Mtgcard.LOGGER.debug("[MTGCard] Skipping corrupt Flashback art source {}", file);
+            return;
+        }
 
         String safeGame = MtgCardPaths.sanitizeGameFolder(game);
         String safeKey = CardArtCommon.sanitizeArtKey(artKey);
@@ -212,7 +215,10 @@ public final class FlashbackArtBridge {
             for (String candidate : artKeyCandidates(artKey, fallbackKeys)) {
                 Path exact = resolveExactFile(dir, candidate);
                 if (exact != null) {
-                    return exact;
+                    if (isUsableImage(exact)) {
+                        return exact;
+                    }
+                    deleteCorruptFlashbackArt(exact);
                 }
             }
         }
@@ -222,6 +228,10 @@ public final class FlashbackArtBridge {
 
     public static void mirrorArtFile(String game, String artKey, String setCode, Path source) {
         if (!ensureAvailable() || source == null || !Files.isRegularFile(source)) {
+            return;
+        }
+        if (!isUsableImage(source)) {
+            Mtgcard.LOGGER.debug("[MTGCard] Not mirroring corrupt Flashback art source {}", source);
             return;
         }
 
@@ -252,9 +262,11 @@ public final class FlashbackArtBridge {
 
         Util.backgroundExecutor().execute(() -> {
             try {
-                Files.createDirectories(targetDir);
-                Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
-                ArtImageStorage.deleteSiblingFormats(targetDir, safeKey, ext);
+                byte[] bytes = Files.readAllBytes(source);
+                if (!canUseImageBytes(bytes)) {
+                    return;
+                }
+                ArtImageStorage.write(targetDir, safeKey, new ArtImageStorage.StoredArt(bytes, ext));
             } catch (Exception e) {
                 Mtgcard.LOGGER.debug("[MTGCard] Could not mirror Flashback art {}: {}", safeKey, e.toString());
             }
@@ -293,7 +305,8 @@ public final class FlashbackArtBridge {
             }
 
             byte[] bytes = Files.readAllBytes(record.file());
-            if (bytes.length == 0 || bytes.length > MAX_ART_BYTES) {
+            if (!canUseImageBytes(bytes)) {
+                Mtgcard.LOGGER.debug("[MTGCard] Not embedding corrupt Flashback art {}", record.file());
                 return;
             }
 
@@ -329,6 +342,10 @@ public final class FlashbackArtBridge {
             byte[] bytes = buf.readByteArray(MAX_ART_BYTES);
 
             if (bytes.length == 0 || artKey == null || artKey.isBlank()) {
+                return;
+            }
+            if (!canUseImageBytes(bytes)) {
+                Mtgcard.LOGGER.debug("[MTGCard] Ignoring corrupt Flashback embedded art {}", artKey);
                 return;
             }
 
@@ -519,6 +536,38 @@ public final class FlashbackArtBridge {
         String name = path.getFileName().toString();
         int dot = name.lastIndexOf('.');
         return dot >= 0 ? name.substring(dot + 1).toLowerCase(Locale.ROOT) : "webp";
+    }
+
+    private static boolean isUsableImage(Path path) {
+        try {
+            if (path == null || !Files.isRegularFile(path)) {
+                return false;
+            }
+            long size = Files.size(path);
+            if (size <= 0 || size > MAX_ART_BYTES) {
+                return false;
+            }
+            return ArtImageStorage.canDecode(Files.readAllBytes(path));
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static boolean canUseImageBytes(byte[] bytes) {
+        return bytes != null
+                && bytes.length > 0
+                && bytes.length <= MAX_ART_BYTES
+                && ArtImageStorage.canDecode(bytes);
+    }
+
+    private static void deleteCorruptFlashbackArt(Path path) {
+        try {
+            if (Files.deleteIfExists(path)) {
+                Mtgcard.LOGGER.info("[MTGCard] Deleted corrupt Flashback cached art {}", path);
+            }
+        } catch (Throwable t) {
+            Mtgcard.LOGGER.debug("[MTGCard] Could not delete corrupt Flashback cached art {}: {}", path, t.toString());
+        }
     }
 
     private static void skipRemaining(RegistryFriendlyByteBuf buf) {

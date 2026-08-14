@@ -42,6 +42,11 @@ public final class ArtImageStorage {
         String detectedExt = detectExt(input);
         String fallbackExt = detectedExt.equals("bin") ? normalizeExt(hintedNameOrExt) : detectedExt;
 
+        if (!canDecode(input)) {
+            return new StorageDecision(null, detectedExt, true,
+                    "source ." + detectedExt + " could not be decoded");
+        }
+
         if ("webp".equals(detectedExt)) {
             return new StorageDecision(new StoredArt(input, "webp"), "webp", false, "source already webp");
         }
@@ -215,7 +220,7 @@ public final class ArtImageStorage {
         }
     }
 
-    private static boolean canDecode(byte[] bytes) {
+    public static boolean canDecode(byte[] bytes) {
         if (bytes == null || bytes.length == 0) {
             return false;
         }

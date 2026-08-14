@@ -50,7 +50,13 @@ public final class ServerArtStore {
     /** Ensure file exists; download once if missing. Returns path or null on failure. */
     public Path ensure(String artKey, String url) {
         Path f = file(artKey);
-        if (Files.exists(f)) return f;
+        if (Files.exists(f)) {
+            if (isUsableImage(f)) {
+                return f;
+            }
+            Mtgcard.LOGGER.warn("[MTGCard] ServerArtStore ignoring corrupt cached art {}", f);
+            try { Files.deleteIfExists(f); } catch (Exception ignored) {}
+        }
         if (url == null || url.isEmpty()) return null;
 
         if (inFlight.putIfAbsent(artKey, Boolean.TRUE) != null) {
@@ -151,5 +157,13 @@ public final class ServerArtStore {
         String name = path.getFileName().toString();
         int dot = name.lastIndexOf('.');
         return dot >= 0 ? name.substring(dot + 1).toLowerCase(Locale.ROOT) : "webp";
+    }
+
+    private static boolean isUsableImage(Path path) {
+        try {
+            return path != null && Files.exists(path) && ArtImageStorage.canDecode(Files.readAllBytes(path));
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 }

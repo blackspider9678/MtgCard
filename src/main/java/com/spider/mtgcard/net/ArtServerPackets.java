@@ -51,7 +51,7 @@ public final class ArtServerPackets {
                             : resolveServerMainCachedFile(server, game, artKey, fallbackKeys);
                     if (Files.exists(cached)) {
                         byte[] bytes = Files.readAllBytes(cached);
-                        if (bytes.length > 0) {
+                        if (bytes.length > 0 && ArtImageStorage.canDecode(bytes)) {
                             String cachedExt = extensionOf(cached);
                             if ("webp".equals(cachedExt)) {
                                 Mtgcard.LOGGER.info("[MTGCard] Art {} served from cache as .webp", artKey);
@@ -59,8 +59,14 @@ public final class ArtServerPackets {
                                 Mtgcard.LOGGER.info("[MTGCard] Art {} served from cache as .{}", artKey, cachedExt);
                             }
                             sendChunks(server, player, game, artKey, bytes);
+                            return;
                         }
-                        return;
+
+                        Mtgcard.LOGGER.warn("[MTGCard] Ignoring corrupt cached art {} at {}", artKey, cached);
+                        if (url.isEmpty()) {
+                            return;
+                        }
+                        Files.deleteIfExists(cached);
                     }
 
                     // 2) If URL is empty, this is a "world-art" request: do NOT download
