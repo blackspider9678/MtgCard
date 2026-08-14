@@ -12,6 +12,9 @@ description = '''satisfactory oreposits in the world of minecraft'''
 [[mixins]]
 config = "mtgcard.mousetweaks.mixins.json"
 
+[[mixins]]
+config = "mtgcard.flashback.mixins.json"
+
 [[dependencies.mtgcard]]
 modId = "neoforge"
 type = "required"

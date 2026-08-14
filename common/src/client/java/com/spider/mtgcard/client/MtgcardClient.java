@@ -1,6 +1,7 @@
 package com.spider.mtgcard.client;
 
 import com.spider.mtgcard.client.guidebook.GuideBookClientNet;
+import com.spider.mtgcard.client.compat.flashback.FlashbackArtBridge;
 import com.spider.mtgcard.client.hud.CardPeekHud;
 import com.spider.mtgcard.client.input.ModKeybinds;
 import com.spider.mtgcard.client.java.CardArtManager;
@@ -44,6 +45,7 @@ public final class MtgcardClient implements ClientModInitializer {
     public void onInitializeClient() {
         Mtgcard.LOGGER.info("[MtgcardClient] init");
         ArtImageStorage.ensureWebpCodecsRegistered();
+        FlashbackArtBridge.init();
 
         // Safe early: payload types, networking receivers, screen registration, model loading plugin
         ModPayloads.registerTypes();
@@ -79,6 +81,7 @@ public final class MtgcardClient implements ClientModInitializer {
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             CardArtManager.pumpQueue();
+            FlashbackArtBridge.pumpQueue();
         });
     }
 

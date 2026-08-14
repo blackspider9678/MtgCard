@@ -4,6 +4,7 @@ import com.spider.mtgcard.ModEntities;
 import com.spider.mtgcard.client.deckcontrol.DeckControlEntityRenderer;
 import com.spider.mtgcard.client.display.CardDisplayEntityRenderer;
 import com.spider.mtgcard.client.displayblock.DisplayBlockEntityRenderer;
+import com.spider.mtgcard.client.compat.flashback.FlashbackArtBridge;
 import com.spider.mtgcard.client.compat.GuiGraphics;
 import com.spider.mtgcard.client.gui.CardDatabaseScreen;
 import com.spider.mtgcard.client.gui.CardStoreScreen;
@@ -66,6 +67,7 @@ public final class MtgcardNeoForgeClient {
     private static void onClientSetup(FMLClientSetupEvent event) {
         event.enqueueWork(() -> {
             ArtImageStorage.ensureWebpCodecsRegistered();
+            FlashbackArtBridge.init();
             CardArtManager.init();
         });
     }
@@ -106,6 +108,7 @@ public final class MtgcardNeoForgeClient {
         installDropCallback(client);
         ModKeybinds.tick(client);
         CardArtManager.pumpQueue();
+        FlashbackArtBridge.pumpQueue();
     }
 
     private static void onScreenInit(ScreenEvent.Init.Post event) {
