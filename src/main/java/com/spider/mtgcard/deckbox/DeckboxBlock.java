@@ -1,6 +1,7 @@
 package com.spider.mtgcard.deckbox;
 
 import com.mojang.serialization.MapCodec;
+import com.spider.mtgcard.deckcontrol.DeckControlBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
@@ -294,12 +295,22 @@ public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBl
                     }
                 }
             }
+            notifyAdjacentDeckControls(world, pos);
         }
 
         super.setPlacedBy(world, pos, state, placer, stack);
     }
 
     /* ---------------- helpers ---------------- */
+
+    private static void notifyAdjacentDeckControls(Level world, BlockPos pos) {
+        for (Direction d : Direction.values()) {
+            BlockEntity be = world.getBlockEntity(pos.relative(d));
+            if (be instanceof DeckControlBlockEntity dc) {
+                dc.onNeighborDeckboxChanged(pos);
+            }
+        }
+    }
 
     private static ItemStack createDeckboxDrop(DeckboxBlockEntity deckbox) {
         ItemStack drop = new ItemStack(deckbox.getBlockState().getBlock());
