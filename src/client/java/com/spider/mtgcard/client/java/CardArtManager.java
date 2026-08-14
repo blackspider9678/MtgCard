@@ -241,6 +241,77 @@ public final class CardArtManager {
         return mc.gameDirectory.toPath().resolve("mtgcard").resolve("art").resolve(cacheScope(mc));
     }
 
+    private static Path localMainArtRoot(String game) {
+        return Minecraft.getInstance().gameDirectory.toPath()
+                .resolve("mtgcard")
+                .resolve(MtgCardPaths.sanitizeGameFolder(game))
+                .resolve("main_art");
+    }
+
+    private static Path localCustomArtRoot(String game) {
+        return Minecraft.getInstance().gameDirectory.toPath()
+                .resolve("mtgcard")
+                .resolve(MtgCardPaths.sanitizeGameFolder(game))
+                .resolve("custom_art");
+    }
+
+    private static Path localLegacyArtRoot() {
+        return Minecraft.getInstance().gameDirectory.toPath().resolve("mtgcard").resolve("art");
+    }
+
+    private static List<Path> mainArtSearchDirs(String game) {
+        java.util.LinkedHashSet<Path> dirs = new java.util.LinkedHashSet<>();
+        dirs.add(mainArtCacheDir(game));
+
+        // Flashback playback looks integrated, but old MP art lives under the client run directory.
+        Path root = localMainArtRoot(game);
+        dirs.add(root);
+        addDirectChildDirs(dirs, root);
+
+        return List.copyOf(dirs);
+    }
+
+    private static List<Path> legacyArtSearchDirs() {
+        java.util.LinkedHashSet<Path> dirs = new java.util.LinkedHashSet<>();
+        dirs.add(legacyArtCacheDir());
+
+        Path root = localLegacyArtRoot();
+        dirs.add(root);
+        addDirectChildDirs(dirs, root);
+
+        return List.copyOf(dirs);
+    }
+
+    private static List<Path> customArtSearchDirs(String game, String setCode) {
+        java.util.LinkedHashSet<Path> dirs = new java.util.LinkedHashSet<>();
+        String safeSet = MtgCardPaths.sanitizeSetFolder(setCode);
+        dirs.add(customArtDir(game, safeSet));
+
+        Path root = localCustomArtRoot(game);
+        if (!safeSet.isBlank()) {
+            dirs.add(root.resolve(safeSet));
+        }
+
+        try (var scopes = Files.list(root)) {
+            scopes.filter(Files::isDirectory).forEach(scope -> {
+                if (!safeSet.isBlank()) {
+                    dirs.add(scope.resolve(safeSet));
+                }
+                addDirectChildDirs(dirs, scope);
+            });
+        } catch (Exception ignored) {
+        }
+
+        return List.copyOf(dirs);
+    }
+
+    private static void addDirectChildDirs(Set<Path> dirs, Path root) {
+        try (var stream = Files.list(root)) {
+            stream.filter(Files::isDirectory).forEach(dirs::add);
+        } catch (Exception ignored) {
+        }
+    }
+
     private static String cacheScope(Minecraft mc) {
         String scope = "singleplayer";
         if (mc.getCurrentServer() != null) {
@@ -628,18 +699,21 @@ public final class CardArtManager {
     private static Path resolveMainCachedFile(String game, String artKey, List<String> fallbackKeys) {
         Path dir = mainArtCacheDir(game);
 
-        for (String candidate : artKeyCandidates(artKey, fallbackKeys)) {
-            Path indexed = resolveIndexedFile(dir, candidate);
-            if (indexed != null) return indexed;
+        for (Path searchDir : mainArtSearchDirs(game)) {
+            for (String candidate : artKeyCandidates(artKey, fallbackKeys)) {
+                Path indexed = resolveIndexedFile(searchDir, candidate);
+                if (indexed != null) return migrateLegacyArt(dir, artKey, indexed);
 
-            Path exact = resolveExactFile(dir, candidate);
-            if (exact != null) return exact;
+                Path exact = resolveExactFile(searchDir, candidate);
+                if (exact != null) return migrateLegacyArt(dir, artKey, exact);
+            }
         }
 
-        Path legacyDir = legacyArtCacheDir();
-        for (String candidate : artKeyCandidates(artKey, fallbackKeys)) {
-            Path legacy = resolveExactFile(legacyDir, candidate);
-            if (legacy != null) return migrateLegacyArt(dir, artKey, legacy);
+        for (Path legacyDir : legacyArtSearchDirs()) {
+            for (String candidate : artKeyCandidates(artKey, fallbackKeys)) {
+                Path legacy = resolveExactFile(legacyDir, candidate);
+                if (legacy != null) return migrateLegacyArt(dir, artKey, legacy);
+            }
         }
 
         return dir.resolve(artKey + ".webp");
@@ -647,21 +721,20 @@ public final class CardArtManager {
 
     private static Path resolveCustomCachedFile(String game, String artKey, String setCode) {
         Path setDir = customArtDir(game, setCode);
-        Path exact = resolveExactFile(setDir, artKey);
-        if (exact != null) return exact;
 
-        Path root = customArtRoot(game);
-        try (var dirs = Files.list(root)) {
-            for (Path dir : dirs.toList()) {
-                if (!Files.isDirectory(dir) || dir.equals(setDir)) continue;
-                exact = resolveExactFile(dir, artKey);
-                if (exact != null) return exact;
+        for (Path searchDir : customArtSearchDirs(game, setCode)) {
+            for (String candidate : artKeyCandidates(artKey)) {
+                Path exact = resolveExactFile(searchDir, candidate);
+                if (exact != null) return migrateLegacyArt(setDir, artKey, exact);
             }
-        } catch (Exception ignored) {
         }
 
-        Path legacy = resolveExactFile(legacyArtCacheDir(), artKey);
-        if (legacy != null) return migrateLegacyArt(setDir, artKey, legacy);
+        for (Path legacyDir : legacyArtSearchDirs()) {
+            for (String candidate : artKeyCandidates(artKey)) {
+                Path legacy = resolveExactFile(legacyDir, candidate);
+                if (legacy != null) return migrateLegacyArt(setDir, artKey, legacy);
+            }
+        }
 
         return setDir.resolve(artKey + ".webp");
     }

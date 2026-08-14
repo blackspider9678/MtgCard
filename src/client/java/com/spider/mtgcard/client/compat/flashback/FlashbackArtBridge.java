@@ -202,18 +202,11 @@ public final class FlashbackArtBridge {
         String safeGame = MtgCardPaths.sanitizeGameFolder(game);
         String safeSet = setCode == null || setCode.isBlank() ? "" : MtgCardPaths.sanitizeSetFolder(setCode);
 
-        ArrayList<Path> dirs = new ArrayList<>();
-        if (setCode != null && !setCode.isBlank()) {
-            dirs.add(customArtDir(safeGame, safeSet));
-            Path root = customArtRoot(safeGame);
-            if (Files.isDirectory(root)) {
-                try (var stream = Files.list(root)) {
-                    stream.filter(Files::isDirectory).forEach(dirs::add);
-                } catch (Exception ignored) {
-                }
-            }
+        LinkedHashSet<Path> dirs = new LinkedHashSet<>();
+        if (!safeSet.isBlank()) {
+            addCustomArtSearchDirs(dirs, safeGame, safeSet);
         }
-        dirs.add(mainArtDir(safeGame));
+        addMainArtSearchDirs(dirs, safeGame);
 
         for (Path dir : dirs) {
             for (String candidate : artKeyCandidates(artKey, fallbackKeys)) {
@@ -438,6 +431,32 @@ public final class FlashbackArtBridge {
 
     private static Path customArtDir(String game, String setCode) {
         return customArtRoot(game).resolve(MtgCardPaths.sanitizeSetFolder(setCode));
+    }
+
+    private static void addMainArtSearchDirs(Set<Path> dirs, String game) {
+        Path root = mainArtDir(game);
+        dirs.add(root);
+        addDirectChildDirs(dirs, root);
+    }
+
+    private static void addCustomArtSearchDirs(Set<Path> dirs, String game, String setCode) {
+        Path root = customArtRoot(game);
+        dirs.add(root.resolve(MtgCardPaths.sanitizeSetFolder(setCode)));
+
+        try (var scopes = Files.list(root)) {
+            scopes.filter(Files::isDirectory).forEach(scope -> {
+                dirs.add(scope.resolve(MtgCardPaths.sanitizeSetFolder(setCode)));
+                addDirectChildDirs(dirs, scope);
+            });
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static void addDirectChildDirs(Set<Path> dirs, Path root) {
+        try (var stream = Files.list(root)) {
+            stream.filter(Files::isDirectory).forEach(dirs::add);
+        } catch (Exception ignored) {
+        }
     }
 
     private static Path resolveExactFile(Path dir, String artKey) {
