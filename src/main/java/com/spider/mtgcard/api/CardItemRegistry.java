@@ -31,6 +31,7 @@ public final class CardItemRegistry {
             throw new IllegalArgumentException("Card item supplier must not be null");
         }
         CARD_ITEMS.put(normalized, itemSupplier);
+        CardBackTextureRegistry.registerItemTextureIfAbsent(normalized, itemSupplier);
     }
 
     public static synchronized Optional<Item> get(String game) {
