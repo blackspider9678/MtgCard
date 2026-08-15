@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import com.spider.mtgcard.Mtgcard;
+import com.spider.mtgcard.api.CardBackTextureRegistry;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.display.CardDisplayAttachmentData;
 import com.spider.mtgcard.display.CardDisplayEntity;
@@ -34,7 +35,6 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
 
     // Use constants instead of resource probing / image decode (avoids early RenderSystem/device issues)
     private static final Identifier TEX_WHITE = Identifier.fromNamespaceAndPath("minecraft", "textures/misc/white.png");
-    private static final Identifier TEX_BACK  = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/card.png");
 
     // Pick a stable aspect ratio for card back. (These are the values you already used as defaults.)
     private static final int BACK_W = 488;
@@ -342,9 +342,7 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
 
     private static void refreshTextureData(CachedRenderData cached, ItemStack stack, long gameTime) {
         if (cached.hidden) {
-            cached.texId = TEX_BACK;
-            cached.texW = BACK_W;
-            cached.texH = BACK_H;
+            useCardBack(cached, stack);
             return;
         }
 
@@ -360,10 +358,14 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
             cached.texW = (ref.texW() > 0) ? ref.texW() : 256;
             cached.texH = (ref.texH() > 0) ? ref.texH() : 256;
         } else {
-            cached.texId = TEX_BACK;
-            cached.texW = BACK_W;
-            cached.texH = BACK_H;
+            useCardBack(cached, stack);
         }
+    }
+
+    private static void useCardBack(CachedRenderData cached, ItemStack stack) {
+        cached.texId = CardBackTextureRegistry.textureForStackOrDefault(stack);
+        cached.texW = BACK_W;
+        cached.texH = BACK_H;
     }
 
     private static void put(VertexConsumer vc, Matrix4f mat,
