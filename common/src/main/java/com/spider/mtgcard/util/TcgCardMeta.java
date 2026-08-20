@@ -122,51 +122,37 @@ public final class TcgCardMeta {
         if (root == null) return;
         int safeFace = Math.max(0, face);
 
-        CompoundTag mtg = root.getCompound(MTG_META).orElseGet(CompoundTag::new);
-        mtg.putInt("mtg_face", safeFace);
-        root.put(MTG_META, mtg);
+        CompoundTag mtg = root.getCompound(MTG_META).orElse(null);
+        if (mtg != null) {
+            mtg.putInt("mtg_face", safeFace);
+            root.put(MTG_META, mtg);
+            // Native MTG cards use mtg_meta only. tcg_meta is reserved for
+            // addon-owned generic cards such as Pokemon or Rift.
+            root.remove(TCG_META);
+            return;
+        }
 
         CompoundTag tcg = root.getCompound(TCG_META).orElseGet(CompoundTag::new);
         tcg.putInt("tcg_face", safeFace);
         root.put(TCG_META, tcg);
     }
 
-    public static void mirrorMtgToTcg(CompoundTag root) {
+    public static void normalizeMtgMetadata(CompoundTag root) {
         if (root == null) return;
-
-        CompoundTag mtg = root.getCompound(MTG_META).orElseGet(CompoundTag::new);
-        CompoundTag tcg = root.getCompound(TCG_META).orElseGet(CompoundTag::new);
-
-        putIfBlank(tcg, "game", "mtg");
-        copyString(mtg, tcg, "id");
-        copyString(mtg, tcg, "name");
-        copyString(mtg, tcg, "set");
-        copyString(mtg, tcg, "collector_number");
-        copyString(mtg, tcg, "rarity");
-        copyString(mtg, tcg, "mana_cost");
-        copyString(mtg, tcg, "type_line");
-        copyString(mtg, tcg, "oracle_text");
-        copyString(mtg, tcg, "power");
-        copyString(mtg, tcg, "toughness");
-        copyString(mtg, tcg, "loyalty");
-        copyString(mtg, tcg, "layout");
-        copyInt(mtg, tcg, "mana_value");
-        if (!tcg.getInt("mana_value").isPresent()) {
-            copyIntAs(mtg, tcg, "cmc", "mana_value");
-        }
-        copyBoolean(mtg, tcg, "is_token_like");
-        copyBoolean(mtg, tcg, "is_legendary");
-        copyStringList(mtg, tcg, "colors");
-        copyStringList(mtg, tcg, "color_identity");
-        copyIntAs(mtg, tcg, "mtg_face", "tcg_face");
 
         CompoundTag flags = root.getCompound(TCG_FLAGS).orElseGet(CompoundTag::new);
         if (!flags.getBoolean("foil").isPresent()) {
             root.getBoolean("mtg_foil").ifPresent(v -> flags.putBoolean("foil", v));
         }
 
-        root.put(TCG_META, tcg);
+        root.remove(TCG_META);
         root.put(TCG_FLAGS, flags);
+    }
+
+    /** @deprecated Native MTG cards are no longer mirrored into tcg_meta. */
+    @Deprecated(forRemoval = false)
+    public static void mirrorMtgToTcg(CompoundTag root) {
+        normalizeMtgMetadata(root);
     }
 
     private static int faceCount(CompoundTag meta) {

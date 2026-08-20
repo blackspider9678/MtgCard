@@ -73,7 +73,7 @@ public final class CustomCardItems {
         CompoundTag root = new CompoundTag();
         root.put("mtg_meta", meta);
         root.putBoolean("mtg_foil", foil);
-        TcgCardMeta.mirrorMtgToTcg(root);
+        TcgCardMeta.normalizeMtgMetadata(root);
         StackData.writeCustom(stack, root);
         CardStackBuilders.applyColoredNameIfUnset(stack, displayName, m.rarity);
 

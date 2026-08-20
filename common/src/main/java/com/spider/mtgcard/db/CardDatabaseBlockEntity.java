@@ -6,6 +6,7 @@ import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.registry.ModRegistry;
 import com.spider.mtgcard.item.ModItemTags;
 import com.spider.mtgcard.util.TcgCardMeta;
+import com.spider.mtgcard.util.CardStackCompactor;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.item.ItemStack;
@@ -112,7 +113,9 @@ public class CardDatabaseBlockEntity extends BlockEntity {
         boolean anchoredToBottom = (this.windowOffset == getMaxWindowOffset());
 
         // add the new card into the unbounded backing list
-        this.intakeAll.add(stack.copy());
+        ItemStack stored = stack.copy();
+        CardStackCompactor.compact(stored);
+        this.intakeAll.add(stored);
 
         // if we were at the bottom, keep us bottom-aligned (so partial row shows padded empties)
         if (anchoredToBottom) {
@@ -253,6 +256,7 @@ public class CardDatabaseBlockEntity extends BlockEntity {
         var intakeNbt = st.getIntake(worldPosition);
         this.intakeAll.clear();
         if (intakeNbt != null) CardDBState.applyIntakeToList(this.intakeAll, intakeNbt);
+        this.intakeAll.forEach(CardStackCompactor::compact);
 
         // open anchored to the TOP, row-aligned
         this.windowOffset = 0;

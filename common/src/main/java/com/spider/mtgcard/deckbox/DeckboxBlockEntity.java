@@ -4,6 +4,7 @@ package com.spider.mtgcard.deckbox;
 import com.spider.mtgcard.deckcontrol.DeckControlBlockEntity;
 import com.spider.mtgcard.api.DeckboxRemovalCallbackRegistry;
 import com.spider.mtgcard.registry.ModBlockEntities;
+import com.spider.mtgcard.util.CardStackCompactor;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.entity.RandomizableContainerBlockEntity;
@@ -96,6 +97,12 @@ public class DeckboxBlockEntity extends RandomizableContainerBlockEntity {
         setItem(slot, stack);
     }
 
+    @Override
+    public void setItem(int slot, ItemStack stack) {
+        CardStackCompactor.compact(stack);
+        super.setItem(slot, stack);
+    }
+
     public ItemStack removeStack(int slot) {
         return removeItemNoUpdate(slot);
     }
@@ -182,6 +189,7 @@ public class DeckboxBlockEntity extends RandomizableContainerBlockEntity {
         inventory = NonNullList.withSize(INVENTORY_SIZE, ItemStack.EMPTY);
         if (!tryLoadLootTable(view)) {
             ContainerHelper.loadAllItems(view, inventory);
+            inventory.forEach(CardStackCompactor::compact);
         }
     }
 
@@ -235,7 +243,9 @@ public class DeckboxBlockEntity extends RandomizableContainerBlockEntity {
 
     @Override
     public CompoundTag getUpdateTag(HolderLookup.Provider lookup) {
-        return saveWithoutMetadata(lookup);
+        CompoundTag tag = new CompoundTag();
+        tag.putInt("RgbTint", rgbTint);
+        return tag;
     }
 
     @Override
