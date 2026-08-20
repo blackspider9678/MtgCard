@@ -15,6 +15,9 @@ config = "mtgcard.mousetweaks.mixins.json"
 [[mixins]]
 config = "mtgcard.flashback.mixins.json"
 
+[[mixins]]
+config = "mtgcard.mixins.json"
+
 [[dependencies.mtgcard]]
 modId = "neoforge"
 type = "required"
