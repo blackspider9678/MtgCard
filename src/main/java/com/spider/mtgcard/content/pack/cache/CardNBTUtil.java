@@ -114,7 +114,7 @@ public final class CardNBTUtil {
         // ---------- Instance-level flags on root ----------
         putStr(root, "mtg_uid",  instanceUuid == null ? "" : instanceUuid.toString()); // store UUID as string (cross-mappings safe)
         root.putBoolean("mtg_foil", foil);
-        TcgCardMeta.mirrorMtgToTcg(root);
+        TcgCardMeta.normalizeMtgMetadata(root);
 
         // Save back to CUSTOM_DATA
         StackData.writeCustom(st, root);

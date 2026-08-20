@@ -151,12 +151,13 @@ public final class CardDatabaseCards {
         if (mtg != null) {
             mtg.putString("mtg_uid", uid);
             root.put(TcgCardMeta.MTG_META, mtg);
-        }
-
-        CompoundTag tcg = root.getCompound(TcgCardMeta.TCG_META).orElse(null);
-        if (tcg != null) {
-            tcg.putString("mtg_uid", uid);
-            root.put(TcgCardMeta.TCG_META, tcg);
+            root.remove(TcgCardMeta.TCG_META);
+        } else {
+            CompoundTag tcg = root.getCompound(TcgCardMeta.TCG_META).orElse(null);
+            if (tcg != null) {
+                tcg.putString("tcg_uid", uid);
+                root.put(TcgCardMeta.TCG_META, tcg);
+            }
         }
 
         stack.set(DataComponents.CUSTOM_DATA, CustomData.of(root));
