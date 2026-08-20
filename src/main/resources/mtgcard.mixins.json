@@ -5,6 +5,7 @@
   "package": "com.spider.mtgcard.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "BlockEntityChunkSyncMixin"
   ],
   "client": [
     "AbstractContainerScreenAccessor"
