@@ -2,6 +2,7 @@ package com.spider.mtgcard.deckbox;
 
 import com.mojang.serialization.MapCodec;
 import com.spider.mtgcard.deckcontrol.DeckControlBlockEntity;
+import com.spider.mtgcard.api.DeckboxStorage;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
@@ -192,6 +193,8 @@ public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBl
 
         BlockEntity be = world.getBlockEntity(pos);
         if (be instanceof DeckboxBlockEntity deckbox) {
+            deckbox.ensureStorageId();
+            deckbox.persistExternalRecord();
             player.openMenu(deckbox);
             return InteractionResult.CONSUME;
         }
@@ -213,6 +216,10 @@ public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBl
         BlockEntity be = world.getBlockEntity(pos);
 
         if (be instanceof DeckboxBlockEntity deckbox) {
+            if (!world.isClientSide()) {
+                deckbox.ensureStorageId();
+                deckbox.persistExternalRecord();
+            }
             if (!world.isClientSide() && player.preventsBlockDrops() && !deckbox.isEmpty()) {
                 ItemStack drop = createDeckboxDrop(deckbox);
                 ItemEntity itemEntity = new ItemEntity(world, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, drop);
@@ -237,6 +244,19 @@ public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBl
         Containers.updateNeighboursAfterDestroy(state, world, pos);
     }
 
+    @Override
+    protected ItemStack getCloneItemStack(net.minecraft.world.level.LevelReader world, BlockPos pos,
+                                          BlockState state, boolean includeData) {
+        BlockEntity be = world.getBlockEntity(pos);
+        if (includeData && be instanceof DeckboxBlockEntity deckbox && deckbox.getLevel() != null
+                && !deckbox.getLevel().isClientSide()) {
+            deckbox.ensureStorageId();
+            deckbox.persistExternalRecord();
+            return createDeckboxDrop(deckbox);
+        }
+        return super.getCloneItemStack(world, pos, state, includeData);
+    }
+
 
 
     /* ---------------- Restore from item on place ---------------- */
@@ -247,7 +267,15 @@ public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBl
             var comp = stack.get(DataComponents.CUSTOM_DATA);
             if (comp != null) {
                 CompoundTag tag = comp.copyTag();
-                if (tag != null && tag.contains(LEGACY_BLOCK_ENTITY_TAG)) {
+                BlockEntity placed = world.getBlockEntity(pos);
+                String storedId = tag == null ? "" : tag.getString(DeckboxStorage.ITEM_ID_KEY).orElse("");
+                if (placed instanceof DeckboxBlockEntity deckbox && !storedId.isBlank()) {
+                    try {
+                        deckbox.loadStorageId(java.util.UUID.fromString(storedId));
+                    } catch (IllegalArgumentException ignored) {
+                        deckbox.ensureStorageId();
+                    }
+                } else if (tag != null && tag.contains(LEGACY_BLOCK_ENTITY_TAG)) {
                     var beTagOpt = tag.getCompound(LEGACY_BLOCK_ENTITY_TAG);
                     if (beTagOpt.isPresent()) {
                         CompoundTag beTag = beTagOpt.get();
@@ -295,6 +323,11 @@ public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBl
                     }
                 }
             }
+            BlockEntity placed = world.getBlockEntity(pos);
+            if (placed instanceof DeckboxBlockEntity deckbox && deckbox.getStorageId() == null) {
+                deckbox.ensureStorageId();
+                deckbox.persistExternalRecord();
+            }
             notifyAdjacentDeckControls(world, pos);
         }
 
@@ -315,9 +348,11 @@ public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBl
     private static ItemStack createDeckboxDrop(DeckboxBlockEntity deckbox) {
         ItemStack drop = new ItemStack(deckbox.getBlockState().getBlock());
         drop.applyComponents(deckbox.collectComponents());
+        drop.remove(DataComponents.CONTAINER);
 
         CompoundTag itemData = drop.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
         itemData.putInt(ITEM_TINT_KEY, deckbox.getRgbTint());
+        itemData.putString(DeckboxStorage.ITEM_ID_KEY, deckbox.ensureStorageId().toString());
         drop.set(DataComponents.CUSTOM_DATA, CustomData.of(itemData));
         return drop;
     }
