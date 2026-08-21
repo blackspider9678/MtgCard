@@ -20,6 +20,7 @@ public final class CardBackTextureRegistry {
             Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "textures/item/card.png");
 
     private static final Map<String, Supplier<Identifier>> CARD_BACKS = new LinkedHashMap<>();
+    private static final Map<Item, Supplier<Identifier>> ITEM_CARD_BACKS = new LinkedHashMap<>();
 
     public static void register(String game, Identifier texture) {
         register(game, () -> texture);
@@ -40,7 +41,28 @@ public final class CardBackTextureRegistry {
         Identifier explicit = explicitTexture(stack);
         if (explicit != null) return explicit;
 
+        Identifier itemTexture = textureForItem(stack);
+        if (itemTexture != null) return itemTexture;
+
         return textureForGameOrDefault(TcgCardMeta.read(stack).game());
+    }
+
+    /** Add-on API: supplies a facedown texture for one concrete card item type. */
+    public static synchronized void registerItem(Item item, Identifier texture) {
+        registerItem(item, () -> texture);
+    }
+
+    /** Add-on API: supplies a lazily resolved facedown texture for one card item type. */
+    public static synchronized void registerItem(Item item, Supplier<Identifier> textureSupplier) {
+        if (item == null || item == Items.AIR) throw new IllegalArgumentException("Card back item must not be air");
+        if (textureSupplier == null) throw new IllegalArgumentException("Card back texture supplier must not be null");
+        ITEM_CARD_BACKS.put(item, () -> normalizeTexture(textureSupplier.get()).orElse(DEFAULT_BACK));
+    }
+
+    private static synchronized Identifier textureForItem(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return null;
+        Supplier<Identifier> supplier = ITEM_CARD_BACKS.get(stack.getItem());
+        return supplier == null ? null : supplier.get();
     }
 
     public static synchronized Identifier textureForGameOrDefault(String game) {
@@ -60,6 +82,10 @@ public final class CardBackTextureRegistry {
         if (normalized.isBlank() || itemSupplier == null) return;
 
         CARD_BACKS.putIfAbsent(normalized, () -> textureFromItem(itemSupplier.get()));
+        Item item = itemSupplier.get();
+        if (item != null && item != Items.AIR) {
+            ITEM_CARD_BACKS.putIfAbsent(item, () -> textureFromItem(itemSupplier.get()));
+        }
     }
 
     private static Identifier explicitTexture(ItemStack stack) {
