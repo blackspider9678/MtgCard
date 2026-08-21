@@ -40,16 +40,20 @@ public final class ScryfallQuery {
     public Dir dir = Dir.ASC;
     public int limit = 54;
     public int offset = 0;
+    private String raw = "";
     private ScryfallSyntax.Parsed parsed = ScryfallSyntax.parse("");
 
     public boolean matches(ScryfallSyntax.CardView card) {
         return parsed.matches(card);
     }
 
+    public String raw() { return raw; }
+
     public static ScryfallQuery parse(String raw, int limit, int offset, String order, String direction) {
         ScryfallQuery q = new ScryfallQuery();
         q.limit = Math.max(1, limit);
         q.offset = Math.max(0, offset);
+        q.raw = raw == null ? "" : raw;
         q.parsed = ScryfallSyntax.parse(raw == null ? "" : raw);
 
         applySort(q, order);
