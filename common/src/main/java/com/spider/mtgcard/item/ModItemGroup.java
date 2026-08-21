@@ -1,6 +1,7 @@
 package com.spider.mtgcard.item;
 
 import com.spider.mtgcard.Mtgcard;
+import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.registry.ModBlocks;
 import net.fabricmc.fabric.api.creativetab.v1.FabricCreativeModeTab;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -55,7 +56,7 @@ public final class ModItemGroup {
 
 
                             // Items
-                            if (pack                    != Items.AIR) entries.accept(new ItemStack(pack));
+                            if (MtgcardConfig.mtgGameEnabled() && pack != Items.AIR) entries.accept(new ItemStack(pack));
                             if (card                    != Items.AIR) entries.accept(new ItemStack(card));
                             if (card_database           != Items.AIR) entries.accept(new ItemStack(card_database));
                             if (life_point              != Items.AIR) entries.accept(new ItemStack(life_point));

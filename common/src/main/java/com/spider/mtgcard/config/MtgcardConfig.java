@@ -48,6 +48,7 @@ public final class MtgcardConfig {
 
     // Card Store
     public boolean Card_Store_Enabled = true;
+    public boolean MTG_Game_Enabled = true;
 
     // Price display
     public String Price_Item = "minecraft:diamond";
@@ -134,9 +135,14 @@ public final class MtgcardConfig {
 
             // --- card store ---
             boolean needsSave = false;
+            if (addonDetected()) {
+                if (file.contains("games.mtg_enabled")) cfg.MTG_Game_Enabled = file.getOrElse("games.mtg_enabled", cfg.MTG_Game_Enabled);
+                else { file.set("games.mtg_enabled", cfg.MTG_Game_Enabled); addComments(file); file.save(); }
+            }
             if (file.contains("card_store.enabled")) {
                 cfg.Card_Store_Enabled = file.getOrElse("card_store.enabled", cfg.Card_Store_Enabled);
             } else {
+                if (addonDetected()) file.set("games.mtg_enabled", cfg.MTG_Game_Enabled);
                 file.set("card_store.enabled", cfg.Card_Store_Enabled);
                 needsSave = true;
             }
@@ -241,6 +247,10 @@ public final class MtgcardConfig {
                 "Card Store settings.\n" +
                         "enabled: if false, the Card Store recipe is not loaded and placed stores cannot be opened.");
         file.setComment("card_store.enabled", "Enable the Card Store block and recipe.");
+        if (addonDetected()) {
+            file.setComment("games", "Game settings available when a supported TCG add-on is installed.");
+            file.setComment("games.mtg_enabled", "Enable MTG booster acquisition, crafting, and Card Store searches.");
+        }
 
         file.setComment("price",
                 "Price display settings (Large View panel).\n" +
@@ -321,6 +331,27 @@ public final class MtgcardConfig {
     public static boolean cardStoreEnabled() {
         MtgcardConfig cfg = get();
         return cfg == null || cfg.Card_Store_Enabled;
+    }
+
+    public static boolean mtgGameEnabled() {
+        MtgcardConfig cfg = get();
+        return !addonDetected() || cfg == null || cfg.MTG_Game_Enabled;
+    }
+
+    private static boolean addonDetected() {
+        return isModLoaded("pokemon_tcg_addon") || isModLoaded("riftbound_tcg");
+    }
+
+    private static boolean isModLoaded(String modId) {
+        try {
+            Object loader = FabricLoader.getInstance();
+            return (Boolean) loader.getClass().getMethod("isModLoaded", String.class).invoke(loader, modId);
+        } catch (ReflectiveOperationException ignored) { }
+        try {
+            Class<?> type = Class.forName("net.neoforged.fml.ModList");
+            Object list = type.getMethod("get").invoke(null);
+            return (Boolean) type.getMethod("isLoaded", String.class).invoke(list, modId);
+        } catch (ReflectiveOperationException ignored) { return false; }
     }
 
     private MtgcardConfig() {}

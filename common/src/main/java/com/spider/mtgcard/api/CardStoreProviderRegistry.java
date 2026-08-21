@@ -1,6 +1,7 @@
 package com.spider.mtgcard.api;
 
 import com.spider.mtgcard.cardstore.CardStoreBlockEntity;
+import com.spider.mtgcard.config.MtgcardConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -21,7 +22,7 @@ public final class CardStoreProviderRegistry {
     private static final Map<String, Provider> PROVIDERS = new LinkedHashMap<>();
 
     static {
-        register(new Provider() {
+        if (MtgcardConfig.mtgGameEnabled()) register(new Provider() {
             @Override
             public String game() {
                 return TcgGameRegistry.MTG;
