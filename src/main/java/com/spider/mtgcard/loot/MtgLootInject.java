@@ -2,6 +2,7 @@ package com.spider.mtgcard.loot;
 
 import com.spider.mtgcard.item.ModItems;
 import com.spider.mtgcard.api.BoosterPackLootRegistry;
+import com.spider.mtgcard.config.MtgcardConfig;
 import net.fabricmc.fabric.api.loot.v3.LootTableEvents;
 import net.minecraft.world.level.storage.loot.LootPool;
 import net.minecraft.world.level.storage.loot.predicates.LootItemRandomChanceCondition;
@@ -13,7 +14,7 @@ public final class MtgLootInject {
     private static final float PACK_CHANCE = 0.05f; // 5%
 
     public static void init() {
-        BoosterPackLootRegistry.register(ModItems.MTG_PACK, PACK_CHANCE);
+        if (MtgcardConfig.mtgGameEnabled()) BoosterPackLootRegistry.register(ModItems.MTG_PACK, PACK_CHANCE);
         LootTableEvents.MODIFY.register((key, tableBuilder, source, registries) -> {
             Identifier id = key.identifier();
 

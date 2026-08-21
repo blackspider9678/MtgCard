@@ -1,4 +1,7 @@
 {
+  "fabric:load_conditions": [
+    { "condition": "mtgcard:mtg_game_enabled" }
+  ],
   "type": "minecraft:crafting_shaped",
   "pattern": [
     "###",

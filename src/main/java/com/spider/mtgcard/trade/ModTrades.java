@@ -2,6 +2,7 @@ package com.spider.mtgcard.trade;
 
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.data.ModDataComponents;
+import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.dice.DiceAppearance;
 import com.spider.mtgcard.dice.DiceGradientType;
 import com.spider.mtgcard.item.ModItems;
@@ -121,6 +122,7 @@ public final class ModTrades {
 
     private static VillagerTrades.ItemListing boosterPackOffer(int minEmeraldCost, int maxEmeraldCost, int itemCount, int maxUses) {
         return (level, entity, random) -> {
+            if (!MtgcardConfig.mtgGameEnabled()) return null;
             int emeraldCost = minEmeraldCost;
             if (maxEmeraldCost > minEmeraldCost) {
                 emeraldCost += random.nextInt(maxEmeraldCost - minEmeraldCost + 1);
