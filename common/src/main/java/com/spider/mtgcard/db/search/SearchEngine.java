@@ -1,6 +1,7 @@
 package com.spider.mtgcard.db.search;
 
 import com.spider.mtgcard.util.TcgCardMeta;
+import com.spider.mtgcard.api.CardSearchProviderRegistry;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.*;
@@ -26,6 +27,7 @@ public final class SearchEngine {
         public final boolean legendary;
         public final String commanderLegality;
         public final String layout;
+        public final String game;
 
         // NEW:
         public final double priceUsd;     // numeric, NaN if missing
@@ -65,6 +67,7 @@ public final class SearchEngine {
             this.legendary = legendary;
             this.commanderLegality = commanderLegality;
             this.layout = layout;
+            this.game = TcgCardMeta.read(st).game();
 
             this.priceUsd = priceUsd;
             this.powerRaw = powerRaw;
@@ -375,7 +378,9 @@ public final class SearchEngine {
 
     public static Predicate<Row> buildPredicate(ScryfallQuery q) {
         if (q == null) return r -> true;
-        return q::matches;
+        return row -> CardSearchProviderRegistry.get(row.game)
+                .map(provider -> provider.matches(row.stack, q.raw()))
+                .orElseGet(() -> q.matches(row));
     }
 
     /* ------------ Sorting ------------- */
