@@ -90,6 +90,13 @@ public final class MtgcardClient implements ClientModInitializer {
     private static void lateClientInit() {
         // Register renderers AFTER the window/device exists
         EntityRenderers.register(ModEntities.CARD_DISPLAY, CardDisplayEntityRenderer::new);
+        EntityRenderers.register(ModEntities.D6_DICE, com.spider.mtgcard.client.dice.DiceEntityRenderer::new);
+        EntityRenderers.register(ModEntities.D4_DICE, com.spider.mtgcard.client.dice.DiceEntityRenderer::new);
+        EntityRenderers.register(ModEntities.D8_DICE, com.spider.mtgcard.client.dice.DiceEntityRenderer::new);
+        EntityRenderers.register(ModEntities.D10_DICE, com.spider.mtgcard.client.dice.DiceEntityRenderer::new);
+        EntityRenderers.register(ModEntities.D12_DICE, com.spider.mtgcard.client.dice.DiceEntityRenderer::new);
+        EntityRenderers.register(ModEntities.D20_DICE, com.spider.mtgcard.client.dice.DiceEntityRenderer::new);
+        EntityRenderers.register(ModEntities.D100_DICE, com.spider.mtgcard.client.dice.DiceEntityRenderer::new);
 
         BlockEntityRenderers.register(ModBlockEntities.DISPLAY_BLOCK,
                 com.spider.mtgcard.client.displayblock.DisplayBlockEntityRenderer::new
