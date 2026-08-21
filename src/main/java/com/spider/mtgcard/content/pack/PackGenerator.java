@@ -128,6 +128,56 @@ public final class PackGenerator {
 
         // ---------- Async pack opening ----------
         public static void openPackAsync(MinecraftServer server, ServerPlayer player, String desiredSet) {
+                if ("random".equalsIgnoreCase(desiredSet == null ? "" : desiredSet.trim())) {
+                        openRandomSetPackAsync(server, player);
+                        return;
+                }
+
+                openResolvedPackAsync(server, player, desiredSet, false);
+        }
+
+        private static void openRandomSetPackAsync(MinecraftServer server, ServerPlayer player) {
+                final PackOpenManager.Active active = PackOpenManager.get(player);
+                final String playerName = player.getName().getString();
+
+                ScryfallCache.pickRandomBoosterSetAsync(player.level())
+                        .orTimeout(PACK_OPEN_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                        .whenComplete((chosenSet, ex) -> server.execute(() -> {
+                                if (active == null || active.cancelled || PackOpenManager.get(player) != active) {
+                                        return;
+                                }
+
+                                Throwable failure = unwrapCompletion(ex);
+                                if (failure != null || chosenSet == null || chosenSet.isBlank()) {
+                                        markCancelled(active);
+                                        PackInventoryUtil.DeliveryResult refundResult = refundPackIfNeeded(player, active);
+                                        PackOpenManager.finish(player);
+                                        ModPayloads.clearUnpackProgress(player);
+                                        Mtgcard.LOGGER.error(
+                                                "[MTGCard] Failed to choose a set for random pack player={}",
+                                                playerName,
+                                                failure
+                                        );
+                                        logFailureOutcome(playerName, failure, refundResult);
+                                        return;
+                                }
+
+                                String resolvedSet = chosenSet.trim().toLowerCase(Locale.ROOT);
+                                Mtgcard.LOGGER.info(
+                                        "[MTGCard] Random pack chose set={} for player={}",
+                                        resolvedSet,
+                                        playerName
+                                );
+                                openResolvedPackAsync(server, player, resolvedSet, true);
+                        }));
+        }
+
+        private static void openResolvedPackAsync(
+                MinecraftServer server,
+                ServerPlayer player,
+                String desiredSet,
+                boolean strictSet
+        ) {
                 final int TOTAL = 15;
                 final long startedAtMs = System.currentTimeMillis();
                 final String setLabel = describePackSet(desiredSet);
@@ -181,7 +231,7 @@ public final class PackGenerator {
                         chain = chain.thenCompose(v -> {
                                 if (active != null && active.cancelled) return CompletableFuture.completedFuture(null);
 
-                                return makeCardAsyncNoDupe(server, player, slot, desiredSet, customMode, seenCardKeys, 6)
+                                return makeCardAsyncNoDupe(server, player, slot, desiredSet, customMode, strictSet, seenCardKeys, 6)
                                         .thenApply(st -> requireResolvedCard(slot, st))
                                         .thenAccept(st -> {
                                                 if (active != null && active.cancelled) return;
@@ -607,22 +657,23 @@ public final class PackGenerator {
                 RaritySlot slot,
                 String desiredSet,
                 CustomMode customMode,
+                boolean strictSet,
                 Set<String> seenCardKeys,
                 int attemptsLeft
         ) {
-                return makeCardAsync(server, player, slot, desiredSet, customMode)
+                return makeCardAsync(server, player, slot, desiredSet, customMode, strictSet)
                         .thenCompose(st -> {
                                 if (!isResolvedPackCard(st)) {
                                         if (attemptsLeft <= 0) {
                                                 return CompletableFuture.failedFuture(new IllegalStateException("Could not resolve " + slot + " pack card"));
                                         }
-                                        return makeCardAsyncNoDupe(server, player, slot, desiredSet, customMode, seenCardKeys, attemptsLeft - 1);
+                                        return makeCardAsyncNoDupe(server, player, slot, desiredSet, customMode, strictSet, seenCardKeys, attemptsLeft - 1);
                                 }
 
                                 String cardKey = readCanonicalCardKey(st);
                                 if (cardKey != null && seenCardKeys.contains(cardKey)) {
                                         if (attemptsLeft <= 0) return CompletableFuture.completedFuture(st);
-                                        return makeCardAsyncNoDupe(server, player, slot, desiredSet, customMode, seenCardKeys, attemptsLeft - 1);
+                                        return makeCardAsyncNoDupe(server, player, slot, desiredSet, customMode, strictSet, seenCardKeys, attemptsLeft - 1);
                                 }
 
                                 if (cardKey != null) {
@@ -638,7 +689,8 @@ public final class PackGenerator {
                 ServerPlayer player,
                 RaritySlot slot,
                 String desiredSet,
-                CustomMode customMode
+                CustomMode customMode,
+                boolean strictSet
         ) {
                 ServerLevel world = player.level();
                 boolean foilVisual = (slot == RaritySlot.FOIL_RANDOM);
@@ -695,7 +747,7 @@ public final class PackGenerator {
 
                 final String finalScrySet = scrySet;
 
-                return fetchResolvedScryfallStackAsync(world, slot, q, finalScrySet, foilVisual);
+                return fetchResolvedScryfallStackAsync(world, slot, q, finalScrySet, foilVisual, strictSet);
         }
 
         /** Per-slot roll (only used for unnamed packs). */
@@ -850,13 +902,14 @@ public final class PackGenerator {
                 RaritySlot slot,
                 ScryfallCache.Query q,
                 @org.jetbrains.annotations.Nullable String preferredSet,
-                boolean foilVisual
+                boolean foilVisual,
+                boolean strictSet
         ) {
                 CompletableFuture<ItemStack> preferred = fetchOneCardAsync(world, preferredSet, q, slot)
                         .thenApply(card -> buildResolvedScryfallStack(card, slot, foilVisual));
 
                 boolean alreadyGlobal = preferredSet == null || preferredSet.isBlank();
-                if (alreadyGlobal) {
+                if (alreadyGlobal || strictSet) {
                         return preferred.thenApply(st -> requireResolvedCard(slot, st));
                 }
 

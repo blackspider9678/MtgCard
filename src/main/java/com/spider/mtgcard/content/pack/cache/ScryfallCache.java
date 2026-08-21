@@ -207,6 +207,25 @@ public final class ScryfallCache {
                 });
     }
 
+    /** Picks one paper card that Scryfall considers booster-eligible and returns its set code. */
+    public static CompletableFuture<String> pickRandomBoosterSetAsync(ServerLevel world) {
+        String query = "is:booster game:paper -type:token -is:artseries"
+                + " -set:4bb -set:fbb -set:rin -set:ren -set:ps11 -set:psal";
+        String requestUrl = "https://api.scryfall.com/cards/random?q=" + url(query) + "&unique=prints";
+
+        return ScryfallService.supplyAsync("random booster set", () -> {
+            for (int attempt = 0; attempt < 3; attempt++) {
+                ScryfallModels.Card card = ScryfallJson.parseCard(ScryfallHttp.get(requestUrl));
+                String set = card == null ? "" : lower(card.set);
+                if (!set.isBlank()) {
+                    cacheCard(world, card);
+                    return set;
+                }
+            }
+            throw new RuntimeException("Scryfall returned no usable random booster set");
+        });
+    }
+
     private static CompletableFuture<ScryfallModels.Card> pickFromPoolAsync(
             ServerLevel world, Context ctx, Query q, String query
     ) {
@@ -359,6 +378,15 @@ public final class ScryfallCache {
         }
 
         if (matches.isEmpty()) return 0;
+
+        // A global query must not be bootstrapped from a cache populated by one
+        // previously opened set-specific pack. Doing so makes an unnamed pack
+        // appear to inherit that pack's set until the query pool is exhausted.
+        // In that case leave the pool empty so the caller performs a genuinely
+        // global refill. The local cache is still available as the final
+        // offline/error fallback in fallbackFromLocalCache().
+        if (isGlobalContext(ctx) && distinctSetCount(matches) < 2) return 0;
+
         Collections.shuffle(matches, RNG);
         if (matches.size() > QUERY_POOL_TARGET) matches.subList(QUERY_POOL_TARGET, matches.size()).clear();
 
@@ -366,6 +394,21 @@ public final class ScryfallCache {
             addToPool(pool, matches);
             return pool.cards.size();
         }
+    }
+
+    private static boolean isGlobalContext(Context ctx) {
+        return ctx == null || ctx.onlySet() == null || ctx.onlySet().isBlank();
+    }
+
+    private static int distinctSetCount(Collection<ScryfallModels.Card> cards) {
+        HashSet<String> sets = new HashSet<>();
+        for (ScryfallModels.Card card : cards) {
+            if (card == null) continue;
+            String set = lower(card.set);
+            if (!set.isBlank()) sets.add(set);
+            if (sets.size() >= 2) return sets.size();
+        }
+        return sets.size();
     }
 
     private static void addToPool(QueryPool pool, List<ScryfallModels.Card> cards) {
