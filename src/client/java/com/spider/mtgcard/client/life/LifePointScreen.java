@@ -2,6 +2,7 @@ package com.spider.mtgcard.client.life;
 
 import com.spider.mtgcard.client.compat.LegacyScreen;
 import com.spider.mtgcard.api.LifeFormatRegistry;
+import com.spider.mtgcard.client.compat.MtgGuiScaleHelper;
 import com.spider.mtgcard.life.LifeFormat;
 import com.spider.mtgcard.life.LifePointPackets;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -237,6 +238,9 @@ public final class LifePointScreen extends LegacyScreen {
     // I like 960x540 (16:9) or 854x480. Choose what matches your â€œGUI Scale 5â€ look.
     private static final int DESIGN_W = 960;
     private static final int DESIGN_H = 540;
+    private static final int MIN_COMFORTABLE_VIEW_W = 720;
+    private static final int MIN_COMFORTABLE_VIEW_H = 405;
+    private static final int PREFERRED_GUI_SCALE = 2;
     private static final float MAX_UI_SCALE = 1.6f;
 
     private float uiScale = 1f;
@@ -433,7 +437,7 @@ public final class LifePointScreen extends LegacyScreen {
         scrollTrackRects.remove(id);
         scrollThumbRects.remove(id);
 
-        if (vp == null) return;
+        if (vp == null || vp.h < 8) return;
         if (contentH <= vp.h) return;
 
         int maxScroll = Math.max(0, contentH - vp.h);
@@ -504,7 +508,12 @@ public final class LifePointScreen extends LegacyScreen {
 
     @Override
     protected void init() {
-        if (applyFixedGuiScale(2)) return;
+        if (MtgGuiScaleHelper.applyAutoFitGuiScale(
+                this,
+                PREFERRED_GUI_SCALE,
+                MIN_COMFORTABLE_VIEW_W,
+                MIN_COMFORTABLE_VIEW_H
+        )) return;
 
         clearWidgets();
 
@@ -941,7 +950,7 @@ public final class LifePointScreen extends LegacyScreen {
         int vpY = countersStartY;
         int vpW = colW - 12;
         int vpBottom = y0 + h0 - 10;
-        int vpH = Math.max(40, vpBottom - vpY);
+        int vpH = Math.max(1, vpBottom - vpY);
         lifeCounterViewport = new Rect(vpX, vpY, vpW, vpH);
 
         valueField = new EditBox(font, boxX, boxY, box, box, Component.literal(""));
@@ -1003,7 +1012,7 @@ public final class LifePointScreen extends LegacyScreen {
         int opVpX = midX + 6;
         int opVpY = listY;
         int opVpW = colW - 12;
-        int opVpH = Math.max(40, (y0 + h0 - 10) - opVpY);
+        int opVpH = Math.max(1, (y0 + h0 - 10) - opVpY);
         otherPlayersViewport = new Rect(opVpX, opVpY, opVpW, opVpH);
 
         otherPlayersOrdered = new ArrayList<>();
@@ -1192,7 +1201,7 @@ public final class LifePointScreen extends LegacyScreen {
         int vpW = leftW - leftPad * 2;
 
         int addBlockH = 18 + 22 + 18;
-        int vpH = Math.max(60, (y0 + h0 - 10) - vpY - addBlockH - 8);
+        int vpH = Math.max(1, (y0 + h0 - 10) - vpY - addBlockH - 8);
         countersListViewport = new Rect(vpX, vpY, vpW, vpH);
 
         countersListContentH = countersListKeys.size() * rowH;
@@ -1265,7 +1274,7 @@ public final class LifePointScreen extends LegacyScreen {
         counterIconPreviewRect = new Rect(rightX + 10, prevY, rightW - 20, prevH);
 
         int pickerY = prevY + prevH + 8;
-        int pickerH = Math.max(60, (y0 + h0 - 10) - pickerY);
+        int pickerH = Math.max(1, (y0 + h0 - 10) - pickerY);
         counterIconPickerViewport = new Rect(rightX + 10, pickerY, rightW - 20, pickerH);
         counterIconPickerScroll = Math.max(0, counterIconPickerScroll);
     }
@@ -1318,7 +1327,7 @@ public final class LifePointScreen extends LegacyScreen {
         int vpX = podsX + 6;
         int vpY = listY;
         int vpW = colW - 12;
-        int vpH = Math.max(60, (y0 + h0 - 10) - vpY);
+        int vpH = Math.max(1, (y0 + h0 - 10) - vpY);
         podsListViewport = new Rect(vpX, vpY, vpW, vpH);
 
         // "+ Create" footer is sticky
@@ -1576,7 +1585,7 @@ public final class LifePointScreen extends LegacyScreen {
         // This viewport is used only when includeCustomCounters=true
         int includeListY = optsTopY + 58; // include checkbox + save-to-world + spacing
         int includeListBottom = footerY - footerGapTop;
-        int includeListH = Math.max(40, includeListBottom - includeListY);
+        int includeListH = Math.max(1, includeListBottom - includeListY);
         editCounterIncludeVp = new Rect(leftX + pad, includeListY, colW - pad * 2, includeListH);
 
         // --- Footer buttons (sticky) ---
