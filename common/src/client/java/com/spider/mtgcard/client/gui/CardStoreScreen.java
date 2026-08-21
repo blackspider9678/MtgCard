@@ -92,6 +92,8 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     private static final int DESIGN_H = 576;
     private static final float MAX_LAYOUT_SCALE = 2.0f;
     private static final int STORE_GUI_SCALE = 4;
+    private static final int STORE_MIN_VIEW_W = 600;
+    private static final int STORE_MIN_VIEW_H = 300;
 
     // ---- layout constants ----
     private static final int M = 10;
@@ -137,6 +139,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     // --- left-panel column layout ---
     private static final int PREVIEW_COL_W = 150; // width of preview column inside left panel
+    private static final int COMPACT_PREVIEW_COL_W = 84;
     private static final int LEFT_INNER_PAD = 12;
     private static final int GRID_GAP = 12;
     private static final int PAGER_H = 22;
@@ -151,6 +154,8 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         layoutScale = Math.min(MAX_LAYOUT_SCALE, Math.max(1f, Math.min(sx, sy)));
     }
 
+    private boolean usesCompactLayout() { return this.width <= 640; }
+
     private int ui(int value) {
         return Math.max(1, Math.round(value * layoutScale));
     }
@@ -161,7 +166,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     private int layoutGap() { return ui(GAP); }
     private int rightPad() { return ui(RIGHT_PAD); }
     private int rightPanelW() { return INV_W + (rightPad() * 2); }
-    private int previewColW() { return ui(PREVIEW_COL_W); }
+    private int previewColW() { return ui(usesCompactLayout() ? COMPACT_PREVIEW_COL_W : PREVIEW_COL_W); }
     private int leftInnerPad() { return ui(LEFT_INNER_PAD); }
     private int gridGap() { return ui(GRID_GAP); }
     private int pagerH() { return ui(PAGER_H); }
@@ -191,10 +196,12 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     private int gridColumns(int gridW) {
         if (gridW <= 0) return 1;
+        if (usesCompactLayout()) return MAX_GRID_COLUMNS;
         return Math.max(1, Math.min(MAX_GRID_COLUMNS, gridW / minGridCellW()));
     }
 
     private int gridCellPad(int cellW) {
+        if (usesCompactLayout()) return ui(1);
         return Math.max(ui(4), Math.min(ui(12), cellW / 10));
     }
 
@@ -265,6 +272,10 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
         final String label;
         SortMode(String label) { this.label = label; }
+    }
+
+    private Component sortButtonText() {
+        return Component.literal(usesCompactLayout() ? "Sort" : "Sort: " + sortMode.label);
     }
 
     private int computeGridCapacity() {
@@ -404,7 +415,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             return;
         }
         sortMode = mode;
-        if (sortBtn != null) sortBtn.setMessage(Component.literal("Sort: " + sortMode.label));
+        if (sortBtn != null) sortBtn.setMessage(sortButtonText());
         sortGrid();          // << only happens once per selection
         closeSortMenu();
     }
@@ -731,7 +742,12 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     @Override
     protected void init() {
-        if (MtgGuiScaleHelper.applyAutoFitGuiScale(this, STORE_GUI_SCALE, GUI_W, GUI_H)) return;
+        if (MtgGuiScaleHelper.applyAutoFitGuiScale(
+                this,
+                STORE_GUI_SCALE,
+                Math.max(GUI_W, STORE_MIN_VIEW_W),
+                Math.max(GUI_H, STORE_MIN_VIEW_H)
+        )) return;
 
         super.init();
         recomputeLayoutScale();
@@ -829,7 +845,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         int sortW = previewBoxW() - ui(12);
 
         sortBtn = this.addRenderableWidget(Button.builder(
-                Component.literal("Sort: " + sortMode.label),
+                sortButtonText(),
                 b -> toggleSortMenu()
         ).bounds(sortX, sortY, sortW, sortButtonH()).build());
 
