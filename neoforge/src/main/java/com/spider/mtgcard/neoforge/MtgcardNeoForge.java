@@ -23,6 +23,8 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.event.tick.LevelTickEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.minecraft.core.Registry;
+import net.minecraft.resources.Identifier;
 
 @Mod(Mtgcard.MOD_ID)
 public final class MtgcardNeoForge {
@@ -30,6 +32,8 @@ public final class MtgcardNeoForge {
         Mtgcard.LOGGER.info("[MtgcardNeoForge] bootstrap");
         ArtImageStorage.ensureWebpCodecsRegistered();
         MtgcardConfig.load();
+        Registry.register(net.neoforged.neoforge.registries.NeoForgeRegistries.CONDITION_SERIALIZERS,
+                Identifier.fromNamespaceAndPath(Mtgcard.MOD_ID, "mtg_game_enabled"), MtgGameEnabledCondition.CODEC);
         NeoForgeRegistries.register(modBus);
         modBus.addListener(MtgcardNeoForge::onCommonSetup);
         modBus.addListener(MtgcardNeoForge::registerPayloads);

@@ -3,6 +3,7 @@ package com.spider.mtgcard.fabric;
 import com.spider.mtgcard.ModEvents;
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.cardstore.CardStoreEnabledResourceCondition;
+import com.spider.mtgcard.cardstore.MtgGameEnabledResourceCondition;
 import com.spider.mtgcard.command.MtgRootCommand;
 import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.content.pack.PackServerEvents;
@@ -40,6 +41,7 @@ public final class MtgcardFabric implements ModInitializer {
 
         MtgcardConfig.load();
         CardStoreEnabledResourceCondition.register();
+        MtgGameEnabledResourceCondition.register();
         ArtServerPackets.registerServerReceiver();
         CardDisplayServerNetworking.registerReceivers();
 

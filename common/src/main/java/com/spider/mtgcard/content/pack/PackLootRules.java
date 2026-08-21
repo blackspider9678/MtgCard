@@ -1,6 +1,7 @@
 package com.spider.mtgcard.content.pack;
 
 import com.spider.mtgcard.config.MtgcardConfig;
+import com.spider.mtgcard.api.BoosterPackLootRegistry;
 import com.spider.mtgcard.item.ModItems;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.storage.loot.LootPool;
@@ -26,20 +27,21 @@ public final class PackLootRules {
     private static final Identifier FISHING = Identifier.fromNamespaceAndPath(MINECRAFT, "gameplay/fishing");
 
     public static List<LootPool.Builder> poolsFor(Identifier id) {
+        if (MtgcardConfig.mtgGameEnabled()) BoosterPackLootRegistry.register(ModItems.MTG_PACK, PACK_CHANCE);
         if (!MINECRAFT.equals(id.getNamespace())) {
             return List.of();
         }
 
         if (OMINOUS_VAULT.equals(id)) {
-            return List.of(packPool(2.0F, 3.0F));
+            return packPools(2.0F, 3.0F);
         }
 
         if (REGULAR_VAULT.equals(id) || REGULAR_TRIAL_SPAWNER.equals(id) || OMINOUS_TRIAL_SPAWNER.equals(id)) {
-            return List.of(packPool(1.0F, 1.0F));
+            return packPools(1.0F, 1.0F);
         }
 
         if (FISHING.equals(id)) {
-            return MtgcardConfig.fishingPackLootEnabled() ? List.of(packPool(1.0F, 1.0F)) : List.of();
+            return MtgcardConfig.fishingPackLootEnabled() ? packPools(1.0F, 1.0F) : List.of();
         }
 
         String path = id.getPath();
@@ -48,22 +50,26 @@ public final class PackLootRules {
         }
 
         if (path.startsWith(CHESTS)) {
-            return List.of(packPool(1.0F, 1.0F));
+            return packPools(1.0F, 1.0F);
         }
 
         return List.of();
     }
 
-    private static LootPool.Builder packPool(float minCount, float maxCount) {
+    private static List<LootPool.Builder> packPools(float minCount, float maxCount) {
+        return BoosterPackLootRegistry.entries().stream().map(entry -> packPool(entry, minCount, maxCount)).toList();
+    }
+
+    private static LootPool.Builder packPool(BoosterPackLootRegistry.Entry entry, float minCount, float maxCount) {
         LootPool.Builder pool = LootPool.lootPool()
                 .setRolls(ConstantValue.exactly(1.0F))
-                .when(LootItemRandomChanceCondition.randomChance(PACK_CHANCE));
+                .when(LootItemRandomChanceCondition.randomChance(entry.chance()));
 
         if (minCount == 1.0F && maxCount == 1.0F) {
-            return pool.add(LootItem.lootTableItem(ModItems.MTG_PACK));
+            return pool.add(LootItem.lootTableItem(entry.item().get()));
         }
 
-        return pool.add(LootItem.lootTableItem(ModItems.MTG_PACK)
+        return pool.add(LootItem.lootTableItem(entry.item().get())
                 .apply(SetItemCountFunction.setCount(UniformGenerator.between(minCount, maxCount))));
     }
 
