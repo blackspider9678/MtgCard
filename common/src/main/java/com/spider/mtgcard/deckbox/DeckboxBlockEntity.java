@@ -3,6 +3,7 @@ package com.spider.mtgcard.deckbox;
 
 import com.spider.mtgcard.deckcontrol.DeckControlBlockEntity;
 import com.spider.mtgcard.api.DeckboxRemovalCallbackRegistry;
+import com.spider.mtgcard.api.DeckboxStorage;
 import com.spider.mtgcard.registry.ModBlockEntities;
 import com.spider.mtgcard.util.CardStackCompactor;
 import net.minecraft.world.level.block.Block;
@@ -28,7 +29,10 @@ import net.minecraft.core.NonNullList;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
+import net.minecraft.core.registries.BuiltInRegistries;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.UUID;
 
 public class DeckboxBlockEntity extends RandomizableContainerBlockEntity {
 
@@ -52,6 +56,8 @@ public class DeckboxBlockEntity extends RandomizableContainerBlockEntity {
             .toArray();
 
     private NonNullList<ItemStack> inventory = NonNullList.withSize(INVENTORY_SIZE, ItemStack.EMPTY);
+    private @Nullable UUID deckboxId;
+    private boolean loadingExternalRecord;
 
     // tint (persisted)
     private int rgbTint = 0xFFFFFF;
@@ -109,6 +115,52 @@ public class DeckboxBlockEntity extends RandomizableContainerBlockEntity {
 
     public void markDirty() {
         setChanged();
+    }
+
+    @Override
+    public void setChanged() {
+        super.setChanged();
+        persistExternalRecord();
+    }
+
+    public UUID ensureStorageId() {
+        if (deckboxId == null) {
+            deckboxId = UUID.randomUUID();
+            super.setChanged();
+        }
+        return deckboxId;
+    }
+
+    public @Nullable UUID getStorageId() {
+        return deckboxId;
+    }
+
+    public void loadStorageId(UUID id) {
+        deckboxId = id;
+        if (level == null || level.isClientSide()) return;
+        var stored = DeckboxStorage.load(level.getServer(), level.registryAccess(), id);
+        stored.ifPresent(record -> {
+            loadingExternalRecord = true;
+            try {
+                inventory = NonNullList.withSize(INVENTORY_SIZE, ItemStack.EMPTY);
+                for (int slot = 0; slot < Math.min(INVENTORY_SIZE, record.items().size()); slot++) {
+                    inventory.set(slot, record.items().get(slot).copy());
+                }
+                super.setChanged();
+            } finally {
+                loadingExternalRecord = false;
+            }
+        });
+        if (stored.isEmpty()) {
+            // Missing records are recreated from any legacy/container data that placement supplied.
+            persistExternalRecord();
+        }
+    }
+
+    public void persistExternalRecord() {
+        if (loadingExternalRecord || deckboxId == null || level == null || level.isClientSide()) return;
+        String type = BuiltInRegistries.BLOCK.getKey(getBlockState().getBlock()).toString();
+        DeckboxStorage.save(level.getServer(), level.registryAccess(), deckboxId, type, getName().getString(), inventory);
     }
 
     private Component getDeckboxName() {
@@ -185,6 +237,7 @@ public class DeckboxBlockEntity extends RandomizableContainerBlockEntity {
         super.loadAdditional(view);
 
         rgbTint = view.getIntOr("RgbTint", 0xFFFFFF);
+        deckboxId = view.getString(DeckboxStorage.BLOCK_ID_KEY).flatMap(DeckboxBlockEntity::parseUuid).orElse(null);
 
         inventory = NonNullList.withSize(INVENTORY_SIZE, ItemStack.EMPTY);
         if (!tryLoadLootTable(view)) {
@@ -199,6 +252,7 @@ public class DeckboxBlockEntity extends RandomizableContainerBlockEntity {
         view.discard("CustomName");
 
         view.putInt("RgbTint", rgbTint);
+        if (deckboxId != null) view.putString(DeckboxStorage.BLOCK_ID_KEY, deckboxId.toString());
 
         if (!trySaveLootTable(view)) {
             ContainerHelper.saveAllItems(view, inventory, false);
@@ -277,6 +331,14 @@ public class DeckboxBlockEntity extends RandomizableContainerBlockEntity {
                     dc.onNeighborDeckboxChanged(worldPosition);
                 }
             }
+        }
+    }
+
+    private static java.util.Optional<UUID> parseUuid(String value) {
+        try {
+            return java.util.Optional.of(UUID.fromString(value));
+        } catch (IllegalArgumentException ignored) {
+            return java.util.Optional.empty();
         }
     }
 }
