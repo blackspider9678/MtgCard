@@ -266,30 +266,6 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
             put(vc, mat,  halfW, -halfH, 0f, u1, v0, fullLight, OverlayTexture.NO_OVERLAY);
         });
 
-        if (card.foil()) {
-            var sweep = com.spider.mtgcard.client.render.CardFoilUtil.computeSweep(System.currentTimeMillis(), card.texW());
-            if (sweep != null) {
-                float overlayX0 = -halfW + (halfW * 2f * sweep.u0());
-                float overlayX1 = -halfW + (halfW * 2f * sweep.u1());
-
-                matrices.pushPose();
-                matrices.translate(0f, 0f, 0.001f);
-
-                var foilLayer = RenderTypes.entityTranslucent(card.texId());
-                queue.submitCustomGeometry(matrices, foilLayer, (entry, vc) -> {
-                    Matrix4f mat = entry.pose();
-                    int fullLight = LightTexture.FULL_BRIGHT;
-
-                    put(vc, mat, overlayX0, -halfH, 0f, sweep.u0(), v0, fullLight, OverlayTexture.NO_OVERLAY, com.spider.mtgcard.client.render.CardFoilUtil.WORLD_SWEEP_ALPHA);
-                    put(vc, mat, overlayX0,  halfH, 0f, sweep.u0(), v1, fullLight, OverlayTexture.NO_OVERLAY, com.spider.mtgcard.client.render.CardFoilUtil.WORLD_SWEEP_ALPHA);
-                    put(vc, mat, overlayX1,  halfH, 0f, sweep.u1(), v1, fullLight, OverlayTexture.NO_OVERLAY, com.spider.mtgcard.client.render.CardFoilUtil.WORLD_SWEEP_ALPHA);
-                    put(vc, mat, overlayX1, -halfH, 0f, sweep.u1(), v0, fullLight, OverlayTexture.NO_OVERLAY, com.spider.mtgcard.client.render.CardFoilUtil.WORLD_SWEEP_ALPHA);
-                });
-
-                matrices.popPose();
-            }
-        }
-
         if (s.cameraDistanceSq <= COUNTER_RENDER_DISTANCE_SQR) {
             renderCounterStripOnCard(card.counters(), matrices, queue);
         }

@@ -76,30 +76,6 @@ public class CardItemRenderer implements SpecialModelRenderer<CardItemRenderer.D
             buffer.addVertex(m, 0f, 0f, 0f).setColor(0xffffffff).setUv(0f, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, 1f);
         });
 
-        if (foil) {
-            CardFoilUtil.Sweep sweep = CardFoilUtil.computeSweep(System.currentTimeMillis(), texW);
-            if (sweep != null) {
-                matrices.pushPose();
-                matrices.translate(0f, 0f, 0.001f);
-
-                RenderType foilLayer = RenderTypes.entityTranslucent(tex);
-                int foilColor = (CardFoilUtil.WORLD_SWEEP_ALPHA << 24) | 0x00FFFFFF;
-
-                queue.submitCustomGeometry(matrices, foilLayer, (matrix, buffer) -> {
-                    Matrix4f m = matrix.pose();
-                    float x0 = sweep.u0();
-                    float x1 = sweep.u1();
-
-                    buffer.addVertex(m, x1, 0f, 0f).setColor(foilColor).setUv(x1, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, 1f);
-                    buffer.addVertex(m, x1, 1f, 0f).setColor(foilColor).setUv(x1, 0f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, 1f);
-                    buffer.addVertex(m, x0, 1f, 0f).setColor(foilColor).setUv(x0, 0f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, 1f);
-                    buffer.addVertex(m, x0, 0f, 0f).setColor(foilColor).setUv(x0, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, 1f);
-                });
-
-                matrices.popPose();
-            }
-        }
-
         matrices.popPose();
     }
 
