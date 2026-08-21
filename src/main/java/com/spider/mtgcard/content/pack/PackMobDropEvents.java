@@ -61,6 +61,7 @@ public final class PackMobDropEvents {
     }
 
     private static void dropPackRewards(ServerLevel level, LivingEntity entity, MtgcardConfig cfg, boolean killedByPlayer, int bossDropCount, boolean hostileMob) {
+        if (!MtgcardConfig.mtgGameEnabled()) return;
         if (!cfg.mobPackDropsEnabled()) {
             return;
         }
