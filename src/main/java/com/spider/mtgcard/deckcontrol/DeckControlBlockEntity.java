@@ -42,6 +42,7 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedMenuP
     private @Nullable BlockPos linkedDeckboxPos = null;
     private boolean lockedLink = false; // locks to first discovered deckbox
     private final List<DeckRef> libraryOrder = new ArrayList<>();
+    private final Map<String, List<DeckRef>> namedPoolOrders = new LinkedHashMap<>();
 
     // Redstone draw
     private boolean wasPowered = false;
@@ -207,6 +208,13 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedMenuP
         return findOrLinkDeckbox() != null;
     }
 
+    private record SavedPool(String name, List<DeckRef> order) {
+        static final Codec<SavedPool> CODEC = RecordCodecBuilder.create(inst -> inst.group(
+                Codec.STRING.fieldOf("Name").forGetter(SavedPool::name),
+                DeckRef.CODEC.listOf().fieldOf("Order").forGetter(SavedPool::order)
+        ).apply(inst, SavedPool::new));
+    }
+
     public int getLibraryCount() {
         DeckboxBlockEntity db = findOrLinkDeckbox();
         if (db == null) return 0;
@@ -346,6 +354,101 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedMenuP
 
         setChanged();
         syncSelf();
+    }
+
+    /** Add-on API: shuffle one filtered deck pool without affecting any other pool. */
+    public void shufflePool(String poolId, java.util.function.Predicate<ItemStack> membership) {
+        if (level == null || level.isClientSide() || membership == null) return;
+        DeckboxBlockEntity db = findOrLinkDeckbox();
+        if (db == null) return;
+        List<DeckRef> order = reconcilePool(poolId, db, membership);
+        if (order.size() > 1) {
+            long seed = (level.getGameTime() * 31L) ^ worldPosition.asLong() ^ normalizePoolId(poolId).hashCode();
+            Collections.shuffle(order, new Random(seed));
+        }
+        setChanged();
+        syncSelf();
+    }
+
+    /** Add-on API: draw and eject the top card of one filtered deck pool. */
+    public boolean drawPoolTopAndEject(String poolId, java.util.function.Predicate<ItemStack> membership) {
+        if (level == null || level.isClientSide() || membership == null) return false;
+        DeckboxBlockEntity db = findOrLinkDeckbox();
+        if (db == null) return false;
+        List<DeckRef> order = reconcilePool(poolId, db, membership);
+        if (order.isEmpty()) return false;
+        DeckRef ref = order.remove(0);
+        ItemStack stack = db.getStack(ref.slot());
+        if (stack.isEmpty() || !membership.test(stack) || !computeKey(stack).equals(ref.key())) {
+            reconcilePool(poolId, db, membership);
+            return false;
+        }
+        ItemStack removed = db.removeStack(ref.slot());
+        if (removed.isEmpty()) return false;
+        for (List<DeckRef> other : namedPoolOrders.values()) other.removeIf(r -> r.slot() == ref.slot());
+        db.sync();
+        Direction facing = getBlockState().getValue(DeckControlBlock.FACING);
+        dropStackFromModelTop(level, worldPosition, facing, removed);
+        setChanged();
+        syncSelf();
+        return true;
+    }
+
+    /** Add-on API: move one player inventory card to the bottom of a filtered pool. */
+    public boolean recyclePlayerCardToBottom(ServerPlayer player, int inventorySlot, String poolId,
+                                             java.util.function.Predicate<ItemStack> membership) {
+        if (level == null || level.isClientSide() || player == null || membership == null) return false;
+        if (inventorySlot < 0 || inventorySlot >= player.getInventory().getContainerSize()) return false;
+        ItemStack selected = player.getInventory().getItem(inventorySlot);
+        if (selected.isEmpty() || !membership.test(selected)) return false;
+        DeckboxBlockEntity db = findOrLinkDeckbox();
+        if (db == null) return false;
+        int empty = -1;
+        for (int i = 0; i < LIBRARY_SLOTS; i++) if (db.getStack(i).isEmpty()) { empty = i; break; }
+        if (empty < 0) return false;
+        ItemStack moved = selected.copy();
+        moved.setCount(1);
+        selected.shrink(1);
+        db.setStack(empty, moved);
+        List<DeckRef> order = reconcilePool(poolId, db, membership);
+        final int destinationSlot = empty;
+        order.removeIf(r -> r.slot() == destinationSlot);
+        order.add(new DeckRef(destinationSlot, computeKey(moved), 0));
+        db.sync();
+        player.getInventory().setChanged();
+        setChanged();
+        syncSelf();
+        return true;
+    }
+
+    private List<DeckRef> reconcilePool(String poolId, DeckboxBlockEntity db,
+                                        java.util.function.Predicate<ItemStack> membership) {
+        String id = normalizePoolId(poolId);
+        List<DeckRef> current = namedPoolOrders.computeIfAbsent(id, ignored -> new ArrayList<>());
+        ArrayList<DeckRef> kept = new ArrayList<>();
+        boolean[] used = new boolean[LIBRARY_SLOTS];
+        for (DeckRef ref : current) {
+            if (ref == null || ref.slot() < 0 || ref.slot() >= LIBRARY_SLOTS || used[ref.slot()]) continue;
+            ItemStack stack = db.getStack(ref.slot());
+            if (!stack.isEmpty() && membership.test(stack) && computeKey(stack).equals(ref.key())) {
+                kept.add(ref);
+                used[ref.slot()] = true;
+            }
+        }
+        for (int slot = 0; slot < LIBRARY_SLOTS; slot++) {
+            if (used[slot]) continue;
+            ItemStack stack = db.getStack(slot);
+            if (!stack.isEmpty() && membership.test(stack)) kept.add(new DeckRef(slot, computeKey(stack), 0));
+        }
+        current.clear();
+        current.addAll(kept);
+        return current;
+    }
+
+    private static String normalizePoolId(String poolId) {
+        String id = poolId == null ? "" : poolId.trim().toLowerCase(Locale.ROOT);
+        id = id.replaceAll("[^a-z0-9_.:-]", "_");
+        return id.isBlank() ? "default" : id;
     }
 
     public List<ItemStack> takeTopCards(int n) {
@@ -798,6 +901,10 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedMenuP
         libraryOrder.clear();
         var loaded = view.read("LibraryOrder", DeckRef.CODEC.listOf()).orElse(List.of());
         libraryOrder.addAll(loaded);
+        namedPoolOrders.clear();
+        for (SavedPool pool : view.read("NamedPoolOrders", SavedPool.CODEC.listOf()).orElse(List.of())) {
+            if (pool != null) namedPoolOrders.put(normalizePoolId(pool.name()), new ArrayList<>(pool.order()));
+        }
     }
 
     @Override
@@ -813,6 +920,9 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedMenuP
         view.putInt("Cooldown", cooldownTicks);
 
         view.store("LibraryOrder", DeckRef.CODEC.listOf(), libraryOrder);
+        List<SavedPool> pools = namedPoolOrders.entrySet().stream()
+                .map(e -> new SavedPool(e.getKey(), List.copyOf(e.getValue()))).toList();
+        view.store("NamedPoolOrders", SavedPool.CODEC.listOf(), pools);
     }
 
     @Override
