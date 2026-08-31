@@ -40,7 +40,7 @@ import java.util.function.Predicate;
 
 /**
  * Custom card importer
- * - Drag PNG/JPG/WEBP images (WEBP requires webp-imageio on classpath) and/or Cockatrice XML.
+ * - Drag card images, an MSE export file, or an entire MSE export directory.
  * - Scrollable thumbnail grid (left) + edit panel (right) with a draggable scrollbar.
  * - Click a thumb to edit metadata; press "Create" to send batch to server.
  * - NEW:
@@ -1108,7 +1108,7 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
 
         // --- Banner text (on top of the window)
         ctx.drawString(this.font,
-                "Drag images (*.png, *.jpg, *.webp) or a Cockatrice XML here",
+                "Drag any Magic Set Editor export file, folder, or card images here",
                 10, 10, 0xFFEFEFEF, true);
         ctx.drawString(this.font,
                 "Images added: " + entries.size(),
@@ -1416,24 +1416,41 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
             manualUiActive = true;
         }
 
+        List<Path> expandedPaths = expandMseDrop(paths);
         List<Path> imagePaths = new ArrayList<>();
         List<XmlSource> xmlSources = new ArrayList<>();
         int metaApplied = 0;
+        int exportFiles = 0;
         int errors = 0;
 
         // Pass 1: classify + parse XML metadata (fast)
-        for (Path p : paths) {
+        for (Path p : expandedPaths) {
             String name = p.getFileName().toString();
             String lower = name.toLowerCase(Locale.ROOT);
 
             try {
                 if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp")) {
                     imagePaths.add(p);
-                } else if (lower.endsWith(".xml")) {
+                } else if (lower.endsWith(".xml") || lower.endsWith(".json")) {
                     var xml = Files.readString(p);
-                    registerCockatriceMetas(Cockatrice.parseCards(xml));
-                    metaApplied++;
-                    xmlSources.add(new XmlSource(xml, p.getParent()));
+                    List<Cockatrice.Meta> parsed = Cockatrice.parseCards(xml);
+                    if (!parsed.isEmpty()) {
+                        registerCockatriceMetas(parsed);
+                        metaApplied++;
+                    }
+                    exportFiles++;
+                    Path imageBaseDir = p.getParent();
+                    if (imageBaseDir != null) {
+                        Path companionDir = imageBaseDir.resolve(stripExt(name) + "-files");
+                        if (Files.isDirectory(companionDir)) imageBaseDir = companionDir;
+                    }
+                    if (lower.endsWith(".xml") && !parsed.isEmpty()) {
+                        xmlSources.add(new XmlSource(xml, imageBaseDir));
+                    }
+                } else if (isMseExportDescriptor(lower)) {
+                    // These formats vary by exporter. Their useful card renders were
+                    // collected while expanding the drop, even when metadata is tool-specific.
+                    exportFiles++;
                 }
             } catch (Throwable ex) {
                 errors++;
@@ -1470,7 +1487,8 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         // Status
         StringBuilder sb = new StringBuilder();
         if (!imagePaths.isEmpty()) sb.append("Queued ").append(imagePaths.size()).append(" image(s). ");
-        if (metaApplied > 0) sb.append("Applied metadata from ").append(metaApplied).append(" XML(s). ");
+        if (metaApplied > 0) sb.append("Applied metadata from ").append(metaApplied).append(" export file(s). ");
+        else if (exportFiles > 0 && imagePaths.isEmpty()) sb.append("No card images found in this export. ");
         if (errors > 0) sb.append(errors).append(" file(s) failed.");
         lastStatus = sb.toString();
 
@@ -2161,25 +2179,27 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
                 registerImageMeta(cockatriceByImageField, meta.imageFileName, meta, "image field");
             }
 
-            String collectorFile = collectorImageFileName(name, meta.collectorNumber, meta.set);
-            if (!collectorFile.isBlank()) {
+            for (String collectorFile : collectorImageFileNames(name, meta.collectorNumber, meta.set)) {
                 registerImageMeta(cockatriceByCollectorImage, collectorFile, meta, "collector number");
-                String safeCollectorFile = collectorImageFileName(cockatriceImageSafeName(name), meta.collectorNumber, meta.set);
-                if (!safeCollectorFile.equals(collectorFile)) {
-                    registerImageMeta(cockatriceByCollectorImage, safeCollectorFile, meta, "collector number");
+            }
+            String safeName = cockatriceImageSafeName(name);
+            if (!safeName.equals(name)) {
+                for (String collectorFile : collectorImageFileNames(safeName, meta.collectorNumber, meta.set)) {
+                    registerImageMeta(cockatriceByCollectorImage, collectorFile, meta, "collector number");
                 }
             }
 
             String nameKey = normalizedCardName(name);
             int count = duplicateCounts.merge(nameKey, 1, Integer::sum);
-            String legacyFile = count == 1 ? name + ".jpg" : name + "_" + count + ".jpg";
-            String safeName = cockatriceImageSafeName(name);
-            String safeLegacyFile = count == 1 ? safeName + ".jpg" : safeName + "_" + count + ".jpg";
             Map<String, ImageMetaMatch> target = count == 1 ? cockatriceByLegacyImage : cockatriceByDuplicateImage;
             String method = count == 1 ? "legacy name" : "duplicate fallback";
-            registerImageMeta(target, legacyFile, meta, method);
-            if (!safeLegacyFile.equals(legacyFile)) {
-                registerImageMeta(target, safeLegacyFile, meta, method);
+            String legacyStem = count == 1 ? name : name + "_" + count;
+            String safeLegacyStem = count == 1 ? safeName : safeName + "_" + count;
+            for (String ext : COCKATRICE_IMAGE_EXTENSIONS) {
+                registerImageMeta(target, legacyStem + ext, meta, method);
+                if (!safeLegacyStem.equals(legacyStem)) {
+                    registerImageMeta(target, safeLegacyStem + ext, meta, method);
+                }
             }
         }
     }
@@ -2225,12 +2245,21 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         if (!key.isBlank() && !keys.contains(key)) keys.add(key);
     }
 
-    private static String collectorImageFileName(String name, String collectorNumber, String setCode) {
+    private static final List<String> COCKATRICE_IMAGE_EXTENSIONS = List.of(".jpg", ".jpeg", ".png", ".webp");
+
+    private static List<String> collectorImageFileNames(String name, String collectorNumber, String setCode) {
         String n = nz(name).trim();
         String collector = nz(collectorNumber).trim();
         String set = nz(setCode).trim();
-        if (n.isBlank() || collector.isBlank() || set.isBlank()) return "";
-        return n + "_" + collector + "_" + set + ".jpg";
+        if (n.isBlank() || collector.isBlank() || set.isBlank()) return List.of();
+
+        ArrayList<String> names = new ArrayList<>(COCKATRICE_IMAGE_EXTENSIONS.size() * 2);
+        for (String ext : COCKATRICE_IMAGE_EXTENSIONS) {
+            // MSE 2.6 / Cockatrice 3 format, followed by our older compatibility format.
+            names.add(n + "_" + set + "_" + collector + ext);
+            names.add(n + "_" + collector + "_" + set + ext);
+        }
+        return names;
     }
 
     private static String cockatriceImageSafeName(String name) {
@@ -2782,36 +2811,155 @@ public final class CustomImportScreen extends Screen implements FileDropReceiver
         LocalImageMatch match = tryResolveLocalImage(meta.imageFileName, "image field", meta, xmlBaseDir, droppedByName, usedLocalImages);
         if (match != null) return match;
 
-        String collectorCandidate = collectorImageFileName(name, meta.collectorNumber, meta.set);
-        match = tryResolveLocalImage(collectorCandidate, "collector number", meta, xmlBaseDir, droppedByName, usedLocalImages);
-        if (match != null) return match;
+        for (String collectorCandidate : collectorImageFileNames(name, meta.collectorNumber, meta.set)) {
+            match = tryResolveLocalImage(collectorCandidate, "collector number", meta, xmlBaseDir, droppedByName, usedLocalImages);
+            if (match != null) return match;
+        }
 
         String safeName = cockatriceImageSafeName(name);
-        String safeCollectorCandidate = collectorImageFileName(safeName, meta.collectorNumber, meta.set);
-        if (!safeCollectorCandidate.equals(collectorCandidate)) {
-            match = tryResolveLocalImage(safeCollectorCandidate, "collector number", meta, xmlBaseDir, droppedByName, usedLocalImages);
-            if (match != null) return match;
-        }
-
-        match = tryResolveLocalImage(name + ".jpg", "legacy name", meta, xmlBaseDir, droppedByName, usedLocalImages);
-        if (match != null) return match;
-
         if (!safeName.equals(name)) {
-            match = tryResolveLocalImage(safeName + ".jpg", "legacy name", meta, xmlBaseDir, droppedByName, usedLocalImages);
-            if (match != null) return match;
-        }
-
-        int start = Math.max(2, duplicateIndex);
-        for (int i = start; i < start + 100; i++) {
-            match = tryResolveLocalImage(name + "_" + i + ".jpg", "duplicate fallback", meta, xmlBaseDir, droppedByName, usedLocalImages);
-            if (match != null) return match;
-            if (!safeName.equals(name)) {
-                match = tryResolveLocalImage(safeName + "_" + i + ".jpg", "duplicate fallback", meta, xmlBaseDir, droppedByName, usedLocalImages);
+            for (String safeCollectorCandidate : collectorImageFileNames(safeName, meta.collectorNumber, meta.set)) {
+                match = tryResolveLocalImage(safeCollectorCandidate, "collector number", meta, xmlBaseDir, droppedByName, usedLocalImages);
                 if (match != null) return match;
             }
         }
 
+        // MSE can preserve otherwise invisible whitespace in the rendered filename while
+        // XML text parsing trims it. The set/collector suffix is still authoritative.
+        match = tryResolveLocalImageByCollectorSuffix(meta, xmlBaseDir, droppedByName, usedLocalImages);
+        if (match != null) return match;
+
+        for (String ext : COCKATRICE_IMAGE_EXTENSIONS) {
+            match = tryResolveLocalImage(name + ext, "legacy name", meta, xmlBaseDir, droppedByName, usedLocalImages);
+            if (match != null) return match;
+            if (!safeName.equals(name)) {
+                match = tryResolveLocalImage(safeName + ext, "legacy name", meta, xmlBaseDir, droppedByName, usedLocalImages);
+                if (match != null) return match;
+            }
+        }
+
+        int start = Math.max(2, duplicateIndex);
+        for (int i = start; i < start + 100; i++) {
+            for (String ext : COCKATRICE_IMAGE_EXTENSIONS) {
+                match = tryResolveLocalImage(name + "_" + i + ext, "duplicate fallback", meta, xmlBaseDir, droppedByName, usedLocalImages);
+                if (match != null) return match;
+                if (!safeName.equals(name)) {
+                    match = tryResolveLocalImage(safeName + "_" + i + ext, "duplicate fallback", meta, xmlBaseDir, droppedByName, usedLocalImages);
+                    if (match != null) return match;
+                }
+            }
+        }
+
         return null;
+    }
+
+    private static boolean isCardImage(String lowerName) {
+        return lowerName.endsWith(".png") || lowerName.endsWith(".jpg")
+                || lowerName.endsWith(".jpeg") || lowerName.endsWith(".webp");
+    }
+
+    private static boolean isMseExportDescriptor(String lowerName) {
+        return lowerName.endsWith(".xml") || lowerName.endsWith(".json")
+                || lowerName.endsWith(".txt") || lowerName.endsWith(".dat")
+                || lowerName.endsWith(".html") || lowerName.endsWith(".htm");
+    }
+
+    /**
+     * Expands a dropped MSE export directory, or the directory containing a dropped
+     * exporter descriptor, so exporters that put card renders in img/, cardimages/,
+     * a set-code folder, or beside the descriptor all work without special cases.
+     */
+    private static List<Path> expandMseDrop(List<Path> dropped) {
+        LinkedHashSet<Path> files = new LinkedHashSet<>();
+        LinkedHashSet<Path> scanRoots = new LinkedHashSet<>();
+        for (Path path : dropped) {
+            if (path == null) continue;
+            Path normalized = path.toAbsolutePath().normalize();
+            if (Files.isDirectory(normalized)) {
+                scanRoots.add(normalized);
+            } else if (Files.isRegularFile(normalized)) {
+                files.add(normalized);
+                String lower = normalized.getFileName().toString().toLowerCase(Locale.ROOT);
+                if (isMseExportDescriptor(lower) && normalized.getParent() != null) {
+                    scanRoots.add(normalized.getParent());
+                }
+            }
+        }
+
+        for (Path root : scanRoots) {
+            try (var walk = Files.walk(root, 5)) {
+                walk.filter(Files::isRegularFile)
+                        .limit(10_000)
+                        .filter(CustomImportScreen::isUsefulMseExportFile)
+                        .map(path -> path.toAbsolutePath().normalize())
+                        .forEach(files::add);
+            } catch (IOException ignored) {}
+        }
+        return new ArrayList<>(files);
+    }
+
+    private static boolean isUsefulMseExportFile(Path path) {
+        if (path == null || path.getFileName() == null) return false;
+        String lower = path.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (isMseExportDescriptor(lower)) return true;
+        if (!isCardImage(lower)) return false;
+        String stem = stripExt(lower);
+        // MSE exporters also emit UI assets and thumbnails that are not cards.
+        return !stem.equals("icon") && !stem.equals("logo") && !stem.equals("preview")
+                && !stem.startsWith("card-preview");
+    }
+
+    private static LocalImageMatch tryResolveLocalImageByCollectorSuffix(Cockatrice.Meta meta,
+                                                                          Path xmlBaseDir,
+                                                                          Map<String, Path> droppedByName,
+                                                                          Set<String> usedLocalImages) {
+        String set = nz(meta == null ? "" : meta.set).trim();
+        String collector = nz(meta == null ? "" : meta.collectorNumber).trim();
+        if (set.isBlank() || collector.isBlank()) return null;
+
+        ArrayList<String> suffixes = new ArrayList<>(COCKATRICE_IMAGE_EXTENSIONS.size());
+        for (String ext : COCKATRICE_IMAGE_EXTENSIONS) {
+            suffixes.add(("_" + set + "_" + collector + ext).toLowerCase(Locale.ROOT));
+        }
+
+        if (droppedByName != null) {
+            for (Path path : droppedByName.values()) {
+                LocalImageMatch found = collectorSuffixMatch(path, suffixes, usedLocalImages);
+                if (found != null) return found;
+            }
+        }
+
+        if (xmlBaseDir != null) {
+            LocalImageMatch found = findCollectorSuffixInDirectory(xmlBaseDir, suffixes, usedLocalImages);
+            if (found != null) return found;
+            found = findCollectorSuffixInDirectory(xmlBaseDir.resolve(set), suffixes, usedLocalImages);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private static LocalImageMatch findCollectorSuffixInDirectory(Path dir,
+                                                                   List<String> suffixes,
+                                                                   Set<String> usedLocalImages) {
+        if (dir == null || !Files.isDirectory(dir)) return null;
+        try (var children = Files.newDirectoryStream(dir)) {
+            for (Path child : children) {
+                LocalImageMatch found = collectorSuffixMatch(child, suffixes, usedLocalImages);
+                if (found != null) return found;
+            }
+        } catch (IOException ignored) {}
+        return null;
+    }
+
+    private static LocalImageMatch collectorSuffixMatch(Path path,
+                                                         List<String> suffixes,
+                                                         Set<String> usedLocalImages) {
+        if (path == null || path.getFileName() == null || !Files.isRegularFile(path)) return null;
+        String lower = path.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (suffixes.stream().noneMatch(lower::endsWith)) return null;
+        String key = localPathKey(path);
+        if (!usedLocalImages.add(key)) return null;
+        return new LocalImageMatch(path, path.getFileName().toString(), "collector suffix");
     }
 
     private static LocalImageMatch tryResolveLocalImage(String sourceFileName,
