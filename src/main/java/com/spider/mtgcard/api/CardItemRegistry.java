@@ -49,6 +49,17 @@ public final class CardItemRegistry {
         return get(game).orElse(defaultCardItem());
     }
 
+    /** True for any concrete card item registered by MTGcard or an add-on. */
+    public static synchronized boolean isCard(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        Item candidate = stack.getItem();
+        for (Supplier<? extends Item> supplier : CARD_ITEMS.values()) {
+            Item item = supplier.get();
+            if (item != null && item == candidate) return true;
+        }
+        return false;
+    }
+
     public static Item itemForSerializedEntry(CompoundTag entry) {
         if (entry != null) {
             String itemId = entry.getString("item").orElse("");

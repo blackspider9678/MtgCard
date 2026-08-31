@@ -1,6 +1,7 @@
 package com.spider.mtgcard;
 
 import com.spider.mtgcard.api.CardItemRegistry;
+import com.spider.mtgcard.api.BuiltinSleeves;
 import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.cardstore.CardStoreEnabledResourceCondition;
 import com.spider.mtgcard.cardstore.MtgGameEnabledResourceCondition;
@@ -20,6 +21,7 @@ import com.spider.mtgcard.net.*;
 import com.spider.mtgcard.registry.ModBlockEntities;
 import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.screen.ModScreenHandlers;
+import com.spider.mtgcard.sleeve.SleeveCustomizerPackets;
 import com.spider.mtgcard.trade.ModTrades;
 
 import com.spider.mtgcard.util.ArtImageStorage;
@@ -40,6 +42,7 @@ public final class Mtgcard implements ModInitializer {
 
         // Register custom item data components before resource reloads or server-side crafting can reference them.
         ModDataComponents.init();
+        SleeveCustomizerPackets.registerTypes();
         ModLootFunctions.init();
 
         // 1) Register ALL payload CODECs (safe on both sides, must happen before receiver registration)
@@ -56,6 +59,7 @@ public final class Mtgcard implements ModInitializer {
         // 4) Register server-side networking receivers (must be after types)
         ModPayloads.registerServerReceivers();
         CounterPackets.registerReceivers();
+        SleeveCustomizerPackets.registerServer();
 
         // Other server/common systems
         MtgcardConfig.load();
@@ -79,6 +83,7 @@ public final class Mtgcard implements ModInitializer {
         ModEntities.init();
         ModItems.initialize();
         CardItemRegistry.register(TcgGameRegistry.MTG, ModItems.CARD);
+        BuiltinSleeves.init();
         ModTrades.init();
         ModItemGroup.register();
 
