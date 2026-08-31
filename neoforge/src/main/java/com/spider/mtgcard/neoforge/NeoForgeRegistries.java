@@ -116,6 +116,7 @@ public final class NeoForgeRegistries {
             event.register(Registries.MENU, id("card_store"), () -> ModScreenHandlers.CARD_STORE);
             event.register(Registries.MENU, id("card_database_sh"), () -> ModScreenHandlers.CARD_DB);
             event.register(Registries.MENU, id("dice_customizer"), () -> ModScreenHandlers.DICE_CUSTOMIZER);
+            event.register(Registries.MENU, id("sleeve_customizer"), () -> ModScreenHandlers.SLEEVE_CUSTOMIZER);
             return;
         }
 

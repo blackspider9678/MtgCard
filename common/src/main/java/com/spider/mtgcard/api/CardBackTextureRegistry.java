@@ -38,6 +38,13 @@ public final class CardBackTextureRegistry {
     }
 
     public static Identifier textureForStackOrDefault(ItemStack stack) {
+        Identifier sleeve = CardSleeves.get(stack).map(CardSleeve::backTexture).orElse(null);
+        if (sleeve != null) return sleeve;
+        return originalTextureForStackOrDefault(stack);
+    }
+
+    /** The card's own normal back, deliberately ignoring cosmetic sleeve data. */
+    public static Identifier originalTextureForStackOrDefault(ItemStack stack) {
         Identifier explicit = explicitTexture(stack);
         if (explicit != null) return explicit;
 

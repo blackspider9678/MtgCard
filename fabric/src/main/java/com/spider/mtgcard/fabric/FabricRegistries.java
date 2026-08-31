@@ -116,6 +116,7 @@ public final class FabricRegistries {
         Registry.register(BuiltInRegistries.MENU, id("card_store"), ModScreenHandlers.CARD_STORE);
         Registry.register(BuiltInRegistries.MENU, id("card_database_sh"), ModScreenHandlers.CARD_DB);
         Registry.register(BuiltInRegistries.MENU, id("dice_customizer"), ModScreenHandlers.DICE_CUSTOMIZER);
+        Registry.register(BuiltInRegistries.MENU, id("sleeve_customizer"), ModScreenHandlers.SLEEVE_CUSTOMIZER);
     }
 
     private static void registerParticles() {

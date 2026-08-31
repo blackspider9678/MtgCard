@@ -11,6 +11,7 @@ import com.spider.mtgcard.ModEntities;
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.client.gui.*;
+import com.spider.mtgcard.client.sleeve.SleeveClientHooks;
 import com.spider.mtgcard.client.display.CardDisplayEntityRenderer;
 import com.spider.mtgcard.client.render.CardDatabaseBlockEntityRenderer;
 
@@ -68,6 +69,8 @@ public final class MtgcardClient implements ClientModInitializer {
         MenuScreens.register(ModScreenHandlers.GRAVEYARD, GraveyardScreen::new);
         MenuScreens.register(ModScreenHandlers.CARD_STORE, CardStoreScreen::new);
         MenuScreens.register(ModScreenHandlers.DICE_CUSTOMIZER, DiceCustomizerScreen::new);
+        MenuScreens.register(ModScreenHandlers.SLEEVE_CUSTOMIZER, SleeveCustomizerScreen::new);
+        SleeveClientHooks.init();
 
         GuideBookClientNet.init();
         ModKeybinds.init();
