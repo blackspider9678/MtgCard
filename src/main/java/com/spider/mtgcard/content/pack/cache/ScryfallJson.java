@@ -14,6 +14,7 @@ final class ScryfallJson {
         ScryfallModels.Card c = new ScryfallModels.Card();
 
         c.id               = getStr(o, "id");
+        c.lang             = getStr(o, "lang");
         c.oracleId         = getStr(o, "oracle_id");
         c.name             = getStr(o, "name");
         c.set              = getStr(o, "set");
@@ -169,6 +170,7 @@ final class ScryfallJson {
         // Minimal serialization matching parseCard expectations
         JsonObject o = new JsonObject();
         put(o,"id",c.id);
+        put(o,"lang",c.lang);
         put(o,"oracle_id",c.oracleId);
         put(o,"name",c.name);
         put(o,"set",c.set);
