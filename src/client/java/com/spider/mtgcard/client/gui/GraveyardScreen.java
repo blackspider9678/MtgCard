@@ -4,9 +4,7 @@ import com.spider.mtgcard.client.compat.LegacyContainerScreen;
 import com.spider.mtgcard.client.compat.MtgGuiScaleHelper;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.graveyard.GraveyardScreenHandler;
-import com.spider.mtgcard.net.payload.GraveyardActionPayload;
 import com.spider.mtgcard.util.TcgCardMeta;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -79,15 +77,19 @@ public class GraveyardScreen extends LegacyContainerScreen<GraveyardScreenHandle
         int btnY = this.topPos + 6;
 
         exileAllBtn = addRenderableWidget(Button.builder(Component.literal("Exile All"), b -> {
-            ClientPlayNetworking.send(new GraveyardActionPayload(
-                    this.menu.pos, this.menu.containerId, GraveyardActionPayload.Action.EXILE_ALL
-            ));
+            if (this.minecraft != null && this.minecraft.gameMode != null) {
+                this.minecraft.gameMode.handleInventoryButtonClick(
+                        this.menu.containerId, GraveyardScreenHandler.BUTTON_EXILE_ALL
+                );
+            }
         }).bounds(exileBtnX, btnY, 70, 16).build());
 
         returnAllBtn = addRenderableWidget(Button.builder(Component.literal("Return All"), b -> {
-            ClientPlayNetworking.send(new GraveyardActionPayload(
-                    this.menu.pos, this.menu.containerId, GraveyardActionPayload.Action.RETURN_ALL
-            ));
+            if (this.minecraft != null && this.minecraft.gameMode != null) {
+                this.minecraft.gameMode.handleInventoryButtonClick(
+                        this.menu.containerId, GraveyardScreenHandler.BUTTON_RETURN_ALL
+                );
+            }
         }).bounds(returnBtnX, btnY, 78, 16).build());
 
         updateButtonStates();
