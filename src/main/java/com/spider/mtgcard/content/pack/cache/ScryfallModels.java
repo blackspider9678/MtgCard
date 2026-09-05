@@ -7,6 +7,7 @@ import java.util.Map;
 public final class ScryfallModels {
     public static final class Card {
         public String id;
+        public String lang;
         public String oracleId;
         public String name;
         public String set;

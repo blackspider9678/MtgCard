@@ -188,23 +188,28 @@ public final class CardStorePurchaseService {
             return;
         }
 
-        // ---- Scryfall async fetch for the scry lines ----
-        List<CompletableFuture<ScryfallModels.Card>> futures = new ArrayList<>(scryLines.size());
-        for (var l : scryLines) {
-            String setCode = l.setCode();
-            String collectorNumber = l.collectorNumber();
-            futures.add(ScryfallExactFetch.fetchBySetCollectorAsync(world, setCode, collectorNumber)
-                    .exceptionally(ex -> {
-                        LOGGER.warn("Card store fetch failed for {}/{}", setCode, collectorNumber, ex);
-                        return null;
-                    }));
-        }
-
-        CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).whenComplete((v, ex) -> {
+        // Reuse recent server lookups and fetch cache misses one at a time. The full
+        // quote still completes before charging or printing any part of the order.
+        var reservation = store.beginPreparingPurchase();
+        if (reservation == null) return;
+        record Printing(String set, String collector) {}
+        var keys = scryLines.stream().map(l -> new Printing(l.setCode(), l.collectorNumber())).toList();
+        SequentialPurchaseLookup.resolve(keys, key -> {
+                if (reservation.isCancelled()) throw new java.util.concurrent.CancellationException();
+                return ScryfallExactFetch.fetchBySetCollectorAsync(world, key.set(), key.collector())
+                        .exceptionally(error -> {
+                            LOGGER.warn("Card store fetch failed for {}/{}", key.set(), key.collector(), error);
+                            return null;
+                        });
+                })
+                .whenComplete((cards, ex) -> {
             server.execute(() -> {
-                List<ScryfallModels.Card> cards = new ArrayList<>(futures.size());
-                for (var f : futures) {
-                    cards.add(f.getNow(null));
+                if (!store.finishPreparingPurchase(reservation)) return;
+                if (server.getPlayerList().getPlayer(player.getUUID()) != player) return;
+                if (ex != null) {
+                    LOGGER.warn("Card store purchase lookup failed", ex);
+                    player.sendSystemMessage(Component.literal("Failed fetching cards from Scryfall."), true);
+                    return;
                 }
 
                 int totalItems = 0;
@@ -327,12 +332,27 @@ public final class CardStorePurchaseService {
         }
 
         ServerLevel world = (ServerLevel) player.level();
-        provider.preparePurchase(
-                        new CardStoreProviderRegistry.SearchContext(server, world, player, store, store.getBlockPos()),
-                        purchaseLines
-                )
+        var reservation = store.beginPreparingPurchase();
+        if (reservation == null) return;
+        var context = new CardStoreProviderRegistry.SearchContext(server, world, player, store, store.getBlockPos());
+        SequentialPurchaseLookup.resolve(purchaseLines, line -> {
+                    if (reservation.isCancelled()) throw new java.util.concurrent.CancellationException();
+                    return provider.preparePurchase(context, List.of(line));
+                })
+                .thenApply(results -> {
+                    var entries = new ArrayList<CardStoreProviderRegistry.PurchaseEntry>();
+                    String message = "No cards could be resolved.";
+                    for (var result : results) {
+                        if (result == null) continue;
+                        if (result.ok()) entries.addAll(result.entries());
+                        else if (!result.message().isBlank()) message = result.message();
+                    }
+                    return new CardStoreProviderRegistry.PurchaseResult(!entries.isEmpty(), message, entries);
+                })
                 .exceptionally(err -> CardStoreProviderRegistry.PurchaseResult.empty("Purchase failed."))
                 .whenComplete((result, ex) -> server.execute(() -> {
+                    if (!store.finishPreparingPurchase(reservation)) return;
+                    if (server.getPlayerList().getPlayer(player.getUUID()) != player) return;
                     CardStoreProviderRegistry.PurchaseResult safe = result == null
                             ? CardStoreProviderRegistry.PurchaseResult.empty("Purchase failed.")
                             : result;

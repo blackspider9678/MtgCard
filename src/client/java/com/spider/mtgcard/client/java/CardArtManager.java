@@ -65,14 +65,20 @@ public final class CardArtManager {
     // NEW: request queue
     // -----------------------
     private record PendingReq(String requestKey, String game, String artKey, String url, String fileName, String fallbackKeys, String setCode) {}
+    private record PendingDiskLoad(String textureKey, Path file) {}
 
     private static final ConcurrentLinkedQueue<PendingReq> PENDING = new ConcurrentLinkedQueue<>();
+    private static final ConcurrentLinkedQueue<PendingDiskLoad> PENDING_DISK_LOADS = new ConcurrentLinkedQueue<>();
     private static final Set<String> QUEUED = ConcurrentHashMap.newKeySet();
     private static final Set<String> LOADING = ConcurrentHashMap.newKeySet();
+    private static final AtomicInteger ACTIVE_DISK_LOADS = new AtomicInteger();
 
-    // rate limits (tune these)
-    private static final int MAX_SENDS_PER_TICK = 8;
-    private static final int MAX_INFLIGHT = 24;
+    // Keep initial container loads gradual. Image decode/upload is expensive enough that
+    // even a small burst is visible when a deckbox or card database first opens.
+    private static final int MAX_SENDS_PER_TICK = 1;
+    private static final int MAX_INFLIGHT = 4;
+    private static final int MAX_DISK_LOADS_PER_TICK = 1;
+    private static final int MAX_ACTIVE_DISK_LOADS = 2;
     private static final long REQUEST_COOLDOWN_MS = 1500;
 
     private static boolean shouldRequestNow(String artKey) {
@@ -139,6 +145,8 @@ public final class CardArtManager {
         var mc = Minecraft.getInstance();
         if (mc == null) return;
 
+        pumpDiskLoads();
+
         // Only pump when we’re in-world & networking is live
         if (mc.player == null || mc.getConnection() == null) return;
 
@@ -165,9 +173,23 @@ public final class CardArtManager {
         }
     }
 
+    private static void pumpDiskLoads() {
+        int started = 0;
+        while (started < MAX_DISK_LOADS_PER_TICK
+                && ACTIVE_DISK_LOADS.get() < MAX_ACTIVE_DISK_LOADS) {
+            PendingDiskLoad pending = PENDING_DISK_LOADS.poll();
+            if (pending == null) break;
+
+            ACTIVE_DISK_LOADS.incrementAndGet();
+            started++;
+            submitDiskLoad(pending);
+        }
+    }
+
     /** Clears queued/inflight state (call on disconnect/world switch if you want). */
     public static void clearRequestState() {
         PENDING.clear();
+        PENDING_DISK_LOADS.clear();
         QUEUED.clear();
         IN_FLIGHT.clear();
         LOADING.clear();
@@ -951,6 +973,12 @@ public final class CardArtManager {
             return;
         }
 
+        PENDING_DISK_LOADS.add(new PendingDiskLoad(artKey, file));
+    }
+
+    private static void submitDiskLoad(PendingDiskLoad pending) {
+        String artKey = pending.textureKey();
+        Path file = pending.file();
         IO.submit(() -> {
             NativeImage img = null;
             try (var in = Files.newInputStream(file)) {
@@ -965,6 +993,7 @@ public final class CardArtManager {
                         bindTexture(artKey, finalImg);
                     } finally {
                         LOADING.remove(artKey);
+                        ACTIVE_DISK_LOADS.decrementAndGet();
                     }
                 });
             } catch (Throwable t) {
@@ -973,6 +1002,7 @@ public final class CardArtManager {
                 }
                 removeCorruptCachedArt(artKey, file, t);
                 LOADING.remove(artKey);
+                ACTIVE_DISK_LOADS.decrementAndGet();
             }
         });
     }
