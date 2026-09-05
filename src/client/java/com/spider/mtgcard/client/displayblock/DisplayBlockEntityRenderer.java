@@ -236,7 +236,8 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
                     && !s.isDead;
 
             collectCounterEntries(st, s.counters);
-            s.showCounters = !s.isDead && !s.counters.isEmpty();
+            s.showCounters = (area >= MIN_BLOCKS_FOR_COMMANDER)
+                    && !s.isDead && !s.counters.isEmpty();
 
 
             if (s.showCommander) {
