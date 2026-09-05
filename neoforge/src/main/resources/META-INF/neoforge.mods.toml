@@ -7,7 +7,7 @@ modId = "mtgcard"
 version = "${version}"
 displayName = "MtgCard"
 authors = "Spider"
-description = '''satisfactory oreposits in the world of minecraft'''
+description = '''Magic: The Gathering tcg'''
 
 [[mixins]]
 config = "mtgcard.mousetweaks.mixins.json"

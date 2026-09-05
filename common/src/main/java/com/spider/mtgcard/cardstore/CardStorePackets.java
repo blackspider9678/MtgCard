@@ -1093,15 +1093,8 @@ public final class CardStorePackets {
 
         for (TcgGameRegistry.Entry entry : games) {
             String game = entry.id();
-            CompletableFuture<CardStoreProviderRegistry.SearchPrintsResult> future;
-            if (TcgGameRegistry.MTG.equals(game)) {
-                future = searchMtgPrintsAsync(server, game, query, page, pageSize);
-            } else {
-                CardStoreProviderRegistry.Provider provider = CardStoreProviderRegistry.get(game).orElse(null);
-                if (provider == null) continue;
-                future = provider.searchPrints(context, query, page, pageSize)
-                        .exceptionally(err -> CardStoreProviderRegistry.SearchPrintsResult.empty("Search failed.", page));
-            }
+            CompletableFuture<CardStoreProviderRegistry.SearchPrintsResult> future =
+                    searchPrintsPrefix(context, game, query, 1, page, pageSize, new ArrayList<>());
 
             futures.add(future
                     .exceptionally(err -> CardStoreProviderRegistry.SearchPrintsResult.empty("Search failed.", page))
@@ -1123,7 +1116,7 @@ public final class CardStorePackets {
                 .whenComplete((v, ex) -> server.execute(() -> {
                     int total = 0;
                     boolean hasMore = false;
-                    ArrayList<SearchPrintsS2C.Entry> entries = new ArrayList<>();
+                    ArrayList<List<SearchPrintsS2C.Entry>> providerEntries = new ArrayList<>();
 
                     for (CompletableFuture<GamePrints> future : futures) {
                         GamePrints gamePrints = future.getNow(null);
@@ -1131,9 +1124,11 @@ public final class CardStorePackets {
 
                         CardStoreProviderRegistry.SearchPrintsResult result = gamePrints.result();
                         int resultTotal = Math.max(result.total(), result.entries().size());
-                        total = Math.min(Integer.MAX_VALUE, total + resultTotal);
+                        total = (int) Math.min(Integer.MAX_VALUE, (long) total + resultTotal);
                         hasMore = hasMore || result.hasMore();
 
+                        ArrayList<SearchPrintsS2C.Entry> entries = new ArrayList<>();
+                        providerEntries.add(entries);
                         for (CardStoreProviderRegistry.PrintEntry print : result.entries()) {
                             entries.add(new SearchPrintsS2C.Entry(
                                     gamePrints.game(),
@@ -1145,23 +1140,10 @@ public final class CardStorePackets {
                         }
                     }
 
-                    entries.sort((a, b) -> {
-                        int byGame = String.CASE_INSENSITIVE_ORDER.compare(a.game(), b.game());
-                        if (byGame != 0) return byGame;
-                        String an = a.stack().getHoverName().getString();
-                        String bn = b.stack().getHoverName().getString();
-                        int byName = String.CASE_INSENSITIVE_ORDER.compare(an, bn);
-                        if (byName != 0) return byName;
-                        int bySet = String.CASE_INSENSITIVE_ORDER.compare(a.setCode(), b.setCode());
-                        if (bySet != 0) return bySet;
-                        return String.CASE_INSENSITIVE_ORDER.compare(a.collectorNumber(), b.collectorNumber());
-                    });
-
-                    if (entries.size() > pageSize) {
-                        entries = new ArrayList<>(entries.subList(0, pageSize));
-                    }
-
-                    hasMore = hasMore || total > page * pageSize;
+                    // Slice the combined sequence, not each game independently. The client
+                    // applies the selected sort to this mixed page.
+                    List<SearchPrintsS2C.Entry> entries = CardStoreSearchPage.slice(providerEntries, page, pageSize);
+                    hasMore = hasMore || total > (long) page * pageSize;
                     boolean ok = !entries.isEmpty();
                     String msg = ok ? ("Loaded " + entries.size() + " results.") : "No results.";
 
@@ -1176,6 +1158,35 @@ public final class CardStorePackets {
                     ServerPlayNetworking.send(player, new SearchPrintsDoneS2C(
                             storePos, TcgGameRegistry.ALL_GAMES, reqId, ok, msg, page, total, hasMore));
                 }));
+    }
+
+    private static CompletableFuture<CardStoreProviderRegistry.SearchPrintsResult> searchPrintsPrefix(
+            CardStoreProviderRegistry.SearchContext context, String game, String query,
+            int providerPage, int throughPage, int pageSize,
+            ArrayList<CardStoreProviderRegistry.PrintEntry> entries
+    ) {
+        CompletableFuture<CardStoreProviderRegistry.SearchPrintsResult> future;
+        try {
+            if (TcgGameRegistry.MTG.equals(game)) {
+                future = searchMtgPrintsAsync(context.server(), game, query, providerPage, pageSize);
+            } else {
+                var provider = CardStoreProviderRegistry.get(game).orElseThrow();
+                future = provider.searchPrints(context, query, providerPage, pageSize);
+            }
+        } catch (Exception ex) {
+            future = CompletableFuture.completedFuture(
+                    CardStoreProviderRegistry.SearchPrintsResult.empty("Search failed.", providerPage));
+        }
+        return future.exceptionally(err -> CardStoreProviderRegistry.SearchPrintsResult.empty("Search failed.", providerPage))
+                .thenCompose(result -> {
+                    entries.addAll(result.entries());
+                    if (result.hasMore() && providerPage < throughPage) {
+                        return searchPrintsPrefix(context, game, query, providerPage + 1, throughPage, pageSize, entries);
+                    }
+                    return CompletableFuture.completedFuture(new CardStoreProviderRegistry.SearchPrintsResult(
+                            !entries.isEmpty(), result.message(), result.canonicalName(), throughPage,
+                            result.total(), result.hasMore(), entries));
+                });
     }
 
     private static CompletableFuture<CardStoreProviderRegistry.SearchPrintsResult> searchMtgPrintsAsync(
