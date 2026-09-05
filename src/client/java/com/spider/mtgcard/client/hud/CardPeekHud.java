@@ -114,14 +114,15 @@ public final class CardPeekHud implements HudRenderCallback {
         CardArtManager.TextureRef texRef = CardArtManager.getOrRequestFace(stack, face);
         if (texRef == null || texRef.id() == null) return;
 
+        int sw = ctx.guiWidth();
         int sh = ctx.guiHeight();
 
         float eased = smoothstep(t);
 
-        // Slide in from offscreen left
-        float x = lerp(-PREVIEW_W - PAD, PAD, eased);
+        // Slide in from offscreen right, clear of Minecraft's bottom-left chat area.
+        float x = lerp(sw + PAD, sw - PREVIEW_W - PAD, eased);
 
-        // Bottom-left, lifted above hotbar
+        // Bottom-right, lifted above hotbar
         float y = sh - PREVIEW_H - PAD - HOTBAR_LIFT;
 
         // Fade with slide
