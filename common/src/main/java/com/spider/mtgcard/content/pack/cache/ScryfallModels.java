@@ -7,6 +7,7 @@ import java.util.Optional;
 /** Minimal “shape” you need for card NBT. Backed by your DB rows. */
 public final class ScryfallModels {
     public static final class Card {
+        public String lang;
         public String id;                 // scryfall id for this print
         public String oracleId;           // oracle id (rules ref)
         public String name;

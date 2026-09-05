@@ -13,12 +13,30 @@ import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 
 public final class ScryfallExactFetch {
+    private record PrintingKey(String set, String collector, String language) {
+        PrintingKey {
+            set = set == null ? "" : set.trim().toLowerCase(Locale.ROOT);
+            collector = collector == null ? "" : collector.trim().toLowerCase(Locale.ROOT);
+            language = language == null || language.isBlank() ? "en" : language.trim().toLowerCase(Locale.ROOT);
+        }
+    }
+
+    // Reuse server-fetched search/import data at checkout, without retaining stale prices indefinitely.
+    private static final RecentPrintingCache<PrintingKey, ScryfallModels.Card> RECENT =
+            new RecentPrintingCache<>(4096, java.util.concurrent.TimeUnit.MINUTES.toNanos(10),
+                    System::nanoTime, c -> c != null && c.id != null && !c.id.isBlank());
 
     private static String enc(String s) {
         return URLEncoder.encode(s, StandardCharsets.UTF_8);
     }
 
     public static CompletableFuture<ScryfallModels.Card> fetchBySetCollectorAsync(ServerLevel world, String setCode, String collectorNumber) {
+        String language = MtgcardConfig.get().Card_Language;
+        PrintingKey key = new PrintingKey(setCode, collectorNumber, language);
+        return RECENT.getOrFetch(key, () -> fetchUncached(setCode, collectorNumber, key.language()));
+    }
+
+    private static CompletableFuture<ScryfallModels.Card> fetchUncached(String setCode, String collectorNumber, String language) {
         String set = (setCode == null) ? "" : setCode.trim().toLowerCase(Locale.ROOT);
 
         // Keep collector number case intact.
@@ -26,7 +44,7 @@ public final class ScryfallExactFetch {
 
         final String baseUrl = "https://api.scryfall.com/cards/" + enc(set) + "/" + enc(cn);
 
-        String lang = MtgcardConfig.get().Card_Language;
+        String lang = language;
         lang = (lang == null) ? "" : lang.trim().toLowerCase(Locale.ROOT);
 
         final String searchUrl = "https://api.scryfall.com/cards/search?q="
@@ -97,7 +115,10 @@ public final class ScryfallExactFetch {
                 }
 
                 List<ScryfallModels.Card> got = ScryfallJson.parseCollection(resp);
-                if (got != null && !got.isEmpty()) all.addAll(got);
+                if (got != null && !got.isEmpty()) {
+                    rememberCollection(got);
+                    all.addAll(got);
+                }
             }
 
             return all;
@@ -138,11 +159,23 @@ public final class ScryfallExactFetch {
                 }
 
                 List<ScryfallModels.Card> got = ScryfallJson.parseCollection(resp);
-                if (got != null && !got.isEmpty()) all.addAll(got);
+                if (got != null && !got.isEmpty()) {
+                    rememberCollection(got);
+                    all.addAll(got);
+                }
             }
 
             return all;
         });
+    }
+
+    private static void rememberCollection(List<ScryfallModels.Card> cards) {
+        for (var card : cards) {
+            // Only reuse the actual returned language; a collection result must not
+            // bypass the configured language/fallback lookup for a different language.
+            if (card == null || card.lang == null || card.lang.isBlank()) continue;
+            RECENT.put(new PrintingKey(card.set, card.collectorNumber, card.lang), card);
+        }
     }
 
     private ScryfallExactFetch() {}

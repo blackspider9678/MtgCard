@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 public class CardStoreBlockEntity extends BlockEntity implements ExtendedMenuProvider<CardStoreScreenHandler.OpenData> {
 
@@ -44,6 +45,7 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedMenuPro
     private final Deque<DeliveryEntry> queue = new ArrayDeque<>();
     private int nextPrintTicks = 0;
     private boolean delivering = false;
+    private @Nullable CompletableFuture<Void> preparingPurchase;
 
     private final Map<UUID, List<CardStoreScreenHandler.CartEntryData>> playerCarts = new HashMap<>();
     private final Map<UUID, String> playerSelectedGames = new HashMap<>();
@@ -77,7 +79,32 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedMenuPro
     }
 
     public boolean isDelivering() {
-        return delivering;
+        return delivering || preparingPurchase != null;
+    }
+
+    @Nullable
+    CompletableFuture<Void> beginPreparingPurchase() {
+        if (isDelivering()) return null;
+        preparingPurchase = new CompletableFuture<>();
+        return preparingPurchase;
+    }
+
+    boolean finishPreparingPurchase(CompletableFuture<Void> reservation) {
+        if (reservation == null || preparingPurchase != reservation) return false;
+        reservation.complete(null);
+        preparingPurchase = null;
+        return !isRemoved();
+    }
+
+    @Override
+    public void setRemoved() {
+        cancelPreparingPurchase();
+        super.setRemoved();
+    }
+
+    private void cancelPreparingPurchase() {
+        if (preparingPurchase != null) preparingPurchase.cancel(false);
+        preparingPurchase = null;
     }
 
     public List<CardStoreScreenHandler.CartEntryData> getSavedCart(@Nullable UUID playerId) {
@@ -146,6 +173,7 @@ public class CardStoreBlockEntity extends BlockEntity implements ExtendedMenuPro
 
     public void flushQueueOutFront() {
         if (level == null || level.isClientSide()) return;
+        cancelPreparingPurchase();
 
         while (!queue.isEmpty()) {
             DeliveryEntry e = queue.pollFirst();
