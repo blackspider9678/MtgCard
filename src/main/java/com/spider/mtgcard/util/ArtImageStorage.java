@@ -215,7 +215,7 @@ public final class ArtImageStorage {
         }
     }
 
-    private static boolean canDecode(byte[] bytes) {
+    public static boolean canDecode(byte[] bytes) {
         if (bytes == null || bytes.length == 0) {
             return false;
         }

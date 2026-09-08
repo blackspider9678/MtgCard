@@ -50,6 +50,8 @@ public final class ArtClientPackets {
     private static final Map<String, IncomingArt> INCOMING = new ConcurrentHashMap<>();
 
     public static void registerClientReceivers() {
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.DISCONNECT.register(
+                (handler, client) -> INCOMING.clear());
         ClientPlayNetworking.registerGlobalReceiver(
                 ArtPackets.ArtChunk.ID,
                 (payload, ctx) -> {
