@@ -28,8 +28,21 @@ public final class ArtServerPackets {
     // Keep chunks comfortably under the ~2MiB cap.
     // 240KB is very safe (headers + other overhead still far below limit).
     private static final int CHUNK_SIZE = 240 * 1024;
+    private record Outgoing(ServerPlayer player, ArtPackets.ArtChunk chunk) {}
+    private static final java.util.Queue<Outgoing> OUTGOING = new java.util.concurrent.ConcurrentLinkedQueue<>();
 
     public static void registerServerReceiver() {
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(server -> {
+            // Bound image traffic per tick, even when several disk reads finish together.
+            for (int sent = 0; sent < 2; sent++) {
+                Outgoing next = OUTGOING.poll();
+                if (next == null) break;
+                if (server.getPlayerList().getPlayer(next.player().getUUID()) == next.player()) {
+                    ServerPlayNetworking.send(next.player(), next.chunk());
+                }
+            }
+        });
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPED.register(server -> OUTGOING.clear());
         ServerPlayNetworking.registerGlobalReceiver(ArtPackets.ArtRequest.ID, (payload, ctx) -> {
             ServerPlayer player = ctx.player();
             MinecraftServer server = ctx.server();
@@ -51,7 +64,7 @@ public final class ArtServerPackets {
                             : resolveServerMainCachedFile(server, game, artKey, fallbackKeys);
                     if (Files.exists(cached)) {
                         byte[] bytes = Files.readAllBytes(cached);
-                        if (bytes.length > 0) {
+                        if (bytes.length > 0 && ArtImageStorage.canDecode(bytes)) {
                             String cachedExt = extensionOf(cached);
                             if ("webp".equals(cachedExt)) {
                                 Mtgcard.LOGGER.info("[MTGCard] Art {} served from cache as .webp", artKey);
@@ -59,13 +72,21 @@ public final class ArtServerPackets {
                                 Mtgcard.LOGGER.info("[MTGCard] Art {} served from cache as .{}", artKey, cachedExt);
                             }
                             sendChunks(server, player, game, artKey, bytes);
+                            return;
                         }
-                        return;
+
+                        Mtgcard.LOGGER.warn("[MTGCard] Ignoring corrupt cached art {} at {}", artKey, cached);
+                        if (url.isEmpty()) {
+                            sendFailure(server, player, game, artKey);
+                            return;
+                        }
+                        Files.deleteIfExists(cached);
                     }
 
                     // 2) If URL is empty, this is a "world-art" request: do NOT download
                     if (url.isEmpty()) {
                         System.out.println("[MTGCard] world-art missing on server for key=" + artKey);
+                        sendFailure(server, player, game, artKey);
                         return;
                     }
 
@@ -75,6 +96,7 @@ public final class ArtServerPackets {
                     ArtImageStorage.StoredArt art = decision.art();
                     if (art == null) {
                         Mtgcard.LOGGER.warn("[MTGCard] Art {} from {} could not be stored: {}", artKey, url, decision.note());
+                        sendFailure(server, player, game, artKey);
                         return;
                     }
 
@@ -90,6 +112,7 @@ public final class ArtServerPackets {
 
                 } catch (Throwable t) {
                     Mtgcard.LOGGER.warn("[MTGCard] Art request failed for {} from {}: {}", artKey, url, t.toString());
+                    sendFailure(server, player, game, artKey);
                 }
             });
         });
@@ -106,12 +129,13 @@ public final class ArtServerPackets {
 
             final byte[] part = java.util.Arrays.copyOfRange(bytes, off, off + len);
 
-            server.execute(() -> {
-                if (player.connection != null) {
-                    ServerPlayNetworking.send(player, new ArtPackets.ArtChunk(artKey, safeGame, index, total, part));
-                }
-            });
+            OUTGOING.add(new Outgoing(player, new ArtPackets.ArtChunk(artKey, safeGame, index, total, part)));
         }
+    }
+
+    private static void sendFailure(MinecraftServer server, ServerPlayer player, String game, String key) {
+        // An empty image uses the existing protocol; older clients safely ignore it.
+        OUTGOING.add(new Outgoing(player, new ArtPackets.ArtChunk(key, game, 0, 1, new byte[0])));
     }
 
     /** <world>/mtgcard/<game>/main_art */
