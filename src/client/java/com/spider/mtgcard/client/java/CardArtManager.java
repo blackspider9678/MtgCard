@@ -65,7 +65,7 @@ public final class CardArtManager {
     // NEW: request queue
     // -----------------------
     private record PendingReq(String requestKey, String game, String artKey, String url, String fileName, String fallbackKeys, String setCode) {}
-    private record PendingDiskLoad(String textureKey, Path file) {}
+    private record PendingDiskLoad(String textureKey, Path file, byte[] bytes) {}
 
     private static final ConcurrentLinkedQueue<PendingReq> PENDING = new ConcurrentLinkedQueue<>();
     private static final ConcurrentLinkedQueue<PendingDiskLoad> PENDING_DISK_LOADS = new ConcurrentLinkedQueue<>();
@@ -80,6 +80,22 @@ public final class CardArtManager {
     private static final int MAX_DISK_LOADS_PER_TICK = 1;
     private static final int MAX_ACTIVE_DISK_LOADS = 2;
     private static final long REQUEST_COOLDOWN_MS = 1500;
+    private static final ConcurrentMap<String, PendingReq> REQUESTS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, Integer> FAILURES = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, Long> RETRY_AFTER = new ConcurrentHashMap<>();
+    private static final Set<String> RECEIVING = ConcurrentHashMap.newKeySet();
+    private static final Set<String> CACHE_LOOKUPS = ConcurrentHashMap.newKeySet();
+    private static volatile long sessionGeneration;
+
+    private static void retryRequest(String key) {
+        IN_FLIGHT.remove(key);
+        PendingReq request = REQUESTS.get(key);
+        int failures = FAILURES.merge(key, 1, Integer::sum);
+        System.out.println("[MTGCard] Art retry " + key + " failure=" + failures);
+        if (request == null || failures > 3) return;
+        RETRY_AFTER.put(key, System.currentTimeMillis() + REQUEST_COOLDOWN_MS);
+        if (QUEUED.add(key)) PENDING.add(request);
+    }
 
     private static boolean shouldRequestNow(String artKey) {
         long now = System.currentTimeMillis();
@@ -113,6 +129,8 @@ public final class CardArtManager {
         if (artKey == null || artKey.isBlank()) return;
         String safeGame = MtgCardPaths.sanitizeGameFolder(game);
         String requestKey = scopedArtKey(safeGame, artKey);
+        if (IN_FLIGHT.containsKey(requestKey) || RECEIVING.contains(requestKey)
+                || FAILURES.getOrDefault(requestKey, 0) > 3) return;
 
         // If it's already queued, do nothing
         if (!QUEUED.add(requestKey)) return;
@@ -126,7 +144,7 @@ public final class CardArtManager {
             ART_SET_INDEX.put(requestKey, MtgCardPaths.sanitizeSetFolder(setCode));
         }
 
-        PENDING.add(new PendingReq(
+        PendingReq request = new PendingReq(
                 requestKey,
                 safeGame,
                 artKey,
@@ -134,7 +152,9 @@ public final class CardArtManager {
                 fileName == null ? "" : fileName,
                 fallbackKeys == null ? "" : fallbackKeys,
                 setCode == null ? "" : setCode
-        ));
+        );
+        REQUESTS.put(requestKey, request);
+        PENDING.add(request);
     }
 
     /**
@@ -150,11 +170,28 @@ public final class CardArtManager {
         // Only pump when we’re in-world & networking is live
         if (mc.player == null || mc.getConnection() == null) return;
 
+        long now = System.currentTimeMillis();
+        IN_FLIGHT.forEach((key, sent) -> {
+            if (now - sent >= 30000 && !RECEIVING.contains(key)) retryRequest(key);
+        });
         int started = 0;
+        int remaining = PENDING.size();
 
-        while (started < MAX_SENDS_PER_TICK && IN_FLIGHT.size() < MAX_INFLIGHT) {
+        while (remaining-- > 0 && started < MAX_SENDS_PER_TICK && IN_FLIGHT.size() < MAX_INFLIGHT) {
             PendingReq req = PENDING.poll();
             if (req == null) break;
+            if (RETRY_AFTER.getOrDefault(req.requestKey(), 0L) > now) {
+                PENDING.add(req);
+                continue;
+            }
+            if (RECEIVING.contains(req.requestKey()) || LOADING.contains(req.requestKey())) {
+                PENDING.add(req);
+                continue;
+            }
+            if (TEX.containsKey(req.requestKey())) {
+                QUEUED.remove(req.requestKey());
+                continue;
+            }
 
             // Allow it to be queued again in the future if needed
             QUEUED.remove(req.requestKey());
@@ -188,15 +225,27 @@ public final class CardArtManager {
 
     /** Clears queued/inflight state (call on disconnect/world switch if you want). */
     public static void clearRequestState() {
+        sessionGeneration++;
         PENDING.clear();
         PENDING_DISK_LOADS.clear();
         QUEUED.clear();
         IN_FLIGHT.clear();
         LOADING.clear();
+        REQUESTS.clear();
+        FAILURES.clear();
+        RETRY_AFTER.clear();
+        RECEIVING.clear();
+        CACHE_LOOKUPS.clear();
     }
 
     // ---- lifecycle ----
-    public static void init() { loadIndex(); }
+    public static void init() {
+        loadIndex();
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            clearRequestState();
+            clearMemoryTextures();
+        });
+    }
 
     /**
      * Cache dir:
@@ -472,29 +521,53 @@ public final class CardArtManager {
             if (cached != null) return cached;
         }
 
-        Path file = resolveMainCachedFile(game, artKey, fallbackKeys);
-
-        if (Files.exists(file)) {
-            DISK_INDEX.put(artKey, file.getFileName().toString());
-            saveIndexAsync(game);
-            FlashbackArtBridge.rememberArt(game, artKey, "", file);
-            queueDiskLoad(textureKey, file);
-            return null;
+        if (CACHE_LOOKUPS.contains(textureKey) || LOADING.contains(textureKey) || RECEIVING.contains(textureKey)
+                || QUEUED.contains(textureKey) || IN_FLIGHT.containsKey(textureKey)
+                || FAILURES.getOrDefault(textureKey, 0) > 3) return null;
+        String sourceUrl = CardArtCommon.extractImageUrl(meta, faceIndex);
+        if (sourceUrl != null && !sourceUrl.isBlank()) {
+            REQUESTS.putIfAbsent(textureKey, new PendingReq(textureKey, game, artKey, sourceUrl,
+                    artKey + ".webp", CardArtCommon.encodeFallbackKeys(fallbackKeys), ""));
         }
+        if (!CACHE_LOOKUPS.add(textureKey)) return null;
+        long generation = sessionGeneration;
+        IO.submit(() -> {
+            try {
+                if (generation != sessionGeneration) return;
+                Path file = resolveMainCachedFile(game, artKey, fallbackKeys);
+                if (generation != sessionGeneration) return;
 
-        Path flashbackFile = FlashbackArtBridge.findCachedArt(game, artKey, fallbackKeys, "");
-        if (flashbackFile != null && Files.exists(flashbackFile)) {
-            FlashbackArtBridge.rememberArt(game, artKey, "", flashbackFile);
-            queueDiskLoad(textureKey, flashbackFile);
-            return null;
-        }
+                if (Files.exists(file)) {
+                    DISK_INDEX.put(artKey, file.getFileName().toString());
+                    saveIndexAsync(game);
+                    FlashbackArtBridge.rememberArt(game, artKey, "", file);
+                    queueDiskLoad(textureKey, file);
+                    return;
+                }
 
-        String url = CardArtCommon.extractImageUrl(meta, faceIndex);
-        if (url == null || url.isEmpty()) return null;
+                Path flashbackFile = FlashbackArtBridge.findCachedArt(game, artKey, fallbackKeys, "");
+                if (generation != sessionGeneration) return;
+                if (flashbackFile != null && Files.exists(flashbackFile)) {
+                    FlashbackArtBridge.rememberArt(game, artKey, "", flashbackFile);
+                    queueDiskLoad(textureKey, flashbackFile);
+                    return;
+                }
 
-        // IMPORTANT: queue instead of sending immediately
-        String fileName = DISK_INDEX.getOrDefault(artKey, artKey + ".webp");
-        enqueueRequest(game, artKey, url, fileName, CardArtCommon.encodeFallbackKeys(fallbackKeys), "");
+                String url = CardArtCommon.extractImageUrl(meta, faceIndex);
+                if (url == null || url.isEmpty()) return;
+
+                // IMPORTANT: queue instead of sending immediately
+                String fileName = DISK_INDEX.getOrDefault(artKey, artKey + ".webp");
+                enqueueRequest(game, artKey, url, fileName, CardArtCommon.encodeFallbackKeys(fallbackKeys), "");
+            } catch (Exception error) {
+                if (generation == sessionGeneration) {
+                    System.out.println("[MTGCard] Cache lookup failed for " + textureKey + ": " + error);
+                    retryRequest(textureKey);
+                }
+            } finally {
+                if (generation == sessionGeneration) CACHE_LOOKUPS.remove(textureKey);
+            }
+        });
         return null;
     }
 
@@ -550,31 +623,52 @@ public final class CardArtManager {
             return cached;
         }
 
+        if (CACHE_LOOKUPS.contains(textureKey) || LOADING.contains(textureKey) || RECEIVING.contains(textureKey)
+                || QUEUED.contains(textureKey) || IN_FLIGHT.containsKey(textureKey)
+                || FAILURES.getOrDefault(textureKey, 0) > 3) return null;
         String safeSetCode = MtgCardPaths.sanitizeSetFolder(setCode);
+        REQUESTS.putIfAbsent(textureKey, new PendingReq(textureKey, game, artKey, "",
+                artKey + ".webp", "", safeSetCode));
         ART_SET_INDEX.put(textureKey, safeSetCode);
 
-        Path file = resolveCustomCachedFile(game, artKey, safeSetCode);
+        if (!CACHE_LOOKUPS.add(textureKey)) return null;
+        long generation = sessionGeneration;
+        IO.submit(() -> {
+            try {
+                if (generation != sessionGeneration) return;
+                Path file = resolveCustomCachedFile(game, artKey, safeSetCode);
+                if (generation != sessionGeneration) return;
 
-        if (Files.exists(file)) {
-            DISK_INDEX.put(artKey, file.getFileName().toString());
-            saveIndexAsync(game);
-            FlashbackArtBridge.rememberArt(game, artKey, safeSetCode, file);
-            queueDiskLoad(textureKey, file);
-            return null;
-        }
+                if (Files.exists(file)) {
+                    DISK_INDEX.put(artKey, file.getFileName().toString());
+                    saveIndexAsync(game);
+                    FlashbackArtBridge.rememberArt(game, artKey, safeSetCode, file);
+                    queueDiskLoad(textureKey, file);
+                    return;
+                }
 
-        Path flashbackFile = FlashbackArtBridge.findCachedArt(game, artKey, List.of(), safeSetCode);
-        if (flashbackFile != null && Files.exists(flashbackFile)) {
-            FlashbackArtBridge.rememberArt(game, artKey, safeSetCode, flashbackFile);
-            queueDiskLoad(textureKey, flashbackFile);
-            return null;
-        }
+                Path flashbackFile = FlashbackArtBridge.findCachedArt(game, artKey, List.of(), safeSetCode);
+                if (generation != sessionGeneration) return;
+                if (flashbackFile != null && Files.exists(flashbackFile)) {
+                    FlashbackArtBridge.rememberArt(game, artKey, safeSetCode, flashbackFile);
+                    queueDiskLoad(textureKey, flashbackFile);
+                    return;
+                }
 
-        DISK_INDEX.putIfAbsent(artKey, artKey + ".webp");
-        saveIndexAsync(game);
+                DISK_INDEX.putIfAbsent(artKey, artKey + ".webp");
+                saveIndexAsync(game);
 
-        // IMPORTANT: queue instead of sending immediately
-        enqueueRequest(game, artKey, "", artKey + ".webp", "", safeSetCode);
+                // IMPORTANT: queue instead of sending immediately
+                enqueueRequest(game, artKey, "", artKey + ".webp", "", safeSetCode);
+            } catch (Exception error) {
+                if (generation == sessionGeneration) {
+                    System.out.println("[MTGCard] Cache lookup failed for " + textureKey + ": " + error);
+                    retryRequest(textureKey);
+                }
+            } finally {
+                if (generation == sessionGeneration) CACHE_LOOKUPS.remove(textureKey);
+            }
+        });
         return null;
     }
 
@@ -657,9 +751,26 @@ public final class CardArtManager {
     public static void onArtResponse(String game, String artKey, byte[] imgBytes) {
         String safeGame = MtgCardPaths.sanitizeGameFolder(game);
         String textureKey = scopedArtKey(safeGame, artKey);
-        IN_FLIGHT.remove(textureKey);
-
-        storeArtBytes(safeGame, artKey, ART_SET_INDEX.get(textureKey), imgBytes);
+        if (imgBytes == null || imgBytes.length == 0) {
+            retryRequest(textureKey);
+            return;
+        }
+        if (!RECEIVING.add(textureKey)) return;
+        String setCode = ART_SET_INDEX.get(textureKey);
+        Path destination = setCode == null || setCode.isBlank()
+                ? mainArtCacheDir(safeGame) : customArtDir(safeGame, setCode);
+        long generation = sessionGeneration;
+        IO.submit(() -> {
+            try {
+                if (generation == sessionGeneration)
+                    storeArtBytes(safeGame, artKey, setCode, imgBytes, destination, generation);
+            } finally {
+                if (generation == sessionGeneration) {
+                    RECEIVING.remove(textureKey);
+                    IN_FLIGHT.remove(textureKey);
+                }
+            }
+        });
     }
 
     // Called by Flashback replay action handling when a replay contains embedded card art.
@@ -672,6 +783,12 @@ public final class CardArtManager {
     }
 
     private static void storeArtBytes(String game, String artKey, String setCode, byte[] imgBytes) {
+        Path destination = setCode == null || setCode.isBlank()
+                ? mainArtCacheDir(game) : customArtDir(game, setCode);
+        storeArtBytes(game, artKey, setCode, imgBytes, destination, sessionGeneration);
+    }
+
+    private static void storeArtBytes(String game, String artKey, String setCode, byte[] imgBytes, Path destination, long generation) {
         if (artKey == null || artKey.isBlank() || imgBytes == null || imgBytes.length == 0) {
             return;
         }
@@ -689,29 +806,26 @@ public final class CardArtManager {
         }
 
         try {
-            if (!ArtImageStorage.canDecode(imgBytes)) {
-                System.out.println("[MTGCard] Ignoring corrupt art response key=" + textureKey + " bytes=" + imgBytes.length);
-                return;
-            }
-
             String ext = ArtImageStorage.detectExt(imgBytes);
             if ("bin".equals(ext)) {
                 ext = ArtImageStorage.normalizeExt(safeArtKey);
             }
-            Path dir = safeSetCode.isBlank()
-                    ? mainArtCacheDir(safeGame)
-                    : customArtDir(safeGame, safeSetCode);
+            Path dir = destination;
             Path file = ArtImageStorage.write(dir, safeArtKey, new ArtImageStorage.StoredArt(imgBytes, ext));
             String fileName = file.getFileName().toString();
+            if (generation != sessionGeneration) return;
 
 
             DISK_INDEX.put(safeArtKey, fileName);
             saveIndexAsync(safeGame);
 
             FlashbackArtBridge.rememberArt(safeGame, safeArtKey, safeSetCode, file);
-            queueDiskLoad(textureKey, file);
+            if (LOADING.add(textureKey)) {
+                PENDING_DISK_LOADS.add(new PendingDiskLoad(textureKey, file, imgBytes));
+            }
         } catch (Exception e) {
             System.out.println("[MTGCard] Failed to store art key=" + textureKey + ": " + e);
+            if (generation == sessionGeneration) retryRequest(textureKey);
         }
     }
 
@@ -973,15 +1087,17 @@ public final class CardArtManager {
             return;
         }
 
-        PENDING_DISK_LOADS.add(new PendingDiskLoad(artKey, file));
+        PENDING_DISK_LOADS.add(new PendingDiskLoad(artKey, file, null));
     }
 
     private static void submitDiskLoad(PendingDiskLoad pending) {
         String artKey = pending.textureKey();
         Path file = pending.file();
+        long generation = sessionGeneration;
         IO.submit(() -> {
             NativeImage img = null;
-            try (var in = Files.newInputStream(file)) {
+            try (var in = pending.bytes() == null ? Files.newInputStream(file)
+                    : new ByteArrayInputStream(pending.bytes())) {
                 BufferedImage bi = readAnyImage(in);
                 img = bufferedToNative(bi);
                 NativeImage finalImg = img;
@@ -990,9 +1106,10 @@ public final class CardArtManager {
                 Minecraft client = Minecraft.getInstance();
                 client.execute(() -> {
                     try {
-                        bindTexture(artKey, finalImg);
+                        if (generation == sessionGeneration) bindTexture(artKey, finalImg);
+                        else finalImg.close();
                     } finally {
-                        LOADING.remove(artKey);
+                        if (generation == sessionGeneration) LOADING.remove(artKey);
                         ACTIVE_DISK_LOADS.decrementAndGet();
                     }
                 });
@@ -1000,8 +1117,10 @@ public final class CardArtManager {
                 if (img != null) {
                     try { img.close(); } catch (Throwable ignored) {}
                 }
-                removeCorruptCachedArt(artKey, file, t);
-                LOADING.remove(artKey);
+                if (generation == sessionGeneration) {
+                    removeCorruptCachedArt(artKey, file, t);
+                    LOADING.remove(artKey);
+                }
                 ACTIVE_DISK_LOADS.decrementAndGet();
             }
         });
@@ -1029,6 +1148,7 @@ public final class CardArtManager {
 
         IN_FLIGHT.remove(textureKey);
         QUEUED.remove(textureKey);
+        retryRequest(textureKey);
     }
 
     private static String scopedGame(String textureKey) {
@@ -1087,6 +1207,14 @@ public final class CardArtManager {
 
     public static void invalidateArtKey(String artKey) {
         if (artKey == null || artKey.isBlank()) return;
+        for (String key : REQUESTS.keySet()) {
+            if (unscopedArtKey(key).equals(artKey)) {
+                FAILURES.remove(key);
+                RETRY_AFTER.remove(key);
+                IN_FLIGHT.remove(key);
+                QUEUED.remove(key);
+            }
+        }
 
         // Stop any “cooldown/inflight” suppression
         IN_FLIGHT.remove(artKey);
