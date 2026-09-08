@@ -30,6 +30,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class NeoForgeClientPayloadHandlers {
     private static int unpackProgress;
     private static final Map<String, IncomingArt> INCOMING_ART = new ConcurrentHashMap<>();
+
+    public static void clearIncomingArt() { INCOMING_ART.clear(); }
     private static final Map<UUID, FullSyncAccumulator> FULL_SYNCS = new ConcurrentHashMap<>();
 
     private NeoForgeClientPayloadHandlers() {}
