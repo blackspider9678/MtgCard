@@ -3,6 +3,7 @@ package com.spider.mtgcard.client.hud;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.client.input.ModKeybinds;
+import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.item.CardItem;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.DeltaTracker;
@@ -119,10 +120,12 @@ public final class CardPeekHud implements HudRenderCallback {
 
         float eased = smoothstep(t);
 
-        // Slide in from offscreen right, clear of Minecraft's bottom-left chat area.
-        float x = lerp(sw + PAD, sw - PREVIEW_W - PAD, eased);
+        boolean onRight = MtgcardConfig.cardPeekOnRight();
+        float x = onRight
+                ? lerp(sw + PAD, sw - PREVIEW_W - PAD, eased)
+                : lerp(-PREVIEW_W - PAD, PAD, eased);
 
-        // Bottom-right, lifted above hotbar
+        // Bottom corner selected in mtgcard.toml, lifted above the hotbar.
         float y = sh - PREVIEW_H - PAD - HOTBAR_LIFT;
 
         // Fade with slide
