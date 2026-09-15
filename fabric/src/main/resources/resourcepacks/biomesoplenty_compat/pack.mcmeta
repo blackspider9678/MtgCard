@@ -1,0 +1,7 @@
+{
+  "pack": {
+    "description": "MTGCard Biomes O' Plenty compatibility assets",
+    "min_format": 1,
+    "max_format": 999
+  }
+}

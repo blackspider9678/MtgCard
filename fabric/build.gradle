@@ -73,6 +73,19 @@ processResources {
                 'fabric_api_version': rootProject.fabric_api_version,
                 'fabric_api_version_range': rootProject.fabric_api_version_range
     }
+
+    // Client models are discovered even for blocks/items that were not registered. Keep
+    // optional-mod models inside conditional built-in packs so their foreign texture
+    // references are never baked unless the owning mod is actually present.
+    eachFile { details ->
+        if (details.path.startsWith('assets/mtgcard/') &&
+                details.name.startsWith('biomesoplenty_')) {
+            details.path = "resourcepacks/biomesoplenty_compat/${details.path}"
+        } else if (details.path.startsWith('assets/mtgcard/') &&
+                details.name.startsWith('biomeswevegone_')) {
+            details.path = "resourcepacks/biomeswevegone_compat/${details.path}"
+        }
+    }
 }
 
 publishing {

@@ -31,6 +31,7 @@ public final class MtgcardFabric implements ModInitializer {
     public void onInitialize() {
         Mtgcard.LOGGER.info("[MtgcardFabric] init");
         ArtImageStorage.ensureWebpCodecsRegistered();
+        FabricCompatResourcePacks.register();
 
         ModPayloads.registerTypes();
         FabricRegistries.register();

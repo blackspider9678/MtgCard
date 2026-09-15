@@ -1,0 +1,7 @@
+{
+  "pack": {
+    "description": "MTGCard Oh The Biomes We've Gone compatibility assets",
+    "min_format": 1,
+    "max_format": 999
+  }
+}
