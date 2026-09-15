@@ -7,6 +7,14 @@ import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Button;
+import com.spider.mtgcard.config.GuideConfigSnapshot;
+import com.spider.mtgcard.config.MtgcardConfig;
+import com.spider.mtgcard.net.GuideBookPackets;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.input.KeyEvent;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -14,6 +22,8 @@ import net.minecraft.resources.Identifier;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 public final class GuideBookScreen extends LegacyScreen {
 
@@ -33,6 +43,20 @@ public final class GuideBookScreen extends LegacyScreen {
     // NEW: scroll for main chapter content
     private int contentScroll = 0;
     private int contentScrollMax = 0;
+
+    private static boolean restartRequired;
+    private final Map<String, EditBox> configFields = new LinkedHashMap<>();
+    private final Map<String, Boolean> configToggles = new LinkedHashMap<>();
+    private final Map<String, String> configValues = new LinkedHashMap<>();
+    private final List<ConfigLabel> configLabels = new ArrayList<>();
+    private GuideConfigSnapshot configOriginal;
+    private boolean canEditServerConfig;
+    private boolean cardPeekRight = MtgcardConfig.cardPeekOnRight();
+    private boolean configRequested;
+    private String openConfigDropdown;
+    private int configScroll;
+    private int configScrollMax;
+    private String configStatus = "Loading server settings…";
 
     public GuideBookScreen(Identifier startChapterId) {
         super(Component.translatable("guide.mtgcard.title"));
@@ -96,12 +120,20 @@ public final class GuideBookScreen extends LegacyScreen {
 
     @Override
     protected void init() {
-        if (applyFixedGuiScale(2)) return;
+        if (applyAutoFitGuiScale(840, 420)) return;
 
         fullW = this.width;
         fullH = this.height;
         leftX = 0;
         topY = 0;
+
+        setupGuideWidgets();
+    }
+
+    private void setupGuideWidgets() {
+        clearWidgets();
+        configFields.clear();
+        configLabels.clear();
 
         int searchX = leftX + padding;
         int searchY = topY + padding + 10;
@@ -112,6 +144,8 @@ public final class GuideBookScreen extends LegacyScreen {
         search.setResponder(s -> listScroll = 0);
         addWidget(search);
         setInitialFocus(search);
+
+        if (isConfigChapter()) buildConfigControls();
     }
 
     @Override
@@ -246,6 +280,11 @@ public final class GuideBookScreen extends LegacyScreen {
         Component title = Component.translatable(selectedChapter.titleKey());
         ctx.drawString(font, title, iconX + 40, headerY + 10, 0xFFFFFFFF);
 
+        if (isConfigChapter()) {
+            drawConfigContent(ctx, x, y, w, h);
+            return;
+        }
+
         int contentX = x + padding;
         int contentY = headerY + 40;
         int contentW = w - padding * 2;
@@ -337,6 +376,18 @@ public final class GuideBookScreen extends LegacyScreen {
     }
 
     @Override
+    public boolean keyPressed(KeyEvent key) {
+        int code = key.input();
+        EditBox whitelist = configFields.get("whitelist_add");
+        if ((code == InputConstants.KEY_RETURN || code == InputConstants.KEY_NUMPADENTER)
+                && whitelist != null && whitelist.isFocused()) {
+            addWhitelistedPlayer();
+            return true;
+        }
+        return super.keyPressed(key);
+    }
+
+    @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean down) {
 
         // Only process press
@@ -373,6 +424,7 @@ public final class GuideBookScreen extends LegacyScreen {
             selectedChapter = chapters.get(idx);
             contentScroll = 0;          // NEW
             contentScrollMax = 0;       // NEW (recomputed next render)
+            setupGuideWidgets();
             return true;
         }
 
@@ -386,6 +438,7 @@ public final class GuideBookScreen extends LegacyScreen {
         contentScrollMax = 0;       // NEW
         var list = GuideChapterRegistry.byCategory(selectedCategory);
         selectedChapter = list.isEmpty() ? null : list.getFirst();
+        setupGuideWidgets();
     }
 
 
@@ -399,6 +452,16 @@ public final class GuideBookScreen extends LegacyScreen {
         if (hit(lx, ly, lw, lh, mouseX, mouseY)) {
             int delta = (int)(-verticalAmount * 12);
             listScroll = Math.max(0, listScroll + delta);
+            return true;
+        }
+
+        if (isConfigChapter() && mouseX >= leftX + sidebarW) {
+            int delta = (int) (-verticalAmount * 24);
+            int next = clamp(configScroll + delta, 0, configScrollMax);
+            if (next != configScroll) {
+                configScroll = next;
+                setupGuideWidgets();
+            }
             return true;
         }
 
@@ -432,4 +495,361 @@ public final class GuideBookScreen extends LegacyScreen {
     private static boolean hit(int x, int y, int w, int h, double mx, double my) {
         return mx >= x && mx < x + w && my >= y && my < y + h;
     }
+
+    private boolean isConfigChapter() {
+        return selectedChapter instanceof com.spider.mtgcard.guidebook.chapters.general.ConfigChapter;
+    }
+
+    private void buildConfigControls() {
+        int mainX = leftX + sidebarW;
+        int mainW = fullW - sidebarW;
+        int left = mainX + padding;
+        int contentW = mainW - padding * 2;
+
+        addRenderableWidget(Button.builder(Component.translatable("guide.mtgcard.config.save"), button -> saveConfig())
+                .bounds(left + mainW - padding * 2 - 70, topY + fullH - 24, 70, 20).build());
+
+        int y = configViewportTop() - configScroll;
+        y = addConfigHeader("Client settings", y);
+        y = addClientPosition(left, y, contentW);
+        y += 8;
+
+        if (configOriginal == null) {
+            if (!configRequested) {
+                configRequested = true;
+                ClientPlayNetworking.send(new GuideBookPackets.ConfigRequestPayload());
+            }
+            return;
+        }
+
+        y = addConfigHeader("Server settings", y);
+        y = addConfigSubheader("Importing", y);
+        y = addConfigToggle("anyone", "Anyone can import", "Allows every player to import custom cards.", left, y, contentW);
+        y = addWhitelistEditor(left, y, contentW);
+        y = addConfigSubheader("Card downloads", y);
+        y = addConfigDropdown("language", "Card language", "Preferred language used when downloading card data from Scryfall.",
+                List.of("en", "es", "fr", "de", "it", "pt", "ja", "ko", "ru", "zhs", "zht"), left, y, contentW);
+        y = addConfigSubheader("Pack behavior", y);
+        y = addConfigToggle("fishing", "Fishing awards packs", "Allows fishing loot to include card packs.", left, y, contentW);
+        y = addConfigToggle("pack_debug", "Pack debug logging", "Writes detailed pack-generation information to the log.", left, y, contentW);
+        y = addConfigSubheader("Custom pack chances", y);
+        y = addConfigText("common", "Common chance", "Chance that a common slot uses a custom card, from 0.0 to 1.0.", left, y, contentW);
+        y = addConfigText("uncommon", "Uncommon chance", "Chance that an uncommon slot uses a custom card, from 0.0 to 1.0.", left, y, contentW);
+        y = addConfigText("wildcard", "Wildcard chance", "Chance that a common/uncommon wildcard slot uses a custom card.", left, y, contentW);
+        y = addConfigText("rare", "Rare or mythic chance", "Chance that a rare or mythic slot uses a custom card.", left, y, contentW);
+        y = addConfigText("random", "Random-card chance", "Chance that an unrestricted slot uses a custom card.", left, y, contentW);
+        y = addConfigText("foil", "Foil chance", "Chance that a foil slot uses a custom foil card.", left, y, contentW);
+        y = addConfigText("land", "Basic-land chance", "Chance that a basic-land slot uses a custom card.", left, y, contentW);
+        y = addConfigText("token", "Token or art chance", "Chance that a token or art-card slot uses custom content.", left, y, contentW);
+        y = addConfigSubheader("Card Store", y);
+        y = addConfigToggle("card_store", "Card Store enabled *", "Controls whether Card Store content is loaded.", left, y, contentW);
+        y = addConfigToggle("mtg_game", "MTG game enabled *", "Controls whether Magic-specific content is loaded. Addons installed: " + installedAddons(), left, y, contentW);
+        y = addConfigText("price_item", "Price item", "Minecraft item used as currency by the Card Store.", left, y, contentW);
+        y = addConfigDropdown("price_basis", "Price basis", "Market price used for card costs: USD, EUR, or TIX.",
+                List.of("USD", "EUR", "TIX"), left, y, contentW);
+        configScrollMax = Math.max(0, y + configScroll - configViewportBottom());
+    }
+
+    private int addConfigHeader(String text, int y) {
+        configLabels.add(new ConfigLabel(leftX + sidebarW + padding, y, Component.literal(text).getVisualOrderText(), 0xFFFFD37F));
+        return y + 22;
+    }
+
+    private int addConfigSubheader(String text, int y) {
+        configLabels.add(new ConfigLabel(leftX + sidebarW + padding, y, Component.literal(text).getVisualOrderText(), 0xFFFFFFFF));
+        return y + 18;
+    }
+
+    private int addClientPosition(int x, int y, int width) {
+        int widgetX = configWidgetX(x, width, 110);
+        int rowHeight = addSettingLabels("Card peek position", "Moves the held-card preview to the left or right side of the screen.", x, y, true, widgetX - x - 10);
+        if (configWidgetVisible(y)) {
+            addRenderableWidget(Button.builder(configPositionText(), button -> {
+                cardPeekRight = !cardPeekRight;
+                button.setMessage(configPositionText());
+            }).bounds(widgetX, y, 110, 20).build());
+        }
+        return y + rowHeight;
+    }
+
+    private int addConfigText(String key, String label, String description, int x, int y, int width) {
+        int fieldWidth = key.equals("whitelist") || key.equals("price_item") ? 220 : 90;
+        int fieldX = configWidgetX(x, width, fieldWidth);
+        int rowHeight = addSettingLabels(label, description, x, y, canEditServerConfig, fieldX - x - 10);
+        if (!configWidgetVisible(y)) return y + rowHeight;
+        EditBox field = new EditBox(font, fieldX, y, fieldWidth, 20, Component.literal(label));
+        field.setMaxLength(256);
+        field.setValue(configValues.getOrDefault(key, ""));
+        field.setResponder(value -> configValues.put(key, value));
+        field.setEditable(canEditServerConfig);
+        configFields.put(key, field);
+        addRenderableWidget(field);
+        return y + rowHeight;
+    }
+
+    private int addConfigToggle(String key, String label, String description, int x, int y, int width) {
+        int buttonX = configWidgetX(x, width, 90);
+        int rowHeight = addSettingLabels(label, description, x, y, canEditServerConfig, buttonX - x - 10);
+        if (!configWidgetVisible(y)) return y + rowHeight;
+        Button button = Button.builder(toggleText(configToggles.getOrDefault(key, false)), pressed -> {
+            boolean next = !Boolean.TRUE.equals(configToggles.get(key));
+            configToggles.put(key, next);
+            pressed.setMessage(toggleText(next));
+        }).bounds(buttonX, y, 90, 20).build();
+        button.active = canEditServerConfig;
+        addRenderableWidget(button);
+        return y + rowHeight;
+    }
+
+    private int addConfigDropdown(String key, String label, String description, List<String> choices,
+                                  int x, int y, int width) {
+        int selectorWidth = "language".equals(key) ? 190 : 120;
+        int buttonX = configWidgetX(x, width, selectorWidth);
+        int rowHeight = addSettingLabels(label, description, x, y, canEditServerConfig, buttonX - x - 10);
+        boolean open = key.equals(openConfigDropdown);
+        if (configWidgetVisible(y)) {
+            String current = configValues.getOrDefault(key, choices.getFirst());
+            Button selector = Button.builder(Component.literal(configChoiceLabel(key, current) + (open ? " ▲" : " ▼")), pressed -> {
+                openConfigDropdown = open ? null : key;
+                if (!open) {
+                    int overflow = y + rowHeight + choices.size() * 20 + 4 - configViewportBottom();
+                    if (overflow > 0) configScroll += overflow;
+                } else {
+                    configScroll = Math.max(0, configScroll - choices.size() * 20 - 4);
+                }
+                setupGuideWidgets();
+            }).bounds(buttonX, y, selectorWidth, 20).build();
+            selector.active = canEditServerConfig;
+            addRenderableWidget(selector);
+        }
+        int nextY = y + rowHeight;
+        if (open) {
+            for (String choice : choices) {
+                int optionY = nextY;
+                if (configWidgetVisible(optionY)) {
+                    Button option = Button.builder(Component.literal(configChoiceLabel(key, choice)), pressed -> {
+                        configValues.put(key, choice);
+                        openConfigDropdown = null;
+                        configScroll = Math.max(0, configScroll - choices.size() * 20 - 4);
+                        setupGuideWidgets();
+                    }).bounds(buttonX, optionY, selectorWidth, 20).build();
+                    option.active = canEditServerConfig;
+                    addRenderableWidget(option);
+                }
+                nextY += 20;
+            }
+            nextY += 4;
+        }
+        return nextY;
+    }
+
+    private int addWhitelistEditor(int x, int y, int width) {
+        int fieldX = configWidgetX(x, width, 220);
+        int rowHeight = addSettingLabels("Import whitelist", "Type a player name and press Enter to add it.",
+                x, y, canEditServerConfig, fieldX - x - 10);
+        if (configWidgetVisible(y)) {
+            EditBox field = new EditBox(font, fieldX, y, 220, 20, Component.literal("Add player"));
+            field.setMaxLength(16);
+            field.setValue(configValues.getOrDefault("whitelist_add", ""));
+            field.setResponder(value -> configValues.put("whitelist_add", value));
+            field.setEditable(canEditServerConfig);
+            configFields.put("whitelist_add", field);
+            addRenderableWidget(field);
+        }
+
+        int listY = y + rowHeight;
+        configLabels.add(new ConfigLabel(x, listY, Component.literal("Currently whitelisted:").getVisualOrderText(), 0xFFFFFFFF));
+        listY += 16;
+        if (configWidgetVisible(listY)) {
+            Button ops = Button.builder(Component.literal((configToggles.getOrDefault("ops", true) ? "[✓] " : "[ ] ") + "OPs"), pressed -> {
+                configToggles.put("ops", !configToggles.getOrDefault("ops", true));
+                setupGuideWidgets();
+            }).bounds(x, listY, 90, 20).build();
+            ops.active = canEditServerConfig;
+            addRenderableWidget(ops);
+        }
+        listY += 24;
+        for (String player : parseList(configValues.getOrDefault("whitelist", ""))) {
+            int entryY = listY;
+            configLabels.add(new ConfigLabel(x + 26, entryY + 6, Component.literal(player).getVisualOrderText(), 0xFFE0E0E0));
+            if (configWidgetVisible(entryY)) {
+                Button remove = Button.builder(Component.literal("X"), pressed -> removeWhitelistedPlayer(player))
+                        .bounds(x, entryY, 20, 20).build();
+                remove.active = canEditServerConfig;
+                addRenderableWidget(remove);
+            }
+            listY += 24;
+        }
+        return listY + 6;
+    }
+
+    private void addWhitelistedPlayer() {
+        String name = configValues.getOrDefault("whitelist_add", "").trim();
+        if (name.isEmpty() || !canEditServerConfig) return;
+        List<String> names = new ArrayList<>(parseList(configValues.getOrDefault("whitelist", "")));
+        if (names.stream().noneMatch(existing -> existing.equalsIgnoreCase(name))) names.add(name);
+        configValues.put("whitelist", String.join(", ", names));
+        configValues.put("whitelist_add", "");
+        setupGuideWidgets();
+    }
+
+    private void removeWhitelistedPlayer(String player) {
+        List<String> names = new ArrayList<>(parseList(configValues.getOrDefault("whitelist", "")));
+        names.removeIf(existing -> existing.equalsIgnoreCase(player));
+        configValues.put("whitelist", String.join(", ", names));
+        setupGuideWidgets();
+    }
+
+    private static String installedAddons() {
+        List<String> installed = new ArrayList<>();
+        if (FabricLoader.getInstance().isModLoaded("pokemon_tcg_addon")) installed.add("Pokémon");
+        if (FabricLoader.getInstance().isModLoaded("riftbound_tcg")) installed.add("Riftbound");
+        if (FabricLoader.getInstance().isModLoaded("lorcana_addon")) installed.add("Lorcana");
+        return installed.isEmpty() ? "None" : String.join(", ", installed);
+    }
+
+    private static String configChoiceLabel(String key, String value) {
+        if (!"language".equals(key)) return value;
+        return switch (value) {
+            case "en" -> "English (en)";
+            case "es" -> "Spanish (es)";
+            case "fr" -> "French (fr)";
+            case "de" -> "German (de)";
+            case "it" -> "Italian (it)";
+            case "pt" -> "Portuguese (pt)";
+            case "ja" -> "Japanese (ja)";
+            case "ko" -> "Korean (ko)";
+            case "ru" -> "Russian (ru)";
+            case "zhs" -> "Chinese Simplified (zhs)";
+            case "zht" -> "Chinese Traditional (zht)";
+            default -> value;
+        };
+    }
+
+    private int configWidgetX(int x, int availableWidth, int widgetWidth) {
+        return x + Math.min(300, Math.max(190, availableWidth - widgetWidth));
+    }
+
+    private int addSettingLabels(String label, String description, int x, int y, boolean editable, int descriptionWidth) {
+        int color = editable ? 0xFFE0E0E0 : 0xFF888888;
+        configLabels.add(new ConfigLabel(x, y + 2, Component.literal(label).getVisualOrderText(), color));
+        var lines = font.split(Component.literal(description), Math.max(120, descriptionWidth));
+        int lineY = y + 17;
+        for (var line : lines) {
+            configLabels.add(new ConfigLabel(x, lineY, line, 0xFF999999));
+            lineY += 10;
+        }
+        return Math.max(38, 21 + lines.size() * 10);
+    }
+
+    private boolean configWidgetVisible(int y) {
+        return y >= configViewportTop() && y + 20 <= configViewportBottom();
+    }
+
+    private int configViewportTop() { return topY + 48; }
+    private int configViewportBottom() { return topY + fullH - 32; }
+
+    private void loadConfigValues() {
+        configValues.clear();
+        configToggles.clear();
+        configValues.put("whitelist", String.join(", ", configOriginal.importWhitelist()));
+        configValues.put("language", configOriginal.cardLanguage());
+        configValues.put("common", number(configOriginal.customCommon()));
+        configValues.put("uncommon", number(configOriginal.customUncommon()));
+        configValues.put("wildcard", number(configOriginal.customWildcard()));
+        configValues.put("rare", number(configOriginal.customRare()));
+        configValues.put("random", number(configOriginal.customRandom()));
+        configValues.put("foil", number(configOriginal.customRandomFoil()));
+        configValues.put("land", number(configOriginal.customBasicLand()));
+        configValues.put("token", number(configOriginal.customTokenOrArt()));
+        configValues.put("price_item", configOriginal.priceItem());
+        configValues.put("price_basis", configOriginal.priceBasis());
+        configToggles.put("anyone", configOriginal.anyoneCanImport());
+        configToggles.put("ops", configOriginal.opsCanImport());
+        configToggles.put("fishing", configOriginal.fishingPacks());
+        configToggles.put("pack_debug", configOriginal.packDebug());
+        configToggles.put("card_store", configOriginal.cardStoreEnabled());
+        configToggles.put("mtg_game", configOriginal.mtgGameEnabled());
+    }
+
+    private void drawConfigContent(GuiGraphics ctx, int x, int y, int w, int h) {
+        int contentX = x + padding;
+        ctx.enableScissor(contentX, configViewportTop(), x + w - padding, configViewportBottom());
+        for (ConfigLabel label : configLabels) {
+            if (label.y() >= configViewportTop() - 10 && label.y() < configViewportBottom())
+                ctx.drawString(font, label.text(), label.x(), label.y(), label.color());
+        }
+        ctx.disableScissor();
+        ctx.drawString(font, Component.literal(configStatus), contentX, y + h - 18, 0xFFB0B0B0);
+        if (restartRequired) {
+            int saveX = x + w - padding - 70;
+            ctx.drawString(font, Component.translatable("guide.mtgcard.config.restart_required"),
+                    saveX - 310, y + h - 18, 0xFFFFAA55);
+        }
+        if (configScrollMax > 0) {
+            var scrollbar = MtgGuiChrome.layoutScrollbar(
+                    new MtgGuiChrome.Rect(x + w - 5, configViewportTop(), 4, configViewportBottom() - configViewportTop()),
+                    configViewportBottom() - configViewportTop() + configScrollMax,
+                    configViewportBottom() - configViewportTop(), configScroll, 12);
+            MtgGuiChrome.drawScrollbar(ctx, scrollbar, 0x33000000, 0x88FFFFFF, 0x33000000);
+        }
+    }
+
+    public void receiveServerConfig(String json, boolean canEdit, String message) {
+        try {
+            configOriginal = GuideConfigSnapshot.fromJson(json);
+            loadConfigValues();
+            canEditServerConfig = canEdit;
+            configStatus = message == null || message.isBlank()
+                    ? (canEdit ? "Server settings are editable." : "Server settings are read-only; operator permission is required.")
+                    : message;
+            if (isConfigChapter()) setupGuideWidgets();
+        } catch (RuntimeException error) {
+            configStatus = "Could not read server settings.";
+        }
+    }
+
+    private void saveConfig() {
+        MtgcardConfig local = MtgcardConfig.get();
+        local.Card_Peek_Position = cardPeekRight ? "right" : "left";
+        MtgcardConfig.save();
+        if (configOriginal == null || !canEditServerConfig) {
+            configStatus = "Client settings saved. Server settings are read-only.";
+            return;
+        }
+        try {
+            GuideConfigSnapshot update = new GuideConfigSnapshot(
+                    configToggle("anyone"), configToggle("ops"), parseList(configText("whitelist")), configText("language"),
+                    configDecimal("common"), configDecimal("uncommon"), configDecimal("wildcard"),
+                    configDecimal("rare"), configDecimal("random"), configDecimal("foil"),
+                    configDecimal("land"), configDecimal("token"), configToggle("pack_debug"),
+                    configToggle("fishing"), configToggle("card_store"), configToggle("mtg_game"),
+                    configText("price_item"), configText("price_basis")
+            );
+            if (update.cardStoreEnabled() != configOriginal.cardStoreEnabled()
+                    || update.mtgGameEnabled() != configOriginal.mtgGameEnabled()) restartRequired = true;
+            configStatus = "Saving server settings…";
+            ClientPlayNetworking.send(new GuideBookPackets.ConfigSavePayload(update.toJson()));
+        } catch (NumberFormatException error) {
+            configStatus = "Chance values must be numbers from 0.0 to 1.0.";
+        }
+    }
+
+    private Component configPositionText() {
+        return Component.translatable(cardPeekRight ? "guide.mtgcard.config.position_right" : "guide.mtgcard.config.position_left");
+    }
+
+    private String configText(String key) { return configValues.getOrDefault(key, "").trim(); }
+    private boolean configToggle(String key) { return Boolean.TRUE.equals(configToggles.get(key)); }
+    private double configDecimal(String key) { return Double.parseDouble(configText(key)); }
+    private static Component toggleText(boolean enabled) { return Component.literal(enabled ? "ON" : "OFF"); }
+    private static String number(double value) { return Double.toString(value); }
+
+    private static List<String> parseList(String value) {
+        if (value == null || value.isBlank()) return List.of();
+        return java.util.Arrays.stream(value.split(",")).map(String::trim)
+                .filter(part -> !part.isEmpty()).distinct().toList();
+    }
+
+    private record ConfigLabel(int x, int y, net.minecraft.util.FormattedCharSequence text, int color) {}
 }

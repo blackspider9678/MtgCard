@@ -216,6 +216,14 @@
   "guide.mtgcard.card.b_rotate": "Press E (or right-click the card) to rotate 90°.",
   "guide.mtgcard.card.b_flip": "Double-faced cards: press R (or use the flip button) to switch faces.",
   "guide.mtgcard.card.b_facedown": "Use the Facedown toggle to hide/reveal the card.",
+  "guide.mtgcard.card.h_peek": "Held-card preview",
+  "guide.mtgcard.card.b_peek": "Use the Card Peek keybind to show or hide a large preview while holding a card.",
+  "guide.mtgcard.card.b_peek_position": "Choose whether the preview appears on the left or right side of the screen in Config.",
+  "guide.mtgcard.card.b_peek_flip": "Use the Face Peek keybind to inspect the other face of supported cards.",
+  "guide.mtgcard.card.h_customization": "Artwork & customization",
+  "guide.mtgcard.card.b_sleeves": "Apply built-in or custom card backs with the Sleeve Customizer.",
+  "guide.mtgcard.card.b_attachments": "Attach related cards or tokens so transformed, melded, and companion pieces stay together.",
+  "guide.mtgcard.card.b_artwork": "Artwork downloads in the background and is cached locally; WebP cards and Flashback recordings are supported.",
 
   "guide.mtgcard.card.h_counters": "Counters",
   "guide.mtgcard.card.p_counters": "Counters are saved on the card and can be adjusted from the HUD or the Counters tab.",
@@ -588,6 +596,11 @@
   "guide.mtgcard.home.b_design_builders": "Blocks are designed to look good in builds, not just serve a function.",
   "guide.mtgcard.home.b_design_survival": "Everything fits naturally into survival gameplay and progression.",
   "guide.mtgcard.home.b_design_modular": "Systems are modular — use as much or as little of the mod as you want.",
+  "guide.mtgcard.home.h_extensions": "Custom cards, add-ons & compatibility",
+  "guide.mtgcard.home.b_addons": "Pokémon, Riftbound, and Lorcana add-ons can use MtgCard's shared card systems for additional games.",
+  "guide.mtgcard.home.b_custom_cards": "Import custom cards, custom sets, TXT or CSV deck lists, and supported Magic Set Editor exports.",
+  "guide.mtgcard.home.b_compatibility": "MtgCard supports Fabric and NeoForge release lines where matching loader versions are available.",
+  "guide.mtgcard.home.b_optional_content": "Optional biome-mod Deckboxes load only when the mod that supplies their materials is installed.",
 
   "guide.mtgcard.home.h_guide": "Using This Guide",
   "guide.mtgcard.home.p_guide": "This guidebook walks through every major system in the mod, organized for both new players and power users.",
@@ -605,7 +618,8 @@
   "guide.mtgcard.config.h_import": "Custom card importing",
   "guide.mtgcard.config.p_import": "Controls who is allowed to import custom cards into the world/server.",
   "guide.mtgcard.config.b_import_anyone": "import.anyone_can_import: If true, any player can use the importer.",
-  "guide.mtgcard.config.b_import_whitelist": "import.whitelist: If anyone_can_import is false, only these usernames can import.",
+  "guide.mtgcard.config.b_import_ops": "import.ops_can_import: Allows server operators to use the importer when public importing is disabled.",
+  "guide.mtgcard.config.b_import_whitelist": "import.whitelist: Player names that may import when public importing is disabled.",
 
   "guide.mtgcard.config.h_cards": "Card settings",
   "guide.mtgcard.config.p_cards": "Controls how downloaded cards are requested from Scryfall.",
@@ -655,5 +669,19 @@
   "key.mtgcard.toggle_card_peek": "Toggle Card Peek",
   "key.mtgcard.flip_card_face": "Toggle Face Peek",
   "tooltip.mtgcard.peek_hint": "Press %s to toggle sneak peek",
-  "tooltip.mtgcard.flip_hint": "Press %s to flip card"
+  "tooltip.mtgcard.flip_hint": "Press %s to flip card",
+
+  "guide.mtgcard.config.editor_title": "MTGCard Configuration",
+  "guide.mtgcard.config.save": "Save",
+  "guide.mtgcard.config.client_heading": "Client settings (always editable)",
+  "guide.mtgcard.config.server_heading": "Server settings (operator permission required)",
+  "guide.mtgcard.config.card_peek_position": "Card peek position",
+  "guide.mtgcard.config.position_left": "Left",
+  "guide.mtgcard.config.position_right": "Right",
+  "guide.mtgcard.config.restart_required": "Game restart is required for changes to be in effect.",
+  "guide.mtgcard.config.h_ingame": "Editing in the guidebook",
+  "guide.mtgcard.config.p_ingame": "Open this chapter to edit MtgCard settings in game, then press Save to apply them.",
+  "guide.mtgcard.config.b_ingame_client": "Client preferences affect only your game and remain editable while connected to a server.",
+  "guide.mtgcard.config.b_ingame_server": "Server-owned settings require operator permission in multiplayer.",
+  "guide.mtgcard.config.b_ingame_restart": "If a saved setting requires a restart, the editor keeps a warning visible until the game is restarted."
 }
