@@ -24,6 +24,14 @@ public final class ConfigChapter extends BasicGuideChapter {
     @Override
     public List<GuideSection> sections() {
         return List.of(
+                new GuideSection.Heading(Component.translatable("guide.mtgcard.config.h_ingame")),
+                new GuideSection.Paragraph(Component.translatable("guide.mtgcard.config.p_ingame")),
+                new GuideSection.Bullets(List.of(
+                        Component.translatable("guide.mtgcard.config.b_ingame_client"),
+                        Component.translatable("guide.mtgcard.config.b_ingame_server"),
+                        Component.translatable("guide.mtgcard.config.b_ingame_restart")
+                )),
+
                 new GuideSection.Heading(Component.translatable("guide.mtgcard.config.h_location")),
                 new GuideSection.Paragraph(Component.translatable("guide.mtgcard.config.p_location")),
                 new GuideSection.Bullets(List.of(
@@ -35,6 +43,7 @@ public final class ConfigChapter extends BasicGuideChapter {
                 new GuideSection.Paragraph(Component.translatable("guide.mtgcard.config.p_import")),
                 new GuideSection.Bullets(List.of(
                         Component.translatable("guide.mtgcard.config.b_import_anyone"),
+                        Component.translatable("guide.mtgcard.config.b_import_ops"),
                         Component.translatable("guide.mtgcard.config.b_import_whitelist")
                 )),
 

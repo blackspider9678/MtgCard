@@ -29,6 +29,7 @@ public final class MtgcardConfig {
     // ========= YOUR SETTINGS (same fields) =========
 
     public boolean Anyone_Can_Import = false;
+    public boolean Ops_Can_Import = true;
     public Set<String> Import_Whitelist = new LinkedHashSet<>();
 
     // Card language (Scryfall)
@@ -136,6 +137,7 @@ public final class MtgcardConfig {
 
             // --- import ---
             cfg.Anyone_Can_Import = file.getOrElse("import.anyone_can_import", cfg.Anyone_Can_Import);
+            cfg.Ops_Can_Import = file.getOrElse("import.ops_can_import", cfg.Ops_Can_Import);
             cfg.Import_Whitelist = new LinkedHashSet<>(file.getOrElse("import.whitelist", cfg.Import_Whitelist));
 
             // --- language ---
@@ -224,6 +226,7 @@ public final class MtgcardConfig {
 
                 // write values
                 file.set("import.anyone_can_import", cfg.Anyone_Can_Import);
+                file.set("import.ops_can_import", cfg.Ops_Can_Import);
                 file.set("import.whitelist", new java.util.ArrayList<>(cfg.Import_Whitelist));
 
                 file.set("cards.language", cfg.Card_Language);
@@ -276,6 +279,7 @@ public final class MtgcardConfig {
         file.setComment("import",
                 "Import settings.\n" +
                         "anyone_can_import: if true, any player can use the custom card importer.\n" +
+                        "ops_can_import: if true, server operators can use the importer.\n" +
                         "whitelist: if anyone_can_import is false, only these usernames can import.");
 
         file.setComment("import.anyone_can_import", "Allow anyone to import custom cards.");
@@ -552,6 +556,31 @@ public final class MtgcardConfig {
     public static boolean cardPeekOnRight() {
         MtgcardConfig cfg = get();
         return cfg == null || !"left".equals(cfg.Card_Peek_Position);
+    }
+
+    public static synchronized void applyServerSnapshot(GuideConfigSnapshot value) {
+        if (value == null) return;
+        MtgcardConfig cfg = get();
+        cfg.Anyone_Can_Import = value.anyoneCanImport();
+        cfg.Ops_Can_Import = value.opsCanImport();
+        cfg.Import_Whitelist = new LinkedHashSet<>(value.importWhitelist() == null ? Set.of() : value.importWhitelist());
+        cfg.Card_Language = value.cardLanguage();
+        cfg.chance_custom_common = value.customCommon();
+        cfg.chance_custom_uncommon = value.customUncommon();
+        cfg.chance_custom_wildcard_c_or_u = value.customWildcard();
+        cfg.chance_custom_rare_or_mythic = value.customRare();
+        cfg.chance_custom_random = value.customRandom();
+        cfg.chance_custom_random_foil = value.customRandomFoil();
+        cfg.chance_custom_basic_land = value.customBasicLand();
+        cfg.chance_custom_token_or_art = value.customTokenOrArt();
+        cfg.Pack_Debug = value.packDebug();
+        cfg.Loot_Packs_From_Fishing = value.fishingPacks();
+        cfg.Card_Store_Enabled = value.cardStoreEnabled();
+        cfg.MTG_Game_Enabled = value.mtgGameEnabled();
+        cfg.Price_Item = value.priceItem();
+        cfg.Price_Basis = value.priceBasis();
+        applyDefaultsAndClamp(cfg);
+        saveToml(cfg);
     }
 
     public static boolean mtgGameEnabled() {

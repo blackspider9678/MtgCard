@@ -26,7 +26,7 @@ public final class ImportPerms {
 
         // Otherwise: ops only
         // NOTE: in newer mappings, this is still the simplest reliable check.
-        return Perms.isOp(player);
+        return cfg.Ops_Can_Import && Perms.isOp(player);
     }
 
     private ImportPerms() {}

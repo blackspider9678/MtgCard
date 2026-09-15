@@ -37,6 +37,20 @@ public final class CardChapter extends BasicGuideChapter {
                         Component.translatable("guide.mtgcard.card.b_facedown")
                 )),
 
+                new GuideSection.Heading(Component.translatable("guide.mtgcard.card.h_peek")),
+                new GuideSection.Bullets(List.of(
+                        Component.translatable("guide.mtgcard.card.b_peek"),
+                        Component.translatable("guide.mtgcard.card.b_peek_position"),
+                        Component.translatable("guide.mtgcard.card.b_peek_flip")
+                )),
+
+                new GuideSection.Heading(Component.translatable("guide.mtgcard.card.h_customization")),
+                new GuideSection.Bullets(List.of(
+                        Component.translatable("guide.mtgcard.card.b_sleeves"),
+                        Component.translatable("guide.mtgcard.card.b_attachments"),
+                        Component.translatable("guide.mtgcard.card.b_artwork")
+                )),
+
                 new GuideSection.Heading(Component.translatable("guide.mtgcard.card.h_counters")),
                 new GuideSection.Paragraph(Component.translatable("guide.mtgcard.card.p_counters")),
                 new GuideSection.Bullets(List.of(
