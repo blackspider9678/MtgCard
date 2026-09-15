@@ -4,6 +4,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.client.input.ModKeybinds;
+import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.item.CardItem;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
@@ -122,14 +123,17 @@ public final class CardPeekHud implements HudElement {
         CardArtManager.TextureRef texRef = CardArtManager.getOrRequestFace(stack, face);
         if (texRef == null || texRef.id() == null) return;
 
+        int sw = ctx.guiWidth();
         int sh = ctx.guiHeight();
 
         float eased = smoothstep(t);
 
-        // Slide in from offscreen left
-        float x = lerp(-PREVIEW_W - PAD, PAD, eased);
+        boolean onRight = MtgcardConfig.cardPeekOnRight();
+        float x = onRight
+                ? lerp(sw + PAD, sw - PREVIEW_W - PAD, eased)
+                : lerp(-PREVIEW_W - PAD, PAD, eased);
 
-        // Bottom-left, lifted above hotbar
+        // Bottom corner selected in mtgcard.toml, lifted above the hotbar.
         float y = sh - PREVIEW_H - PAD - HOTBAR_LIFT;
 
         // Fade with slide
