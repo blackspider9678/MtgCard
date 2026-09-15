@@ -32,6 +32,9 @@ public final class MtgcardConfig {
     // Card language (Scryfall)
     public String Card_Language = "en";
 
+    // Client HUD
+    public String Card_Peek_Position = "right";
+
     // Pack: global custom pull chances (0..1)
     public double chance_custom_common = 0.10;
     public double chance_custom_uncommon = 0.05;
@@ -119,6 +122,15 @@ public final class MtgcardConfig {
             // --- language ---
             cfg.Card_Language = file.getOrElse("cards.language", cfg.Card_Language);
 
+            // --- client HUD ---
+            boolean needsSave = false;
+            if (file.contains("client.card_peek_position")) {
+                cfg.Card_Peek_Position = file.getOrElse("client.card_peek_position", cfg.Card_Peek_Position);
+            } else {
+                file.set("client.card_peek_position", cfg.Card_Peek_Position);
+                needsSave = true;
+            }
+
             // --- pack chances ---
             cfg.chance_custom_common = file.getOrElse("pack.custom_chances.common", cfg.chance_custom_common);
             cfg.chance_custom_uncommon = file.getOrElse("pack.custom_chances.uncommon", cfg.chance_custom_uncommon);
@@ -134,7 +146,6 @@ public final class MtgcardConfig {
             cfg.Loot_Packs_From_Fishing = file.getOrElse("loot.packs_from_fishing", cfg.Loot_Packs_From_Fishing);
 
             // --- card store ---
-            boolean needsSave = false;
             if (addonDetected()) {
                 if (file.contains("games.mtg_enabled")) cfg.MTG_Game_Enabled = file.getOrElse("games.mtg_enabled", cfg.MTG_Game_Enabled);
                 else { file.set("games.mtg_enabled", cfg.MTG_Game_Enabled); addComments(file); file.save(); }
@@ -179,6 +190,8 @@ public final class MtgcardConfig {
 
                 file.set("cards.language", cfg.Card_Language);
 
+                file.set("client.card_peek_position", cfg.Card_Peek_Position);
+
                 file.set("pack.custom_chances.common", cfg.chance_custom_common);
                 file.set("pack.custom_chances.uncommon", cfg.chance_custom_uncommon);
                 file.set("pack.custom_chances.wildcard_c_or_u", cfg.chance_custom_wildcard_c_or_u);
@@ -221,6 +234,11 @@ public final class MtgcardConfig {
                         "Examples: en, es, fr, de, it, pt, ja, ko, ru, zhs, zht");
 
         file.setComment("cards.language", "Preferred Scryfall language code (falls back to English if not available).");
+
+        file.setComment("client",
+                "Client display settings.\n" +
+                        "card_peek_position: screen edge used by the held-card preview: left or right.");
+        file.setComment("client.card_peek_position", "Held-card preview position: left or right.");
 
         file.setComment("pack",
                 "Pack settings.\n" +
@@ -270,6 +288,9 @@ public final class MtgcardConfig {
         if (cfg.Card_Language == null || cfg.Card_Language.isBlank()) cfg.Card_Language = "en";
         cfg.Card_Language = normalizeLang(cfg.Card_Language);
 
+        if (cfg.Card_Peek_Position == null) cfg.Card_Peek_Position = "right";
+        cfg.Card_Peek_Position = normalizeCardPeekPosition(cfg.Card_Peek_Position);
+
         cfg.chance_custom_common = clamp01(cfg.chance_custom_common);
         cfg.chance_custom_uncommon = clamp01(cfg.chance_custom_uncommon);
         cfg.chance_custom_wildcard_c_or_u = clamp01(cfg.chance_custom_wildcard_c_or_u);
@@ -292,6 +313,10 @@ public final class MtgcardConfig {
         if (s.matches("^[a-z]{2,3}$")) return s;        // en, ja, ko, zhs, zht, grc, etc.
         if (s.matches("^[a-z]{2}-[a-z]{2}$")) return s; // permissive
         return "en";
+    }
+
+    private static String normalizeCardPeekPosition(String raw) {
+        return "left".equalsIgnoreCase(raw.trim()) ? "left" : "right";
     }
 
     private static Path tomlPath() {
@@ -331,6 +356,11 @@ public final class MtgcardConfig {
     public static boolean cardStoreEnabled() {
         MtgcardConfig cfg = get();
         return cfg == null || cfg.Card_Store_Enabled;
+    }
+
+    public static boolean cardPeekOnRight() {
+        MtgcardConfig cfg = get();
+        return cfg == null || !"left".equals(cfg.Card_Peek_Position);
     }
 
     public static boolean mtgGameEnabled() {
