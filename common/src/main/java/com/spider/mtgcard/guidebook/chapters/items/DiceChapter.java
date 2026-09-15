@@ -39,6 +39,15 @@ public final class DiceChapter extends BasicGuideChapter {
                 )),
 
                 new GuideSection.Heading(
+                        net.minecraft.network.chat.Component.translatable("guide.mtgcard.dice.h_physical")
+                ),
+                new GuideSection.Bullets(List.of(
+                        net.minecraft.network.chat.Component.translatable("guide.mtgcard.dice.b_physical_config"),
+                        net.minecraft.network.chat.Component.translatable("guide.mtgcard.dice.b_physical_throw"),
+                        net.minecraft.network.chat.Component.translatable("guide.mtgcard.dice.b_physical_place")
+                )),
+
+                new GuideSection.Heading(
                         net.minecraft.network.chat.Component.translatable("guide.mtgcard.dice.h_detailed")
                 ),
                 new GuideSection.Bullets(List.of(

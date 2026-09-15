@@ -105,6 +105,13 @@ public final class NeoForgeRegistries {
         if (event.getRegistryKey().equals(Registries.ENTITY_TYPE)) {
             ModEntities.init();
             event.register(Registries.ENTITY_TYPE, ModEntities.CARD_DISPLAY_ID, () -> ModEntities.CARD_DISPLAY);
+            event.register(Registries.ENTITY_TYPE, ModEntities.D4_DICE_ID, () -> ModEntities.D4_DICE);
+            event.register(Registries.ENTITY_TYPE, ModEntities.D6_DICE_ID, () -> ModEntities.D6_DICE);
+            event.register(Registries.ENTITY_TYPE, ModEntities.D8_DICE_ID, () -> ModEntities.D8_DICE);
+            event.register(Registries.ENTITY_TYPE, ModEntities.D10_DICE_ID, () -> ModEntities.D10_DICE);
+            event.register(Registries.ENTITY_TYPE, ModEntities.D12_DICE_ID, () -> ModEntities.D12_DICE);
+            event.register(Registries.ENTITY_TYPE, ModEntities.D20_DICE_ID, () -> ModEntities.D20_DICE);
+            event.register(Registries.ENTITY_TYPE, ModEntities.D100_DICE_ID, () -> ModEntities.D100_DICE);
             return;
         }
 

@@ -85,6 +85,13 @@ public final class MtgcardNeoForgeClient {
 
     private static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(ModEntities.CARD_DISPLAY, CardDisplayEntityRenderer::new);
+        event.registerEntityRenderer(ModEntities.D4_DICE, com.spider.mtgcard.client.dice.DiceEntityRenderer::new);
+        event.registerEntityRenderer(ModEntities.D6_DICE, com.spider.mtgcard.client.dice.DiceEntityRenderer::new);
+        event.registerEntityRenderer(ModEntities.D8_DICE, com.spider.mtgcard.client.dice.DiceEntityRenderer::new);
+        event.registerEntityRenderer(ModEntities.D10_DICE, com.spider.mtgcard.client.dice.DiceEntityRenderer::new);
+        event.registerEntityRenderer(ModEntities.D12_DICE, com.spider.mtgcard.client.dice.DiceEntityRenderer::new);
+        event.registerEntityRenderer(ModEntities.D20_DICE, com.spider.mtgcard.client.dice.DiceEntityRenderer::new);
+        event.registerEntityRenderer(ModEntities.D100_DICE, com.spider.mtgcard.client.dice.DiceEntityRenderer::new);
         event.registerBlockEntityRenderer(ModBlockEntities.DISPLAY_BLOCK, DisplayBlockEntityRenderer::new);
         event.registerBlockEntityRenderer(ModBlockEntities.CARD_DB, CardDatabaseBlockEntityRenderer::new);
         event.registerBlockEntityRenderer(ModBlockEntities.DECK_CONTROL, DeckControlEntityRenderer::new);

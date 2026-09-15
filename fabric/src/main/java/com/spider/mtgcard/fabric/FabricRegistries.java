@@ -106,6 +106,13 @@ public final class FabricRegistries {
     private static void registerEntities() {
         ModEntities.init();
         Registry.register(BuiltInRegistries.ENTITY_TYPE, ModEntities.CARD_DISPLAY_ID, ModEntities.CARD_DISPLAY);
+        Registry.register(BuiltInRegistries.ENTITY_TYPE, ModEntities.D4_DICE_ID, ModEntities.D4_DICE);
+        Registry.register(BuiltInRegistries.ENTITY_TYPE, ModEntities.D6_DICE_ID, ModEntities.D6_DICE);
+        Registry.register(BuiltInRegistries.ENTITY_TYPE, ModEntities.D8_DICE_ID, ModEntities.D8_DICE);
+        Registry.register(BuiltInRegistries.ENTITY_TYPE, ModEntities.D10_DICE_ID, ModEntities.D10_DICE);
+        Registry.register(BuiltInRegistries.ENTITY_TYPE, ModEntities.D12_DICE_ID, ModEntities.D12_DICE);
+        Registry.register(BuiltInRegistries.ENTITY_TYPE, ModEntities.D20_DICE_ID, ModEntities.D20_DICE);
+        Registry.register(BuiltInRegistries.ENTITY_TYPE, ModEntities.D100_DICE_ID, ModEntities.D100_DICE);
     }
 
     private static void registerMenus() {
