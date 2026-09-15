@@ -44,6 +44,14 @@ public final class HomeChapter extends BasicGuideChapter {
                         Component.translatable("guide.mtgcard.home.b_design_modular")
                 )),
 
+                new GuideSection.Heading(Component.translatable("guide.mtgcard.home.h_extensions")),
+                new GuideSection.Bullets(List.of(
+                        Component.translatable("guide.mtgcard.home.b_addons"),
+                        Component.translatable("guide.mtgcard.home.b_custom_cards"),
+                        Component.translatable("guide.mtgcard.home.b_compatibility"),
+                        Component.translatable("guide.mtgcard.home.b_optional_content")
+                )),
+
                 new GuideSection.Heading(Component.translatable("guide.mtgcard.home.h_guide")),
                 new GuideSection.Paragraph(Component.translatable("guide.mtgcard.home.p_guide")),
                 new GuideSection.Bullets(List.of(
