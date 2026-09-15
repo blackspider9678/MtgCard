@@ -3,13 +3,14 @@ package com.spider.mtgcard.content.pack;
 import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.api.BoosterPackLootRegistry;
 import com.spider.mtgcard.item.ModItems;
+import net.minecraft.core.Holder;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.storage.loot.LootPool;
 import net.minecraft.world.level.storage.loot.entries.LootItem;
 import net.minecraft.world.level.storage.loot.functions.SetItemCountFunction;
 import net.minecraft.world.level.storage.loot.predicates.LootItemRandomChanceCondition;
-import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
-import net.minecraft.world.level.storage.loot.providers.number.UniformGenerator;
+import net.minecraft.world.level.storage.loot.providers.number.ints.ConstantValue;
+import net.minecraft.world.level.storage.loot.providers.number.ints.UniformGenerator;
 
 import java.util.List;
 
@@ -62,7 +63,7 @@ public final class PackLootRules {
 
     private static LootPool.Builder packPool(BoosterPackLootRegistry.Entry entry, float minCount, float maxCount) {
         LootPool.Builder pool = LootPool.lootPool()
-                .setRolls(ConstantValue.exactly(1.0F))
+                .setRolls(Holder.direct(new ConstantValue(1)))
                 .when(LootItemRandomChanceCondition.randomChance(entry.chance()));
 
         if (minCount == 1.0F && maxCount == 1.0F) {
@@ -70,7 +71,9 @@ public final class PackLootRules {
         }
 
         return pool.add(LootItem.lootTableItem(entry.item().get())
-                .apply(SetItemCountFunction.setCount(UniformGenerator.between(minCount, maxCount))));
+                .apply(SetItemCountFunction.setCount(Holder.direct(new UniformGenerator(
+                        Holder.direct(new ConstantValue((int) minCount)),
+                        Holder.direct(new ConstantValue((int) maxCount)))))));
     }
 
     private PackLootRules() {}

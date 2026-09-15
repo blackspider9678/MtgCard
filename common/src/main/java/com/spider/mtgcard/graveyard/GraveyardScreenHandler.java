@@ -19,6 +19,8 @@ public class GraveyardScreenHandler extends AbstractContainerMenu {
 
     public static final int SIDE_SIZE = 100;   // 10x10
     public static final int TOTAL = 200;       // graveyard(100) + exile(100)
+    public static final int BUTTON_EXILE_ALL = 0;
+    public static final int BUTTON_RETURN_ALL = 1;
 
     public final BlockPos pos;
     private final ContainerLevelAccess context;
@@ -156,6 +158,21 @@ public class GraveyardScreenHandler extends AbstractContainerMenu {
         else slot.setChanged();
 
         return copy;
+    }
+
+    @Override
+    public boolean clickMenuButton(Player player, int id) {
+        if (id != BUTTON_EXILE_ALL && id != BUTTON_RETURN_ALL) return false;
+
+        return context.evaluate((world, bp) -> {
+            if (!(world.getBlockEntity(bp) instanceof GraveyardBlockEntity graveyard)) return false;
+
+            if (id == BUTTON_EXILE_ALL) graveyard.exileAll();
+            else graveyard.returnAll();
+
+            broadcastChanges();
+            return true;
+        }, false);
     }
 
     @Override

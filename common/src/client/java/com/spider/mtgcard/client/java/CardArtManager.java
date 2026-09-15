@@ -2,6 +2,7 @@ package com.spider.mtgcard.client.java;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
+import com.spider.mtgcard.client.compat.flashback.FlashbackArtBridge;
 import com.spider.mtgcard.shared.CardArtCommon;
 import com.spider.mtgcard.shared.MtgCardPaths;
 import com.spider.mtgcard.util.ArtImageStorage;
@@ -539,10 +540,18 @@ public final class CardArtManager {
                 if (Files.exists(file)) {
                     DISK_INDEX.put(artKey, file.getFileName().toString());
                     saveIndexAsync(game);
+                    FlashbackArtBridge.rememberArt(game, artKey, "", file);
                     queueDiskLoad(textureKey, file);
                     return;
                 }
 
+                Path flashbackFile = FlashbackArtBridge.findCachedArt(game, artKey, fallbackKeys, "");
+                if (generation != sessionGeneration) return;
+                if (flashbackFile != null && Files.exists(flashbackFile)) {
+                    FlashbackArtBridge.rememberArt(game, artKey, "", flashbackFile);
+                    queueDiskLoad(textureKey, flashbackFile);
+                    return;
+                }
 
                 String url = CardArtCommon.extractImageUrl(meta, faceIndex);
                 if (url == null || url.isEmpty()) return;
@@ -633,10 +642,18 @@ public final class CardArtManager {
                 if (Files.exists(file)) {
                     DISK_INDEX.put(artKey, file.getFileName().toString());
                     saveIndexAsync(game);
+                    FlashbackArtBridge.rememberArt(game, artKey, safeSetCode, file);
                     queueDiskLoad(textureKey, file);
                     return;
                 }
 
+                Path flashbackFile = FlashbackArtBridge.findCachedArt(game, artKey, List.of(), safeSetCode);
+                if (generation != sessionGeneration) return;
+                if (flashbackFile != null && Files.exists(flashbackFile)) {
+                    FlashbackArtBridge.rememberArt(game, artKey, safeSetCode, flashbackFile);
+                    queueDiskLoad(textureKey, flashbackFile);
+                    return;
+                }
 
                 DISK_INDEX.putIfAbsent(artKey, artKey + ".webp");
                 saveIndexAsync(game);
@@ -802,6 +819,7 @@ public final class CardArtManager {
             DISK_INDEX.put(safeArtKey, fileName);
             saveIndexAsync(safeGame);
 
+            FlashbackArtBridge.rememberArt(safeGame, safeArtKey, safeSetCode, file);
             if (LOADING.add(textureKey)) {
                 PENDING_DISK_LOADS.add(new PendingDiskLoad(textureKey, file, imgBytes));
             }

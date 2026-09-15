@@ -1,0 +1,13 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.spider.mtgcard.client.compat.flashback.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "plugin": "com.spider.mtgcard.client.compat.flashback.FlashbackCompatMixinPlugin",
+  "client": [
+    "FlashbackRecorderMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -7,13 +7,16 @@ modId = "mtgcard"
 version = "${version}"
 displayName = "MtgCard"
 authors = "Spider"
-description = '''satisfactory oreposits in the world of minecraft'''
+description = '''Magic: The Gathering tcg'''
 
 [[mixins]]
 config = "mtgcard.mousetweaks.mixins.json"
 
 [[mixins]]
 config = "mtgcard.mixins.json"
+
+[[mixins]]
+config = "mtgcard.flashback.mixins.json"
 
 [[dependencies.mtgcard]]
 modId = "neoforge"

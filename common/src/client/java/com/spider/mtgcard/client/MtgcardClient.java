@@ -1,6 +1,7 @@
 package com.spider.mtgcard.client;
 
 import com.spider.mtgcard.client.guidebook.GuideBookClientNet;
+import com.spider.mtgcard.client.compat.flashback.FlashbackArtBridge;
 import com.spider.mtgcard.client.hud.CardPeekHud;
 import com.spider.mtgcard.client.input.ModKeybinds;
 import com.spider.mtgcard.client.java.CardArtManager;
@@ -10,6 +11,7 @@ import com.spider.mtgcard.ModEntities;
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.registry.ModBlocks;
 import com.spider.mtgcard.client.gui.*;
+import com.spider.mtgcard.client.sleeve.SleeveClientHooks;
 import com.spider.mtgcard.client.display.CardDisplayEntityRenderer;
 import com.spider.mtgcard.client.render.CardDatabaseBlockEntityRenderer;
 
@@ -35,6 +37,7 @@ public final class MtgcardClient implements ClientModInitializer {
     public void onInitializeClient() {
         Mtgcard.LOGGER.info("[MtgcardClient] init");
         ArtImageStorage.ensureWebpCodecsRegistered();
+        FlashbackArtBridge.init();
 
         // Safe early: payload types, networking receivers, screen registration, model loading plugin
         ModPayloads.registerTypes();
@@ -57,6 +60,8 @@ public final class MtgcardClient implements ClientModInitializer {
         MenuScreens.register(ModScreenHandlers.GRAVEYARD, GraveyardScreen::new);
         MenuScreens.register(ModScreenHandlers.CARD_STORE, CardStoreScreen::new);
         MenuScreens.register(ModScreenHandlers.DICE_CUSTOMIZER, DiceCustomizerScreen::new);
+        MenuScreens.register(ModScreenHandlers.SLEEVE_CUSTOMIZER, SleeveCustomizerScreen::new);
+        SleeveClientHooks.init();
 
         GuideBookClientNet.init();
         ModKeybinds.init();
@@ -69,6 +74,7 @@ public final class MtgcardClient implements ClientModInitializer {
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             CardArtManager.pumpQueue();
+            FlashbackArtBridge.pumpQueue();
         });
     }
 

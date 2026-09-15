@@ -165,7 +165,7 @@ public class DeckControlEntityRenderer implements BlockEntityRenderer<DeckContro
             matrices.translate(p.x, p.y, p.z);
 
             // Billboard in world space (correct for all facings)
-            matrices.mulPose(cameraState.orientation);
+            matrices.mulPose(new Matrix4f().rotation(cameraState.orientation));
 
             matrices.scale(size, size, size);
 

@@ -2,6 +2,7 @@ package com.spider.mtgcard.deckbox;
 
 import com.mojang.serialization.MapCodec;
 import com.spider.mtgcard.api.DeckboxStorage;
+import com.spider.mtgcard.deckcontrol.DeckControlBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
@@ -9,6 +10,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.*;
 import net.minecraft.world.Containers;
 import net.minecraft.world.InteractionResult;
@@ -234,7 +236,7 @@ public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBl
     }
 
     @Override
-    public void playerDestroy(Level world, Player player, BlockPos pos,
+    public void playerDestroy(ServerLevel world, ServerPlayer player, BlockPos pos,
                            BlockState state, @Nullable BlockEntity blockEntity, ItemStack tool) {
         super.playerDestroy(world, player, pos, state, blockEntity, tool);
     }
@@ -328,12 +330,22 @@ public class DeckboxBlock extends BaseEntityBlock implements SimpleWaterloggedBl
                 deckbox.ensureStorageId();
                 deckbox.persistExternalRecord();
             }
+            notifyAdjacentDeckControls(world, pos);
         }
 
         super.setPlacedBy(world, pos, state, placer, stack);
     }
 
     /* ---------------- helpers ---------------- */
+
+    private static void notifyAdjacentDeckControls(Level world, BlockPos pos) {
+        for (Direction d : Direction.values()) {
+            BlockEntity be = world.getBlockEntity(pos.relative(d));
+            if (be instanceof DeckControlBlockEntity dc) {
+                dc.onNeighborDeckboxChanged(pos);
+            }
+        }
+    }
 
     private static ItemStack createDeckboxDrop(DeckboxBlockEntity deckbox) {
         ItemStack drop = new ItemStack(deckbox.getBlockState().getBlock());

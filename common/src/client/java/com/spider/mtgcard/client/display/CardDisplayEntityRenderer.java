@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import com.spider.mtgcard.Mtgcard;
+import com.spider.mtgcard.api.CardBackTextureRegistry;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.display.CardDisplayAttachmentData;
 import com.spider.mtgcard.display.CardDisplayEntity;
@@ -33,7 +34,6 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
 
     // Use constants instead of resource probing / image decode (avoids early RenderSystem/device issues)
     private static final Identifier TEX_WHITE = Identifier.fromNamespaceAndPath("minecraft", "textures/misc/white.png");
-    private static final Identifier TEX_BACK  = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/card.png");
 
     // Pick a stable aspect ratio for card back. (These are the values you already used as defaults.)
     private static final int BACK_W = 488;
@@ -231,7 +231,7 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
 
         orientQuadToFace(matrices, s.facing);
         if (s.facing == Direction.UP || s.facing == Direction.DOWN) {
-            matrices.mulPose(Axis.ZP.rotationDegrees(-s.flatYawStep * 90f));
+            matrices.mulPose(new Matrix4f().rotation(Axis.ZP.rotationDegrees(-s.flatYawStep * 90f)));
         }
 
         float baseNormalOffset = (s.facing == Direction.UP || s.facing == Direction.DOWN) ? 0.002f : 0.01f;
@@ -240,7 +240,7 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         matrices.translate(0f, yOffset, baseNormalOffset + layerOffset);
 
         float degrees = (card.rotStep() == 1) ? 90f : 0f;
-        matrices.mulPose(Axis.ZP.rotationDegrees(-degrees));
+        matrices.mulPose(new Matrix4f().rotation(Axis.ZP.rotationDegrees(-degrees)));
 
         float ar = (float) card.texW() / (float) card.texH();
         float halfW, halfH;
@@ -341,9 +341,7 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
 
     private static void refreshTextureData(CachedRenderData cached, ItemStack stack, long gameTime) {
         if (cached.hidden) {
-            cached.texId = TEX_BACK;
-            cached.texW = BACK_W;
-            cached.texH = BACK_H;
+            useCardBack(cached, stack);
             return;
         }
 
@@ -359,10 +357,14 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
             cached.texW = (ref.texW() > 0) ? ref.texW() : 256;
             cached.texH = (ref.texH() > 0) ? ref.texH() : 256;
         } else {
-            cached.texId = fallbackItemTexture(stack);
-            cached.texW = 256;
-            cached.texH = 256;
+            useCardBack(cached, stack);
         }
+    }
+
+    private static void useCardBack(CachedRenderData cached, ItemStack stack) {
+        cached.texId = CardBackTextureRegistry.textureForStackOrDefault(stack);
+        cached.texW = BACK_W;
+        cached.texH = BACK_H;
     }
 
     private static void put(VertexConsumer vc, Matrix4f mat,
@@ -385,20 +387,15 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
                 .setNormal(0f, 0f, 1f);
     }
 
-    private static Identifier fallbackItemTexture(ItemStack stack) {
-        Identifier id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem());
-        return Identifier.fromNamespaceAndPath(id.getNamespace(), "textures/item/" + id.getPath() + ".png");
-    }
-
     private static void orientQuadToFace(PoseStack matrices, Direction facing) {
         // Quad starts facing +Z (SOUTH) in local space
         switch (facing) {
             case SOUTH -> { /* no rotation */ }
-            case NORTH -> matrices.mulPose(Axis.YP.rotationDegrees(180f));
-            case EAST  -> matrices.mulPose(Axis.YP.rotationDegrees(90f));
-            case WEST  -> matrices.mulPose(Axis.YP.rotationDegrees(-90f));
-            case UP    -> matrices.mulPose(Axis.XP.rotationDegrees(-90f)); // +Z -> +Y
-            case DOWN  -> matrices.mulPose(Axis.XP.rotationDegrees(90f));  // +Z -> -Y
+            case NORTH -> matrices.mulPose(new Matrix4f().rotation(Axis.YP.rotationDegrees(180f)));
+            case EAST  -> matrices.mulPose(new Matrix4f().rotation(Axis.YP.rotationDegrees(90f)));
+            case WEST  -> matrices.mulPose(new Matrix4f().rotation(Axis.YP.rotationDegrees(-90f)));
+            case UP    -> matrices.mulPose(new Matrix4f().rotation(Axis.XP.rotationDegrees(-90f))); // +Z -> +Y
+            case DOWN  -> matrices.mulPose(new Matrix4f().rotation(Axis.XP.rotationDegrees(90f)));  // +Z -> -Y
         }
     }
 

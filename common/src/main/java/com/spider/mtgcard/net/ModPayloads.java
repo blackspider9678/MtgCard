@@ -5,6 +5,8 @@ import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.cardstore.CardStorePackets;
 import com.spider.mtgcard.content.pack.PackProgressBars;
 import com.spider.mtgcard.dice.DiceCustomizerPackets;
+import com.spider.mtgcard.api.BuiltinSleeves;
+import com.spider.mtgcard.sleeve.SleeveCustomizerPackets;
 import com.spider.mtgcard.graveyard.GraveyardBlockEntity;
 import com.spider.mtgcard.net.payload.*;
 import com.spider.mtgcard.shared.MtgCardPaths;
@@ -50,6 +52,7 @@ public final class ModPayloads {
         typesRegistered = true;
 
         Mtgcard.LOGGER.info("[ModPayloads] registerTypes() starting...");
+        BuiltinSleeves.init();
 
         // ---- Art streaming (chunked) ----
         PayloadTypeRegistry.serverboundPlay().register(ArtPackets.ArtRequest.ID, ArtPackets.ArtRequest.CODEC);
@@ -75,6 +78,7 @@ public final class ModPayloads {
 
         // ---- Dice Customizer types ----
         DiceCustomizerPackets.registerTypes();
+        SleeveCustomizerPackets.registerTypes();
 
         // ---- Hidden flags / display payloads ----
         PayloadTypeRegistry.serverboundPlay().register(SetHiddenPayload.ID, SetHiddenPayload.CODEC);
@@ -125,6 +129,7 @@ public final class ModPayloads {
 
         // Dice Customizer receivers (SERVER side)
         DiceCustomizerPackets.registerServer();
+        SleeveCustomizerPackets.registerServer();
 
         // -------------------------
         // Stack-based mutations

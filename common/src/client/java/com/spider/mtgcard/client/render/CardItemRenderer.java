@@ -1,8 +1,7 @@
 package com.spider.mtgcard.client.render;
 
 import com.mojang.serialization.MapCodec;
-import com.spider.mtgcard.client.java.CardArtManager;
-import com.spider.mtgcard.util.TcgCardMeta;
+import com.spider.mtgcard.api.CardBackTextureRegistry;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.SubmitNodeCollector;
@@ -21,19 +20,12 @@ import java.util.function.Consumer;
 
 public class CardItemRenderer implements SpecialModelRenderer<CardItemRenderer.Data> {
 
-    public record Data(ItemStack stack, int face) {}
-
-    private static final Identifier FALLBACK_FRONT = Identifier.fromNamespaceAndPath("mtgcard", "textures/item/card.png");
-    private static final Identifier FALLBACK_BACK  = Identifier.fromNamespaceAndPath("mtgcard", "textures/item/card_back.png");
-
-    private static int readFaceIndex(ItemStack st) {
-        return TcgCardMeta.read(st).face();
-    }
+    public record Data(ItemStack stack) {}
 
     @Override
     public @Nullable Data extractArgument(ItemStack stack) {
         // ALWAYS run the special renderer so fallback can draw while loading.
-        return new Data(stack, readFaceIndex(stack));
+        return new Data(stack);
     }
 
     @Override
@@ -47,15 +39,10 @@ public class CardItemRenderer implements SpecialModelRenderer<CardItemRenderer.D
 
         if (data == null) return;
 
-        int face = data.face();
         ItemStack stack = data.stack();
-
-        CardArtManager.TextureRef ref = CardArtManager.getOrRequestFace(stack, face);
-
-        Identifier tex = (ref != null && ref.id() != null)
-                ? ref.id()
-                : (face == 1 ? FALLBACK_BACK : FALLBACK_FRONT);
-        int texW = (ref != null && ref.texW() > 0) ? ref.texW() : 256;
+        // The physical item model represents the back of the card. Detailed
+        // front art continues to be rendered by the existing GUI/entity paths.
+        Identifier tex = CardBackTextureRegistry.textureForStackOrDefault(stack);
         boolean foil = glint || CardFoilUtil.isFoil(stack);
 
         matrices.pushPose();
@@ -76,7 +63,7 @@ public class CardItemRenderer implements SpecialModelRenderer<CardItemRenderer.D
         });
 
         if (foil) {
-            CardFoilUtil.Sweep sweep = CardFoilUtil.computeSweep(System.currentTimeMillis(), texW);
+            CardFoilUtil.Sweep sweep = CardFoilUtil.computeSweep(System.currentTimeMillis(), 1040);
             if (sweep != null) {
                 matrices.pushPose();
                 matrices.translate(0f, 0f, 0.001f);
@@ -110,11 +97,11 @@ public class CardItemRenderer implements SpecialModelRenderer<CardItemRenderer.D
         vertices.accept(new Vector3f(0f, 0f, 0f));
     }
 
-    public static class Unbaked implements net.minecraft.client.renderer.special.SpecialModelRenderer.Unbaked {
+    public static class Unbaked implements SpecialModelRenderer.Unbaked<Data> {
         public static final MapCodec<Unbaked> MAP_CODEC = MapCodec.unit(Unbaked::new);
 
         @Override
-        public SpecialModelRenderer<?> bake(BakingContext context) {
+        public SpecialModelRenderer<Data> bake(BakingContext context) {
             return new CardItemRenderer();
         }
 

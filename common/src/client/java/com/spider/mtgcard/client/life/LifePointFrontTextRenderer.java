@@ -16,7 +16,7 @@ import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.network.chat.Component;
 import net.minecraft.core.Direction;
 import net.minecraft.world.phys.Vec3;
-import org.joml.Quaternionf;
+import org.joml.Matrix4f;
 
 public final class LifePointFrontTextRenderer
         implements BlockEntityRenderer<LifePointBlockEntity, LifePointFrontTextRenderer.State> {
@@ -88,7 +88,7 @@ public final class LifePointFrontTextRenderer
 
         // Rotate to face the block "front"
         float yawDeg = yawForFacing(st.facing);
-        matrices.mulPose(new Quaternionf().rotationY((float) Math.toRadians(yawDeg)));
+        matrices.mulPose(new Matrix4f().rotationY((float) Math.toRadians(yawDeg)));
 
         // Push slightly out in front of the face
         matrices.translate(0.0, 0.0, 0.501);

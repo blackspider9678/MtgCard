@@ -1,6 +1,9 @@
 {
   "model": {
-    "type" : "minecraft:model",
-    "model": "mtgcard:item/card"
+    "type": "minecraft:special",
+    "base": "mtgcard:item/card",
+    "model": {
+      "type": "mtgcard:card"
+    }
   }
 }

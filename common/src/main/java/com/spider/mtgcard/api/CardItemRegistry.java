@@ -31,6 +31,7 @@ public final class CardItemRegistry {
             throw new IllegalArgumentException("Card item supplier must not be null");
         }
         CARD_ITEMS.put(normalized, itemSupplier);
+        CardBackTextureRegistry.registerItemTextureIfAbsent(normalized, itemSupplier);
     }
 
     public static synchronized Optional<Item> get(String game) {
@@ -46,6 +47,17 @@ public final class CardItemRegistry {
 
     public static Item itemForGameOrDefault(String game) {
         return get(game).orElse(defaultCardItem());
+    }
+
+    /** True for any concrete card item registered by MTGcard or an add-on. */
+    public static synchronized boolean isCard(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        Item candidate = stack.getItem();
+        for (Supplier<? extends Item> supplier : CARD_ITEMS.values()) {
+            Item item = supplier.get();
+            if (item != null && item == candidate) return true;
+        }
+        return false;
     }
 
     public static Item itemForSerializedEntry(CompoundTag entry) {

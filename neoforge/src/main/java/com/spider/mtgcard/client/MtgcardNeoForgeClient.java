@@ -12,13 +12,16 @@ import com.spider.mtgcard.client.gui.DeckControlScreen;
 import com.spider.mtgcard.client.gui.DeckboxScreen;
 import com.spider.mtgcard.client.gui.DiceCustomizerScreen;
 import com.spider.mtgcard.client.gui.GraveyardScreen;
+import com.spider.mtgcard.client.gui.SleeveCustomizerScreen;
 import com.spider.mtgcard.client.hud.CardPeekHud;
 import com.spider.mtgcard.client.input.ModKeybinds;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.client.life.LifePointFrontTextRenderer;
 import com.spider.mtgcard.client.render.CardDatabaseBlockEntityRenderer;
 import com.spider.mtgcard.client.render.DiceItemRenderer;
+import com.spider.mtgcard.client.render.CardItemRenderer;
 import com.spider.mtgcard.dice.DiceCustomizerPackets;
+import com.spider.mtgcard.sleeve.SleeveCustomizerPackets;
 import com.spider.mtgcard.registry.ModRegistry;
 import com.spider.mtgcard.registry.ModBlockEntities;
 import com.spider.mtgcard.screen.ModScreenHandlers;
@@ -77,6 +80,7 @@ public final class MtgcardNeoForgeClient {
         event.register(ModScreenHandlers.GRAVEYARD, GraveyardScreen::new);
         event.register(ModScreenHandlers.CARD_STORE, CardStoreScreen::new);
         event.register(ModScreenHandlers.DICE_CUSTOMIZER, DiceCustomizerScreen::new);
+        event.register(ModScreenHandlers.SLEEVE_CUSTOMIZER, SleeveCustomizerScreen::new);
     }
 
     private static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
@@ -89,6 +93,7 @@ public final class MtgcardNeoForgeClient {
 
     private static void registerSpecialModelRenderers(RegisterSpecialModelRendererEvent event) {
         event.register(ModRegistry.id("dice"), DiceItemRenderer.Unbaked.MAP_CODEC);
+        event.register(ModRegistry.id("card"), CardItemRenderer.Unbaked.MAP_CODEC);
     }
 
     private static void registerKeyMappings(RegisterKeyMappingsEvent event) {
@@ -123,6 +128,10 @@ public final class MtgcardNeoForgeClient {
                 Component.translatable("screen.mtgcard.dice_customizer.button"),
                 button -> ClientPlayNetworking.send(new DiceCustomizerPackets.OpenDiceCustomizerC2S())
         ).bounds(buttonX, buttonY, 94, 20).build());
+        event.addListener(Button.builder(
+                Component.literal("Card Sleeves"),
+                button -> ClientPlayNetworking.send(new SleeveCustomizerPackets.Open())
+        ).bounds(buttonX, Math.max(26, loomTop + 26), 94, 20).build());
     }
 
     private static void installDropCallback(Minecraft client) {

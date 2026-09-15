@@ -236,7 +236,8 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
                     && !s.isDead;
 
             collectCounterEntries(st, s.counters);
-            s.showCounters = !s.isDead && !s.counters.isEmpty();
+            s.showCounters = (area >= MIN_BLOCKS_FOR_COMMANDER)
+                    && !s.isDead && !s.counters.isEmpty();
 
 
             if (s.showCommander) {
@@ -886,11 +887,11 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         // Quad starts facing +Z (SOUTH) in local space
         switch (facing) {
             case SOUTH -> { /* no rotation */ }
-            case NORTH -> matrices.mulPose(Axis.YP.rotationDegrees(180f));
-            case EAST  -> matrices.mulPose(Axis.YP.rotationDegrees(90f));
-            case WEST  -> matrices.mulPose(Axis.YP.rotationDegrees(-90f));
-            case UP    -> matrices.mulPose(Axis.XP.rotationDegrees(-90f));
-            case DOWN  -> matrices.mulPose(Axis.XP.rotationDegrees(90f));
+            case NORTH -> matrices.mulPose(new Matrix4f().rotation(Axis.YP.rotationDegrees(180f)));
+            case EAST  -> matrices.mulPose(new Matrix4f().rotation(Axis.YP.rotationDegrees(90f)));
+            case WEST  -> matrices.mulPose(new Matrix4f().rotation(Axis.YP.rotationDegrees(-90f)));
+            case UP    -> matrices.mulPose(new Matrix4f().rotation(Axis.XP.rotationDegrees(-90f)));
+            case DOWN  -> matrices.mulPose(new Matrix4f().rotation(Axis.XP.rotationDegrees(90f)));
         }
     }
 
