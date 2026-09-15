@@ -49,6 +49,7 @@ public final class GuideBookScreen extends LegacyScreen {
     private final Map<String, Boolean> configToggles = new LinkedHashMap<>();
     private final Map<String, String> configValues = new LinkedHashMap<>();
     private final List<ConfigLabel> configLabels = new ArrayList<>();
+    private final List<ConfigRule> configRules = new ArrayList<>();
     private GuideConfigSnapshot configOriginal;
     private boolean canEditServerConfig;
     private boolean cardPeekRight = MtgcardConfig.cardPeekOnRight();
@@ -134,6 +135,7 @@ public final class GuideBookScreen extends LegacyScreen {
         clearWidgets();
         configFields.clear();
         configLabels.clear();
+        configRules.clear();
 
         int searchX = leftX + padding;
         int searchY = topY + padding + 10;
@@ -542,8 +544,8 @@ public final class GuideBookScreen extends LegacyScreen {
         y = addConfigText("land", "Basic-land chance", "Chance that a basic-land slot uses a custom card.", left, y, contentW);
         y = addConfigText("token", "Token or art chance", "Chance that a token or art-card slot uses custom content.", left, y, contentW);
         y = addConfigSubheader("Card Store", y);
-        y = addConfigToggle("card_store", "Card Store enabled *", "Controls whether Card Store content is loaded.", left, y, contentW);
-        y = addConfigToggle("mtg_game", "MTG game enabled *", "Controls whether Magic-specific content is loaded. Addons installed: " + installedAddons(), left, y, contentW);
+        y = addConfigToggle("card_store", "Card Store enabled", "Controls whether Card Store content is loaded.", left, y, contentW);
+        y = addConfigToggle("mtg_game", "MTG game enabled", "Controls whether Magic-specific content is loaded. Addons installed: " + installedAddons(), left, y, contentW);
         y = addConfigText("price_item", "Price item", "Minecraft item used as currency by the Card Store.", left, y, contentW);
         y = addConfigDropdown("price_basis", "Price basis", "Market price used for card costs: USD, EUR, or TIX.",
                 List.of("USD", "EUR", "TIX"), left, y, contentW);
@@ -552,12 +554,20 @@ public final class GuideBookScreen extends LegacyScreen {
 
     private int addConfigHeader(String text, int y) {
         configLabels.add(new ConfigLabel(leftX + sidebarW + padding, y, Component.literal(text).getVisualOrderText(), 0xFFFFD37F));
+        addConfigRule(text, y, 0xFFFFD37F);
         return y + 22;
     }
 
     private int addConfigSubheader(String text, int y) {
         configLabels.add(new ConfigLabel(leftX + sidebarW + padding, y, Component.literal(text).getVisualOrderText(), 0xFFFFFFFF));
+        addConfigRule(text, y, 0xFF777777);
         return y + 18;
+    }
+
+    private void addConfigRule(String text, int y, int color) {
+        int start = leftX + sidebarW + padding + font.width(text) + 6;
+        int end = Math.min(leftX + fullW - padding - 8, start + 180);
+        configRules.add(new ConfigRule(start, y + 5, end, color));
     }
 
     private int addClientPosition(int x, int y, int width) {
@@ -775,6 +785,10 @@ public final class GuideBookScreen extends LegacyScreen {
     private void drawConfigContent(GuiGraphics ctx, int x, int y, int w, int h) {
         int contentX = x + padding;
         ctx.enableScissor(contentX, configViewportTop(), x + w - padding, configViewportBottom());
+        for (ConfigRule rule : configRules) {
+            if (rule.y() >= configViewportTop() && rule.y() < configViewportBottom())
+                ctx.fill(rule.startX(), rule.y(), rule.endX(), rule.y() + 1, rule.color());
+        }
         for (ConfigLabel label : configLabels) {
             if (label.y() >= configViewportTop() - 10 && label.y() < configViewportBottom())
                 ctx.drawString(font, label.text(), label.x(), label.y(), label.color());
@@ -852,4 +866,5 @@ public final class GuideBookScreen extends LegacyScreen {
     }
 
     private record ConfigLabel(int x, int y, net.minecraft.util.FormattedCharSequence text, int color) {}
+    private record ConfigRule(int startX, int y, int endX, int color) {}
 }
