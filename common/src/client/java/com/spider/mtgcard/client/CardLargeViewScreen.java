@@ -2,6 +2,7 @@ package com.spider.mtgcard.client;
 
 import com.spider.mtgcard.client.compat.LegacyScreen;
 import com.spider.mtgcard.client.compat.ClientCompat;
+import com.spider.mtgcard.client.compat.LegacyWidget;
 import com.spider.mtgcard.client.input.GuiCardFaceFlipHandler;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.config.MtgcardConfig;
@@ -20,6 +21,8 @@ import com.spider.mtgcard.client.compat.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.narration.NarratedElementType;
+import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import com.mojang.blaze3d.platform.NativeImage;
@@ -333,10 +336,7 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         super.init();
         this.clearWidgets();
 
-        Button infoButton = Button.builder(Component.literal("i"), b -> toggleInfoPanel())
-                .bounds(8, 8, INFO_SIZE, INFO_SIZE)
-                .tooltip(Tooltip.create(Component.literal(infoOpen ? "Hide info (Tab)" : "Show info (Tab)")))
-                .build();
+        InfoToggleButton infoButton = new InfoToggleButton();
         addRenderableWidget(infoButton);
 
         if (!infoOpen) return;
@@ -372,6 +372,44 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
 
     private boolean isMouseOverTab(double mx, double my, int x, int width) {
         return infoOpen && mx >= x && mx < x + width && my >= tabY && my < tabY + TAB_H;
+    }
+
+    private final class InfoToggleButton extends LegacyWidget {
+        private InfoToggleButton() {
+            super(8, 8, INFO_SIZE, INFO_SIZE, Component.literal("i"));
+            setTooltip(Tooltip.create(Component.literal(infoOpen ? "Hide info (Tab)" : "Show info (Tab)")));
+        }
+
+        @Override
+        protected void renderWidget(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
+            int border = isHovered() ? 0xFF70E0FF : 0xFF404040;
+            int bg = infoOpen ? 0xCC1A1A1A : 0xAA101010;
+            int x = getX();
+            int y = getY();
+
+            ctx.fill(x - 1, y - 1, x + width + 1, y + height + 1, border);
+            ctx.fill(x, y, x + width, y + height, bg);
+            ctx.drawString(
+                    CardLargeViewScreen.this.font,
+                    getMessage(),
+                    x + (width - CardLargeViewScreen.this.font.width(getMessage())) / 2,
+                    y + (height - CardLargeViewScreen.this.font.lineHeight) / 2,
+                    0xFFFFFFFF,
+                    false
+            );
+        }
+
+        @Override
+        public boolean mouseClicked(MouseButtonEvent click, boolean doubleClick) {
+            if (!active || !visible || !isHovered() || click.button() != 0) return false;
+            toggleInfoPanel();
+            return true;
+        }
+
+        @Override
+        protected void updateWidgetNarration(NarrationElementOutput output) {
+            output.add(NarratedElementType.TITLE, getMessage());
+        }
     }
 
     private void selectTab(Tab selected) {
