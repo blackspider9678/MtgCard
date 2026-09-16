@@ -81,6 +81,13 @@ public class CardItemRenderer implements SpecialModelRenderer<CardItemRenderer.D
             buffer.addVertex(m, 0f, 1f, back).setColor(0xffffffff).setUv(1f, 0f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, -1f);
             buffer.addVertex(m, 1f, 1f, back).setColor(0xffffffff).setUv(0f, 0f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, -1f);
             buffer.addVertex(m, 1f, 0f, back).setColor(0xffffffff).setUv(0f, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, -1f);
+        });
+
+        RenderType edgeLayer = RenderTypes.entitySolid(tex);
+        queue.submitCustomGeometry(matrices, edgeLayer, (matrix, buffer) -> {
+            Matrix4f m = matrix.pose();
+            float front = CARD_HALF_THICKNESS;
+            float back = -CARD_HALF_THICKNESS;
 
             // Edge strips turn the formerly flat quad into a thin card body.
             buffer.addVertex(m, edgeX1, 0f, front).setColor(EDGE_COLOR).setUv(edgeX1, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, 1f, 0f, 0f);
