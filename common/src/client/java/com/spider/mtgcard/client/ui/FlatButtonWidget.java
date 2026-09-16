@@ -37,14 +37,8 @@ public class FlatButtonWidget extends LegacyWidget {
     }
 
     @Override
-    public boolean mouseClicked(MouseButtonEvent click, boolean bl) {
-        if (this.active && this.visible && this.isHovered()) {
-            if (onPress != null) {
-                onPress.run();
-            }
-            return true;
-        }
-        return false;
+    public void onClick(MouseButtonEvent click, boolean doubleClick) {
+        if (onPress != null) onPress.run();
     }
 
     @Override
