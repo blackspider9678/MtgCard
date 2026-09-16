@@ -48,6 +48,7 @@ public final class MtgcardConfig {
     public double chance_custom_basic_land = 0.15;
     public double chance_custom_token_or_art = 0.02;
     public boolean Pack_Debug = false;
+    public boolean Loot_Packs_From_Fishing = true;
 
     // Card Database
     public boolean Card_Database_Debug = false;
@@ -156,6 +157,7 @@ public final class MtgcardConfig {
             cfg.chance_custom_basic_land = file.getOrElse("pack.custom_chances.basic_land", cfg.chance_custom_basic_land);
             cfg.chance_custom_token_or_art = file.getOrElse("pack.custom_chances.token_or_art", cfg.chance_custom_token_or_art);
             cfg.Pack_Debug = file.getOrElse("pack.debug", cfg.Pack_Debug);
+            cfg.Loot_Packs_From_Fishing = file.getOrElse("loot.packs_from_fishing", cfg.Loot_Packs_From_Fishing);
 
             // --- card database ---
             if (file.contains("card_database.debug")) {
@@ -234,6 +236,7 @@ public final class MtgcardConfig {
                 file.set("pack.custom_chances.basic_land", cfg.chance_custom_basic_land);
                 file.set("pack.custom_chances.token_or_art", cfg.chance_custom_token_or_art);
                 file.set("pack.debug", cfg.Pack_Debug);
+                file.set("loot.packs_from_fishing", cfg.Loot_Packs_From_Fishing);
 
                 file.set("card_database.debug", cfg.Card_Database_Debug);
 

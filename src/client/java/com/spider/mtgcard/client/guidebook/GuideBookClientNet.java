@@ -11,7 +11,7 @@ public final class GuideBookClientNet {
         });
         ClientPlayNetworking.registerGlobalReceiver(GuideBookPackets.ConfigSyncPayload.ID, (payload, context) ->
                 context.client().execute(() -> {
-                    if (context.client().gui.screen() instanceof GuideBookScreen screen) {
+                    if (context.client().screen instanceof GuideBookScreen screen) {
                         screen.receiveServerConfig(payload.json(), payload.canEdit(), payload.message());
                     }
                 }));
