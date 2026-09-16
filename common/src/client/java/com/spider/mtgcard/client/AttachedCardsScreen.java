@@ -140,7 +140,7 @@ public class AttachedCardsScreen extends LegacyScreen implements GuiCardFaceFlip
     public boolean mouseClicked(MouseButtonEvent click, boolean bl) {
         double mx = click.x();
         double my = click.y();
-        if (click.button() != 0 || saving) {
+        if (com.spider.mtgcard.client.compat.ClientCompat.legacyMouseButton(click) != 0 || saving) {
             return super.mouseClicked(click, bl);
         }
 

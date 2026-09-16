@@ -903,7 +903,7 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
     public boolean mouseClicked(MouseButtonEvent click, boolean bl) {
         double mx = click.x();
         double my = click.y();
-        int btn = click.button();
+        int btn = ClientCompat.legacyMouseButton(click);
 
         // Handle panel tabs before any card, counter, or scrollbar hit regions.
         // This also keeps tab switching reliable if a text field currently owns focus.

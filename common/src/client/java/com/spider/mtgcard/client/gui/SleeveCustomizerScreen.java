@@ -87,7 +87,7 @@ public final class SleeveCustomizerScreen extends LegacyContainerScreen<SleeveCu
     }
 
     @Override public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
-        if (click.button() == 0) {
+        if (com.spider.mtgcard.client.compat.ClientCompat.legacyMouseButton(click) == 0) {
             int index = hoveredSleeve(click.x(), click.y());
             if (index >= 0) {
                 Minecraft.getInstance().getSoundManager().play(

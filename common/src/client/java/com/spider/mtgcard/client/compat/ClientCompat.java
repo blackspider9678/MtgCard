@@ -3,6 +3,7 @@ package com.spider.mtgcard.client.compat;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.Window;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.resources.Identifier;
@@ -11,6 +12,11 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 public final class ClientCompat {
+    /** Convert 26.3's one-based mouse button ids to the legacy GLFW-style ids used by our manual GUIs. */
+    public static int legacyMouseButton(MouseButtonEvent click) {
+        return click.button() - 1;
+    }
+
     public static boolean isKeyDown(int key) {
         try {
             Method method = InputConstants.class.getMethod("isKeyDown", int.class);

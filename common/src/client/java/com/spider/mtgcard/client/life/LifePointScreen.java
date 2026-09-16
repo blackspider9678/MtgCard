@@ -2895,7 +2895,7 @@ public final class LifePointScreen extends LegacyScreen {
     public boolean mouseClicked(MouseButtonEvent click, boolean doubleClick) {
         final double mouseX = click.x();
         final double mouseY = click.y();
-        final int button = click.button();
+        final int button = com.spider.mtgcard.client.compat.ClientCompat.legacyMouseButton(click);
 
         // Let widgets (tabs/buttons/text fields) go first
         if (super.mouseClicked(click, doubleClick)) return true;
@@ -2962,7 +2962,7 @@ public final class LifePointScreen extends LegacyScreen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
-        if (draggingScroll != null && click.button() == 0) {
+        if (draggingScroll != null && com.spider.mtgcard.client.compat.ClientCompat.legacyMouseButton(click) == 0) {
             Rect track = scrollTrackRects.get(draggingScroll);
             Rect vp = getViewportFor(draggingScroll);
             if (track == null || vp == null) return true;
@@ -2982,7 +2982,7 @@ public final class LifePointScreen extends LegacyScreen {
 
     @Override
     public boolean mouseReleased(MouseButtonEvent click) {
-        if (click.button() == 0) draggingScroll = null;
+        if (com.spider.mtgcard.client.compat.ClientCompat.legacyMouseButton(click) == 0) draggingScroll = null;
         return super.mouseReleased(click);
     }
 
@@ -3528,7 +3528,7 @@ public final class LifePointScreen extends LegacyScreen {
     private boolean mouseClickedAfterScrollbars(MouseButtonEvent click, boolean doubleClick) {
         double mouseX = click.x();
         double mouseY = click.y();
-        int button = click.button();
+        int button = com.spider.mtgcard.client.compat.ClientCompat.legacyMouseButton(click);
 
         // --- COUNTERS: click list rows ---
         if (tab == Tab.COUNTERS && countersListViewport != null && button == 0) {

@@ -405,7 +405,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
     public boolean mouseClicked(MouseButtonEvent click, boolean isSimulated) {
         double mouseX = click.x();
         double mouseY = click.y();
-        int button = click.button();
+        int button = com.spider.mtgcard.client.compat.ClientCompat.legacyMouseButton(click);
 
         if (sortMenuOpen) {
             // If click is NOT on the sort button or any dropdown option, close it
@@ -532,7 +532,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
 
     @Override
     public boolean mouseDragged(MouseButtonEvent click, double dx, double dy) {
-        if (dragging && click.button() == 0) {
+        if (dragging && com.spider.mtgcard.client.compat.ClientCompat.legacyMouseButton(click) == 0) {
             var scrollbar = intakeScrollbar();
             if (scrollbar == null) return true;
 
@@ -553,7 +553,7 @@ public class CardDatabaseScreen extends LegacyContainerScreen<CardDatabaseScreen
 
     @Override
     public boolean mouseReleased(MouseButtonEvent click) {
-        if (click.button() == 0 && dragging) {
+        if (com.spider.mtgcard.client.compat.ClientCompat.legacyMouseButton(click) == 0 && dragging) {
             dragging = false;
             return true;
         }
