@@ -401,7 +401,7 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
 
         @Override
         public boolean mouseClicked(MouseButtonEvent click, boolean doubleClick) {
-            if (!active || !visible || !isHovered() || click.button() != 0) return false;
+            if (!active || !visible || click.button() != 0 || !isMouseOver(click.x(), click.y())) return false;
             toggleInfoPanel();
             return true;
         }
