@@ -36,6 +36,7 @@ public final class MtgcardConfig {
 
     // Client HUD
     public String Card_Peek_Position = "right";
+    public boolean Cache_Multiplayer_Art = false;
 
     // Pack: global custom pull chances (0..1)
     public double chance_custom_common = 0.10;
@@ -138,6 +139,12 @@ public final class MtgcardConfig {
                 file.set("client.card_peek_position", cfg.Card_Peek_Position);
                 needsSave = true;
             }
+            if (file.contains("client.cache_multiplayer_art")) {
+                cfg.Cache_Multiplayer_Art = file.getOrElse("client.cache_multiplayer_art", cfg.Cache_Multiplayer_Art);
+            } else {
+                file.set("client.cache_multiplayer_art", cfg.Cache_Multiplayer_Art);
+                needsSave = true;
+            }
 
             // --- pack chances ---
             cfg.chance_custom_common = file.getOrElse("pack.custom_chances.common", cfg.chance_custom_common);
@@ -207,6 +214,7 @@ public final class MtgcardConfig {
                 file.set("cards.language", cfg.Card_Language);
 
                 file.set("client.card_peek_position", cfg.Card_Peek_Position);
+                file.set("client.cache_multiplayer_art", cfg.Cache_Multiplayer_Art);
 
                 file.set("pack.custom_chances.common", cfg.chance_custom_common);
                 file.set("pack.custom_chances.uncommon", cfg.chance_custom_uncommon);
@@ -256,8 +264,10 @@ public final class MtgcardConfig {
 
         file.setComment("client",
                 "Client display settings.\n" +
-                        "card_peek_position: screen edge used by the held-card preview: left or right.");
+                        "card_peek_position: screen edge used by the held-card preview: left or right.\n" +
+                        "cache_multiplayer_art: save art received from multiplayer servers for reuse later.");
         file.setComment("client.card_peek_position", "Held-card preview position: left or right.");
+        file.setComment("client.cache_multiplayer_art", "When true, card art received from multiplayer servers is saved in the local MTGCard art cache. When false, it is only kept for the current session.");
 
         file.setComment("pack",
                 "Pack settings.\n" +
@@ -395,6 +405,11 @@ public final class MtgcardConfig {
     public static boolean cardPeekOnRight() {
         MtgcardConfig cfg = get();
         return cfg == null || !"left".equals(cfg.Card_Peek_Position);
+    }
+
+    public static boolean cacheMultiplayerArt() {
+        MtgcardConfig cfg = get();
+        return cfg != null && cfg.Cache_Multiplayer_Art;
     }
 
     public static synchronized void applyServerSnapshot(GuideConfigSnapshot value) {
