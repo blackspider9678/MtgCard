@@ -341,10 +341,10 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         tabX = panelX + 10;
         tabY = panelY + 10;
 
-        addRenderableWidget(Button.builder(Component.literal("Info"), b -> { tab = Tab.INFO; init(); })
+        addRenderableWidget(Button.builder(Component.literal("Info"), b -> selectTab(Tab.INFO))
                 .bounds(tabX, tabY, 70, TAB_H).build());
 
-        addRenderableWidget(Button.builder(Component.literal("Counters"), b -> { tab = Tab.COUNTERS; init(); })
+        addRenderableWidget(Button.builder(Component.literal("Counters"), b -> selectTab(Tab.COUNTERS))
                 .bounds(tabX + 70 + TAB_GAP, tabY, 90, TAB_H).build());
 
         if (tab == Tab.COUNTERS) {
@@ -366,6 +366,17 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
 
     private boolean isMouseOverInfo(double mx, double my) {
         return mx >= infoX && mx <= (infoX + infoW) && my >= infoY && my <= (infoY + infoH);
+    }
+
+    private boolean isMouseOverTab(double mx, double my, int x, int width) {
+        return infoOpen && mx >= x && mx < x + width && my >= tabY && my < tabY + TAB_H;
+    }
+
+    private void selectTab(Tab selected) {
+        if (tab == selected) return;
+        clearCounterNameFocus();
+        tab = selected;
+        init();
     }
 
     private int getShownFaceIndex() {
@@ -859,6 +870,17 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         // Info button toggle
         if (btn == 0 && isMouseOverInfo(mx, my)) {
             toggleInfoPanel();
+            return true;
+        }
+
+        // Handle panel tabs before any card, counter, or scrollbar hit regions.
+        // This also keeps tab switching reliable if a text field currently owns focus.
+        if (btn == 0 && isMouseOverTab(mx, my, tabX, 70)) {
+            selectTab(Tab.INFO);
+            return true;
+        }
+        if (btn == 0 && isMouseOverTab(mx, my, tabX + 70 + TAB_GAP, 90)) {
+            selectTab(Tab.COUNTERS);
             return true;
         }
 
@@ -1481,20 +1503,11 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
 
         m.popMatrix();
 
-        // screen-space UI
+        // Screen-space UI
         drawInfoButton(ctx, mouseX, mouseY);
 
-        // ALWAYS show mini counters HUD on right
+        // Always show mini counters HUD on the right.
         drawCountersHud(ctx, mouseX, mouseY);
-
-        if (infoOpen) {
-            currentScryfallId = readScryfallIdForFace(stack, renderFace);
-            drawInfoPanel(ctx, mouseX, mouseY);
-        }
-
-
-        // NOW draw the info button (screen-space)
-        drawInfoButton(ctx, mouseX, mouseY);
 
         // keep current id in sync when panel is open (so panel matches what you see)
         if (infoOpen) {
