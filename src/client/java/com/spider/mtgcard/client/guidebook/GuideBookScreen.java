@@ -543,6 +543,8 @@ public final class GuideBookScreen extends LegacyScreen {
         y = addConfigText("foil", "Foil chance", "Chance that a foil slot uses a custom foil card.", left, y, contentW);
         y = addConfigText("land", "Basic-land chance", "Chance that a basic-land slot uses a custom card.", left, y, contentW);
         y = addConfigText("token", "Token or art chance", "Chance that a token or art-card slot uses custom content.", left, y, contentW);
+        y = addConfigSubheader("Dice", y);
+        y = addConfigToggle("physical_dice", "Physical dice", "Throws dice into the world on normal use instead of rolling instantly. Sneak-use still places dice.", left, y, contentW);
         y = addConfigSubheader("Card Store", y);
         y = addConfigToggle("card_store", "Card Store enabled", "Controls whether Card Store content is loaded.", left, y, contentW);
         y = addConfigToggle("mtg_game", "MTG game enabled", "Controls whether Magic-specific content is loaded. Addons installed: " + installedAddons(), left, y, contentW);
@@ -778,6 +780,7 @@ public final class GuideBookScreen extends LegacyScreen {
         configToggles.put("ops", configOriginal.opsCanImport());
         configToggles.put("fishing", configOriginal.fishingPacks());
         configToggles.put("pack_debug", configOriginal.packDebug());
+        configToggles.put("physical_dice", configOriginal.physicalDiceEnabled());
         configToggles.put("card_store", configOriginal.cardStoreEnabled());
         configToggles.put("mtg_game", configOriginal.mtgGameEnabled());
     }
@@ -837,7 +840,7 @@ public final class GuideBookScreen extends LegacyScreen {
                     configDecimal("common"), configDecimal("uncommon"), configDecimal("wildcard"),
                     configDecimal("rare"), configDecimal("random"), configDecimal("foil"),
                     configDecimal("land"), configDecimal("token"), configToggle("pack_debug"),
-                    configToggle("fishing"), configToggle("card_store"), configToggle("mtg_game"),
+                    configToggle("fishing"), configToggle("physical_dice"), configToggle("card_store"), configToggle("mtg_game"),
                     configText("price_item"), configText("price_basis")
             );
             if (update.cardStoreEnabled() != configOriginal.cardStoreEnabled()

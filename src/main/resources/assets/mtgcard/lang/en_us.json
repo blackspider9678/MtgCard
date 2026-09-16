@@ -280,6 +280,10 @@
   "guide.mtgcard.dice.b_right_click": "Right-click a dice item to roll it.",
   "guide.mtgcard.dice.b_stack_count": "The number of dice rolled equals the stack size (for example, 3 dice = 3dX).",
   "guide.mtgcard.dice.b_result": "The total result is shown at the end of the roll.",
+  "guide.mtgcard.dice.h_physical": "Physical dice",
+  "guide.mtgcard.dice.b_physical_config": "Enable Physical dice in Config to throw dice into the world on normal use.",
+  "guide.mtgcard.dice.b_physical_throw": "Thrown dice use physics, settle on a face, and announce their result nearby.",
+  "guide.mtgcard.dice.b_physical_place": "Sneak-use places a die directly; interact with placed dice to adjust, reroll, or pick them up.",
 
   "guide.mtgcard.dice.h_detailed": "Detailed rolls",
   "guide.mtgcard.dice.b_sneak": "Sneak while rolling to reveal individual roll results.",

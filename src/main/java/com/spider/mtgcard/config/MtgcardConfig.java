@@ -254,6 +254,7 @@ public final class MtgcardConfig {
                         "whitelist: if anyone_can_import is false, only these usernames can import.");
 
         file.setComment("import.anyone_can_import", "Allow anyone to import custom cards.");
+        file.setComment("import.ops_can_import", "Allow server operators to import when public importing is disabled.");
         file.setComment("import.whitelist", "Usernames allowed to import when anyone_can_import=false.");
 
         file.setComment("cards",
@@ -422,6 +423,7 @@ public final class MtgcardConfig {
         cfg.chance_custom_token_or_art = value.customTokenOrArt();
         cfg.Pack_Debug = value.packDebug();
         cfg.Loot_Packs_From_Fishing = value.fishingPacks();
+        cfg.Physical_Dice_Enabled = value.physicalDiceEnabled();
         cfg.Card_Store_Enabled = value.cardStoreEnabled();
         cfg.MTG_Game_Enabled = value.mtgGameEnabled();
         cfg.Price_Item = value.priceItem();
