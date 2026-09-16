@@ -260,7 +260,9 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         }
 
         boolean cardBack = DEFAULT_BACK_TEX.equals(card.texId());
-        boolean sleeve = CardSleeves.get(card.stack()).isPresent();
+        boolean sleeve = CardSleeves.get(card.stack())
+                .map(value -> value.backTexture().equals(card.texId()))
+                .orElse(false);
         final float u0 = sleeve ? SLEEVE_U0 : cardBack ? BACK_U0 : 0f;
         final float u1 = sleeve ? SLEEVE_U1 : cardBack ? BACK_U1 : 1f;
         final float v0 = 1f, v1 = 0f;
