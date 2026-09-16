@@ -53,6 +53,7 @@ public final class GuideBookScreen extends LegacyScreen {
     private GuideConfigSnapshot configOriginal;
     private boolean canEditServerConfig;
     private boolean cardPeekRight = MtgcardConfig.cardPeekOnRight();
+    private boolean cacheMultiplayerArt = MtgcardConfig.cacheMultiplayerArt();
     private boolean configRequested;
     private String openConfigDropdown;
     private int configScroll;
@@ -514,6 +515,7 @@ public final class GuideBookScreen extends LegacyScreen {
         int y = configViewportTop() - configScroll;
         y = addConfigHeader("Client settings", y);
         y = addClientPosition(left, y, contentW);
+        y = addClientArtCache(left, y, contentW);
         y += 8;
 
         if (configOriginal == null) {
@@ -580,6 +582,20 @@ public final class GuideBookScreen extends LegacyScreen {
                 cardPeekRight = !cardPeekRight;
                 button.setMessage(configPositionText());
             }).bounds(widgetX, y, 110, 20).build());
+        }
+        return y + rowHeight;
+    }
+
+    private int addClientArtCache(int x, int y, int width) {
+        int widgetX = configWidgetX(x, width, 90);
+        int rowHeight = addSettingLabels("Cache multiplayer card art",
+                "Saves art received from multiplayer servers locally for reuse. When off, received art lasts only for this session.",
+                x, y, true, widgetX - x - 10);
+        if (configWidgetVisible(y)) {
+            addRenderableWidget(Button.builder(toggleText(cacheMultiplayerArt), button -> {
+                cacheMultiplayerArt = !cacheMultiplayerArt;
+                button.setMessage(toggleText(cacheMultiplayerArt));
+            }).bounds(widgetX, y, 90, 20).build());
         }
         return y + rowHeight;
     }
@@ -829,6 +845,7 @@ public final class GuideBookScreen extends LegacyScreen {
     private void saveConfig() {
         MtgcardConfig local = MtgcardConfig.get();
         local.Card_Peek_Position = cardPeekRight ? "right" : "left";
+        local.Cache_Multiplayer_Art = cacheMultiplayerArt;
         MtgcardConfig.save();
         if (configOriginal == null || !canEditServerConfig) {
             configStatus = "Client settings saved. Server settings are read-only.";
