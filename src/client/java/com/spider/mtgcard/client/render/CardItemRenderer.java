@@ -20,6 +20,9 @@ import java.util.function.Consumer;
 
 public class CardItemRenderer implements SpecialModelRenderer<CardItemRenderer.Data> {
 
+    private static final float CARD_HALF_THICKNESS = 1f / 32f;
+    private static final float EDGE_UV = 1f / 64f;
+
     public record Data(ItemStack stack) {}
 
     @Override
@@ -55,11 +58,40 @@ public class CardItemRenderer implements SpecialModelRenderer<CardItemRenderer.D
 
         queue.submitCustomGeometry(matrices, layer, (matrix, buffer) -> {
             Matrix4f m = matrix.pose();
+            float front = CARD_HALF_THICKNESS;
+            float back = -CARD_HALF_THICKNESS;
 
-            buffer.addVertex(m, 1f, 0f, 0f).setColor(0xffffffff).setUv(1f, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, 1f);
-            buffer.addVertex(m, 1f, 1f, 0f).setColor(0xffffffff).setUv(1f, 0f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, 1f);
-            buffer.addVertex(m, 0f, 1f, 0f).setColor(0xffffffff).setUv(0f, 0f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, 1f);
-            buffer.addVertex(m, 0f, 0f, 0f).setColor(0xffffffff).setUv(0f, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, 1f);
+            // Front and back faces.
+            buffer.addVertex(m, 1f, 0f, front).setColor(0xffffffff).setUv(1f, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, 1f);
+            buffer.addVertex(m, 1f, 1f, front).setColor(0xffffffff).setUv(1f, 0f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, 1f);
+            buffer.addVertex(m, 0f, 1f, front).setColor(0xffffffff).setUv(0f, 0f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, 1f);
+            buffer.addVertex(m, 0f, 0f, front).setColor(0xffffffff).setUv(0f, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, 1f);
+
+            buffer.addVertex(m, 0f, 0f, back).setColor(0xffffffff).setUv(1f, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, -1f);
+            buffer.addVertex(m, 0f, 1f, back).setColor(0xffffffff).setUv(1f, 0f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, -1f);
+            buffer.addVertex(m, 1f, 1f, back).setColor(0xffffffff).setUv(0f, 0f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, -1f);
+            buffer.addVertex(m, 1f, 0f, back).setColor(0xffffffff).setUv(0f, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 0f, -1f);
+
+            // Edge strips turn the formerly flat quad into a thin card body.
+            buffer.addVertex(m, 1f, 0f, front).setColor(0xffffffff).setUv(1f, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, 1f, 0f, 0f);
+            buffer.addVertex(m, 1f, 0f, back).setColor(0xffffffff).setUv(1f - EDGE_UV, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, 1f, 0f, 0f);
+            buffer.addVertex(m, 1f, 1f, back).setColor(0xffffffff).setUv(1f - EDGE_UV, 0f).setOverlay(overlay).setLight(light).setNormal(matrix, 1f, 0f, 0f);
+            buffer.addVertex(m, 1f, 1f, front).setColor(0xffffffff).setUv(1f, 0f).setOverlay(overlay).setLight(light).setNormal(matrix, 1f, 0f, 0f);
+
+            buffer.addVertex(m, 0f, 0f, back).setColor(0xffffffff).setUv(EDGE_UV, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, -1f, 0f, 0f);
+            buffer.addVertex(m, 0f, 0f, front).setColor(0xffffffff).setUv(0f, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, -1f, 0f, 0f);
+            buffer.addVertex(m, 0f, 1f, front).setColor(0xffffffff).setUv(0f, 0f).setOverlay(overlay).setLight(light).setNormal(matrix, -1f, 0f, 0f);
+            buffer.addVertex(m, 0f, 1f, back).setColor(0xffffffff).setUv(EDGE_UV, 0f).setOverlay(overlay).setLight(light).setNormal(matrix, -1f, 0f, 0f);
+
+            buffer.addVertex(m, 0f, 1f, front).setColor(0xffffffff).setUv(0f, 0f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 1f, 0f);
+            buffer.addVertex(m, 1f, 1f, front).setColor(0xffffffff).setUv(1f, 0f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 1f, 0f);
+            buffer.addVertex(m, 1f, 1f, back).setColor(0xffffffff).setUv(1f, EDGE_UV).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 1f, 0f);
+            buffer.addVertex(m, 0f, 1f, back).setColor(0xffffffff).setUv(0f, EDGE_UV).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, 1f, 0f);
+
+            buffer.addVertex(m, 0f, 0f, back).setColor(0xffffffff).setUv(0f, 1f - EDGE_UV).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, -1f, 0f);
+            buffer.addVertex(m, 1f, 0f, back).setColor(0xffffffff).setUv(1f, 1f - EDGE_UV).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, -1f, 0f);
+            buffer.addVertex(m, 1f, 0f, front).setColor(0xffffffff).setUv(1f, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, -1f, 0f);
+            buffer.addVertex(m, 0f, 0f, front).setColor(0xffffffff).setUv(0f, 1f).setOverlay(overlay).setLight(light).setNormal(matrix, 0f, -1f, 0f);
         });
 
         if (foil) {
@@ -91,10 +123,14 @@ public class CardItemRenderer implements SpecialModelRenderer<CardItemRenderer.D
 
     @Override
     public void getExtents(Consumer<Vector3fc> vertices) {
-        vertices.accept(new Vector3f(1f, 0f, 0f));
-        vertices.accept(new Vector3f(1f, 1f, 0f));
-        vertices.accept(new Vector3f(0f, 1f, 0f));
-        vertices.accept(new Vector3f(0f, 0f, 0f));
+        vertices.accept(new Vector3f(1f, 0f, CARD_HALF_THICKNESS));
+        vertices.accept(new Vector3f(1f, 1f, CARD_HALF_THICKNESS));
+        vertices.accept(new Vector3f(0f, 1f, CARD_HALF_THICKNESS));
+        vertices.accept(new Vector3f(0f, 0f, CARD_HALF_THICKNESS));
+        vertices.accept(new Vector3f(1f, 0f, -CARD_HALF_THICKNESS));
+        vertices.accept(new Vector3f(1f, 1f, -CARD_HALF_THICKNESS));
+        vertices.accept(new Vector3f(0f, 1f, -CARD_HALF_THICKNESS));
+        vertices.accept(new Vector3f(0f, 0f, -CARD_HALF_THICKNESS));
     }
 
     public static class Unbaked implements SpecialModelRenderer.Unbaked<Data> {
