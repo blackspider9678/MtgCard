@@ -5,6 +5,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import com.spider.mtgcard.Mtgcard;
 import com.spider.mtgcard.api.CardBackTextureRegistry;
+import com.spider.mtgcard.api.CardSleeves;
 import com.spider.mtgcard.client.java.CardArtManager;
 import com.spider.mtgcard.display.CardDisplayAttachmentData;
 import com.spider.mtgcard.display.CardDisplayEntity;
@@ -41,6 +42,8 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
     private static final Identifier DEFAULT_BACK_TEX = Identifier.fromNamespaceAndPath("mtgcard", "textures/item/card.png");
     private static final float BACK_U0 = 147f / 1040f;
     private static final float BACK_U1 = 892f / 1040f;
+    private static final float SLEEVE_U0 = 130f / 1040f;
+    private static final float SLEEVE_U1 = 911f / 1040f;
     private static final int TEXTURE_REFRESH_TICKS = 10;
     private static final long CACHE_EXPIRE_TICKS = 200L;
     private static final double COUNTER_RENDER_DISTANCE_SQR = 12.0D * 12.0D;
@@ -256,8 +259,9 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
         }
 
         boolean cardBack = DEFAULT_BACK_TEX.equals(card.texId());
-        final float u0 = cardBack ? BACK_U0 : 0f;
-        final float u1 = cardBack ? BACK_U1 : 1f;
+        boolean sleeve = CardSleeves.get(card.stack()).isPresent();
+        final float u0 = sleeve ? SLEEVE_U0 : cardBack ? BACK_U0 : 0f;
+        final float u1 = sleeve ? SLEEVE_U1 : cardBack ? BACK_U1 : 1f;
         final float v0 = 1f, v1 = 0f;
 
         queue.submitCustomGeometry(matrices, layer, (entry, vc) -> {
