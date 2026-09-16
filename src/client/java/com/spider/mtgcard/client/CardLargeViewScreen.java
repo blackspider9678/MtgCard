@@ -126,6 +126,15 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
     private int legAreaX, legAreaY, legAreaW, legAreaH;
     private int legBarX, legBarY, legBarW, legBarH;
 
+    // The card summary and legality list scroll independently. Keeping the
+    // legality viewport fixed makes it useful even at large GUI scales.
+    private float infoDetailsScroll = 0f;
+    private boolean draggingInfoDetailsBar = false;
+    private int infoDetailsBarDragOffset = 0;
+    private int infoDetailsAreaX, infoDetailsAreaY, infoDetailsAreaW, infoDetailsAreaH;
+    private int infoDetailsBarX, infoDetailsBarY, infoDetailsBarW, infoDetailsBarH;
+    private int infoDetailsContentH = 0;
+
     private static final int LEG_ROW_H = 12;
     private static final int SCROLLBAR_W = 6;
     private int lastLegalityRowCount = 0;
@@ -353,6 +362,9 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         legalityScroll = 0f;
         draggingLegalityBar = false;
         legalityBarDragOffset = 0;
+        infoDetailsScroll = 0f;
+        draggingInfoDetailsBar = false;
+        infoDetailsBarDragOffset = 0;
     }
 
 
@@ -911,6 +923,11 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
             legalityBarDragOffset = (int) my - legBarY;
             return true;
         }
+        if (btn == 0 && infoOpen && tab == Tab.INFO && isOverInfoDetailsBar(mx, my)) {
+            draggingInfoDetailsBar = true;
+            infoDetailsBarDragOffset = (int) my - infoDetailsBarY;
+            return true;
+        }
 
         // Left click = flip
         if (btn == 0 && isDoubleFaced() && isMouseOverFlip(mx, my)) {
@@ -919,7 +936,7 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         }
 
         // Left click = rotate button
-        if (btn == 0 && isMouseOverRotate(mx, my)) {
+        if (btn == 0 && isMouseOverRotate(mx, my) && !isInsideInfoPanel(mx, my)) {
             rotateRight();
             return true;
         }
@@ -1053,12 +1070,22 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
     @Override
     public boolean mouseReleased(MouseButtonEvent click) {
         draggingLegalityBar = false;
+        draggingInfoDetailsBar = false;
         draggingIconBar = false;
         return super.mouseReleased(click);
     }
 
     @Override
     public boolean mouseDragged(MouseButtonEvent click, double dx, double dy) {
+        if (infoOpen && tab == Tab.INFO && draggingInfoDetailsBar) {
+            int thumbMinY = infoDetailsAreaY;
+            int thumbMaxY = infoDetailsAreaY + infoDetailsAreaH - infoDetailsBarH;
+            int desiredThumbY = clampInt((int) click.y() - infoDetailsBarDragOffset, thumbMinY, thumbMaxY);
+            float track = Math.max(1, thumbMaxY - thumbMinY);
+            float t = (desiredThumbY - thumbMinY) / track;
+            infoDetailsScroll = clampFloat(t * getInfoDetailsMaxScroll(), 0f, getInfoDetailsMaxScroll());
+            return true;
+        }
         if (infoOpen && draggingLegalityBar) {
             // move thumb; convert thumb y -> scroll
             int thumbMinY = legAreaY;
@@ -1178,6 +1205,12 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
             // otherwise scroll the list itself
             int maxScroll = Math.max(0, (getOrCreateCounters(stack).size() * CTR_ROW_H) - listH);
             countersScroll = clampInt(countersScroll + (int)(-verticalAmount * CTR_ROW_H * 3), 0, maxScroll);
+            return true;
+        }
+
+        if (infoOpen && tab == Tab.INFO && isOverInfoDetailsArea(mouseX, mouseY)) {
+            float delta = (float) (-verticalAmount * (LEG_ROW_H * 3));
+            infoDetailsScroll = clampFloat(infoDetailsScroll + delta, 0f, getInfoDetailsMaxScroll());
             return true;
         }
 
@@ -1309,6 +1342,22 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
     private boolean isOverLegalityBar(double mx, double my) {
         return mx >= legBarX && mx <= legBarX + legBarW
                 && my >= legBarY && my <= legBarY + legBarH;
+    }
+
+    private boolean isOverInfoDetailsArea(double mx, double my) {
+        return mx >= infoDetailsAreaX && mx <= infoDetailsAreaX + infoDetailsAreaW
+                && my >= infoDetailsAreaY && my <= infoDetailsAreaY + infoDetailsAreaH;
+    }
+
+    private boolean isOverInfoDetailsBar(double mx, double my) {
+        return mx >= infoDetailsBarX && mx <= infoDetailsBarX + infoDetailsBarW
+                && my >= infoDetailsBarY && my <= infoDetailsBarY + infoDetailsBarH;
+    }
+
+    private boolean isInsideInfoPanel(double mx, double my) {
+        if (!infoOpen) return false;
+        int panelY = 8 + INFO_SIZE + 6;
+        return mx >= 8 && mx <= 198 && my >= panelY && my <= this.height - 8;
     }
 
     @Override
@@ -1469,32 +1518,8 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
 
         m.popMatrix();
 
-        // screen-space UI
-        drawInfoButton(ctx, mouseX, mouseY);
-
-        // ALWAYS show mini counters HUD on right
+        // Draw card controls before the side panel so the panel covers them.
         drawCountersHud(ctx, mouseX, mouseY);
-
-        if (infoOpen) {
-            currentScryfallId = readScryfallIdForFace(stack, renderFace);
-            drawInfoPanel(ctx, mouseX, mouseY);
-        }
-
-
-        // NOW draw the info button (screen-space)
-        drawInfoButton(ctx, mouseX, mouseY);
-
-        // keep current id in sync when panel is open (so panel matches what you see)
-        if (infoOpen) {
-            currentScryfallId = readScryfallIdForFace(stack, renderFace);
-        }
-
-        // draw panel when open
-        if (infoOpen) {
-            drawInfoPanel(ctx, mouseX, mouseY);
-        }
-
-        // face indicator
         if (faceCount > 1) {
             String s = (renderFace + 1) + "/" + faceCount;
             ctx.drawString(this.font, s, cardX + 4, cardY + 4, 0xFFFFFF);
@@ -1508,6 +1533,13 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         if (isDoubleFaced()) {
             drawFlipButtonClean(ctx, mouseX, mouseY);
         }
+
+        if (infoOpen) {
+            currentScryfallId = readScryfallIdForFace(stack, renderFace);
+            drawInfoPanel(ctx, mouseX, mouseY);
+        }
+
+        drawInfoButton(ctx, mouseX, mouseY);
 
         super.render(ctx, mouseX, mouseY, delta);
     }
@@ -1827,6 +1859,22 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
     }
 
     private void drawInfoTab(GuiGraphics ctx, int x, int y, int panelW, int panelY, int panelH, int mouseX, int mouseY) {
+        int panelBottom = panelY + panelH - 10;
+        int legalityListH = LEG_ROW_H * 5;
+        int legalityListY = panelBottom - legalityListH;
+        int legalityHeaderY = legalityListY - 14;
+
+        infoDetailsAreaX = x;
+        infoDetailsAreaY = y;
+        infoDetailsAreaW = panelW - 20;
+        infoDetailsAreaH = Math.max(LEG_ROW_H * 3, legalityHeaderY - 6 - y);
+        infoDetailsScroll = clampFloat(infoDetailsScroll, 0f, getInfoDetailsMaxScroll());
+
+        int detailsContentW = infoDetailsAreaW - (SCROLLBAR_W + 4);
+        ctx.enableScissor(infoDetailsAreaX, infoDetailsAreaY,
+                infoDetailsAreaX + detailsContentW, infoDetailsAreaY + infoDetailsAreaH);
+        y -= (int) infoDetailsScroll;
+
         // Title
         ctx.drawString(this.font, Component.literal("Card Info"), x, y, 0xFFFFFFFF);
         y += 16;
@@ -1931,10 +1979,19 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
 
         }
 
-        y += 8;
+        infoDetailsContentH = Math.max(0, y + (int) infoDetailsScroll - infoDetailsAreaY);
+        infoDetailsScroll = clampFloat(infoDetailsScroll, 0f, getInfoDetailsMaxScroll());
+        ctx.disableScissor();
+        drawInfoDetailsScrollbar(ctx,
+                infoDetailsAreaX + detailsContentW + 4,
+                infoDetailsAreaY,
+                SCROLLBAR_W,
+                infoDetailsAreaH);
+
+        y = legalityHeaderY;
 
         ctx.drawString(this.font, Component.literal("Format legality"), x, y, 0xFF70E0FF);
-        y += 14;
+        y = legalityListY;
 
         if (e == null) {
             ctx.drawString(this.font, Component.literal("Loading..."), x, y, 0xFFAAAAAA);
@@ -1957,7 +2014,7 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         int listX = x;
         int listY = y;
         int listW = panelW - 20;     // x already includes padding
-        int listH = (panelY + panelH - 10) - listY;
+        int listH = legalityListH;
 
         // reserve scrollbar space
         int contentW = listW - (SCROLLBAR_W + 4);
@@ -2023,7 +2080,11 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         // Empty state (still draw editor below)
         if (keys.isEmpty()) {
             ctx.drawString(this.font, Component.literal("No counters yet."), listX, listY, 0xFFAAAAAA);
-            ctx.drawString(this.font, Component.literal("Type a name, choose an icon, then Create."), listX, listY + 12, 0xFF777777);
+            int messageY = listY + 12;
+            for (var line : this.font.split(Component.literal("Type a name, choose an icon, then Create."), listW)) {
+                ctx.drawString(this.font, line, listX, messageY, 0xFF777777);
+                messageY += 12;
+            }
 
             drawCountersEditorArea(ctx, panelY, panelH, x, mouseX, mouseY);
             ctx.drawString(this.font, Component.literal("Tip: Shift for +/-5"), x, panelY + panelH - 18, 0xFF777777);
@@ -2062,8 +2123,7 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
             int iconY = rowY + 1;
 
             if (iconKey == null || iconKey.equals("none")) {
-                // dash placeholder
-                ctx.drawString(this.font, "â€”", iconX + 2, rowY + 2, 0xFF777777, false);
+                // Intentionally blank: no icon is a valid counter style.
             } else {
                 Identifier tex = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/" + iconKey + ".png");
                 drawIconFit(ctx, tex, iconX, iconY, iconSize, iconSize);
@@ -2195,14 +2255,9 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
             if (selected) ctx.fill(cx, cy, cx + cell, cy + cell, 0x553BE36A);
             else if (hover) ctx.fill(cx, cy, cx + cell, cy + cell, 0x33202020);
 
-            // draw icon or "â€”" for none
+            // The first cell represents "no icon" and is intentionally blank.
             if (key.equals("none")) {
-                String dash = "â€”";
-                int tw = this.font.width(dash);
-                ctx.drawString(this.font, dash,
-                        cx + (cell - tw) / 2,
-                        cy + (cell - this.font.lineHeight) / 2,
-                        0xFFAAAAAA, false);
+                // Selection/hover highlighting still makes the blank choice visible.
             } else {
                 Identifier tex = Identifier.fromNamespaceAndPath("mtgcard", "textures/gui/counters/" + key + ".png");
                 // Draw the full 16x16 (or whatever) texture into the cell with padding.
@@ -2382,6 +2437,27 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         legBarH = thumbH;
     }
 
+    private void drawInfoDetailsScrollbar(GuiGraphics ctx, int barX, int barY, int barW, int barH) {
+        infoDetailsBarX = barX;
+        infoDetailsBarW = barW;
+        ctx.fill(barX, barY, barX + barW, barY + barH, 0x55202020);
+
+        float maxScroll = getInfoDetailsMaxScroll();
+        if (maxScroll <= 0f || infoDetailsContentH <= 0) {
+            infoDetailsBarY = barY;
+            infoDetailsBarH = barH;
+            ctx.fill(barX, barY, barX + barW, barY + barH, 0x88404040);
+            return;
+        }
+
+        int thumbH = clampInt((int) ((barH / (float) infoDetailsContentH) * barH), 10, barH);
+        int thumbY = barY + (int) ((barH - thumbH) * (infoDetailsScroll / maxScroll));
+        infoDetailsBarY = thumbY;
+        infoDetailsBarH = thumbH;
+        ctx.fill(barX, thumbY, barX + barW, thumbY + thumbH,
+                draggingInfoDetailsBar ? 0xFF707070 : 0xFF505050);
+    }
+
     private int drawKv(GuiGraphics ctx, int x, int y, String k, String v, int keyColor, int valueColor) {
         k = sanitizeUiText(k);
         v = sanitizeUiText(v);
@@ -2526,6 +2602,10 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
 
     private float getLegalityMaxScroll() {
         return getLegalityMaxScroll(lastLegalityRowCount, legAreaH);
+    }
+
+    private float getInfoDetailsMaxScroll() {
+        return Math.max(0f, infoDetailsContentH - infoDetailsAreaH);
     }
 
 
