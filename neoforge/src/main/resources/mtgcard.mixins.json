@@ -3,6 +3,6 @@
   "minVersion": "0.8",
   "package": "com.spider.mtgcard.mixin",
   "compatibilityLevel": "JAVA_21",
-  "mixins": ["BlockEntityChunkSyncMixin"],
+  "mixins": ["BlockEntityChunkSyncMixin", "SulfurCubeDeckboxMixin"],
   "injectors": {"defaultRequire": 1}
 }
