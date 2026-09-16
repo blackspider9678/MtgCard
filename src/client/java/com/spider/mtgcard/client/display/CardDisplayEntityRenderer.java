@@ -39,6 +39,9 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
     // Pick a stable aspect ratio for card back. (These are the values you already used as defaults.)
     private static final int BACK_W = 488;
     private static final int BACK_H = 680;
+    private static final Identifier DEFAULT_BACK_TEX = Identifier.fromNamespaceAndPath("mtgcard", "textures/item/card.png");
+    private static final float BACK_U0 = 147f / 1040f;
+    private static final float BACK_U1 = 892f / 1040f;
     private static final int TEXTURE_REFRESH_TICKS = 10;
     private static final long CACHE_EXPIRE_TICKS = 200L;
     private static final double COUNTER_RENDER_DISTANCE_SQR = 12.0D * 12.0D;
@@ -253,7 +256,9 @@ public class CardDisplayEntityRenderer extends EntityRenderer<CardDisplayEntity,
             halfH = 0.5f;
         }
 
-        final float u0 = 0f, u1 = 1f;
+        boolean cardBack = DEFAULT_BACK_TEX.equals(card.texId());
+        final float u0 = cardBack ? BACK_U0 : 0f;
+        final float u1 = cardBack ? BACK_U1 : 1f;
         final float v0 = 1f, v1 = 0f;
 
         queue.submitCustomGeometry(matrices, layer, (entry, vc) -> {
