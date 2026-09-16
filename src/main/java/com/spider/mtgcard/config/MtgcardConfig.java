@@ -11,6 +11,7 @@ import net.minecraft.world.entity.EntityType;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
@@ -70,6 +71,9 @@ public final class MtgcardConfig {
     public boolean Card_Store_Enabled = true;
     public boolean MTG_Game_Enabled = true;
 
+    // Dice
+    public boolean Physical_Dice_Enabled = false;
+
     // Price display
     public String Price_Item = "minecraft:diamond";
     public String Price_Basis = "USD";
@@ -88,6 +92,8 @@ public final class MtgcardConfig {
     private static MtgcardConfig loadInternal() {
         Path tomlPath = tomlPath();
         Path jsonPath = legacyJsonPath();
+
+        migrateRootToml(tomlPath);
 
         // 1) If TOML exists, load it.
         if (Files.exists(tomlPath)) {
@@ -264,6 +270,7 @@ public final class MtgcardConfig {
 
                 file.set("price.item", cfg.Price_Item);
                 file.set("price.basis", cfg.Price_Basis);
+                file.set("dice.physical_enabled", cfg.Physical_Dice_Enabled);
 
                 // add comments (players will thank you)
                 addComments(file);
@@ -283,6 +290,7 @@ public final class MtgcardConfig {
                         "whitelist: if anyone_can_import is false, only these usernames can import.");
 
         file.setComment("import.anyone_can_import", "Allow anyone to import custom cards.");
+        file.setComment("import.ops_can_import", "Allow server operators to import when public importing is disabled.");
         file.setComment("import.whitelist", "Usernames allowed to import when anyone_can_import=false.");
 
         file.setComment("cards",
@@ -370,6 +378,8 @@ public final class MtgcardConfig {
 
         file.setComment("price.item", "Item id used as the price icon (ex: minecraft:diamond).");
         file.setComment("price.basis", "Price basis: USD, EUR, or TIX.");
+        file.setComment("dice", "Dice behavior settings.");
+        file.setComment("dice.physical_enabled", "When true, normal use throws physical dice. When false, normal use performs the original instant hand-held roll. Sneak-use placement is always available.");
     }
 
     private static void applyDefaultsAndClamp(MtgcardConfig cfg) {
@@ -443,7 +453,20 @@ public final class MtgcardConfig {
     }
 
     private static Path tomlPath() {
-        return FabricLoader.getInstance().getConfigDir().resolve(TOML_NAME);
+        return FabricLoader.getInstance().getConfigDir().resolve("mtgcard").resolve(TOML_NAME);
+    }
+
+    private static void migrateRootToml(Path destination) {
+        Path oldPath = FabricLoader.getInstance().getConfigDir().resolve(TOML_NAME);
+        if (Files.exists(destination) || !Files.exists(oldPath)) return;
+
+        try {
+            Files.createDirectories(destination.getParent());
+            Files.move(oldPath, destination, StandardCopyOption.REPLACE_EXISTING);
+            System.out.println("[mtgcard] Moved config to " + destination);
+        } catch (Throwable e) {
+            System.out.println("[mtgcard] Failed to move existing config into the mtgcard folder: " + e);
+        }
     }
 
     private static Path legacyJsonPath() {
@@ -575,6 +598,7 @@ public final class MtgcardConfig {
         cfg.chance_custom_token_or_art = value.customTokenOrArt();
         cfg.Pack_Debug = value.packDebug();
         cfg.Loot_Packs_From_Fishing = value.fishingPacks();
+        cfg.Physical_Dice_Enabled = value.physicalDiceEnabled();
         cfg.Card_Store_Enabled = value.cardStoreEnabled();
         cfg.MTG_Game_Enabled = value.mtgGameEnabled();
         cfg.Price_Item = value.priceItem();
