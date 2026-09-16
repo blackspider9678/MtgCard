@@ -19,6 +19,7 @@ import net.minecraft.client.input.MouseButtonEvent;
 import com.spider.mtgcard.client.compat.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import com.mojang.blaze3d.platform.NativeImage;
@@ -62,7 +63,6 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
 
     // top-left info button
     private static final int INFO_SIZE = 18;
-    private int infoX, infoY, infoW, infoH;
 
     // currently displayed face's scryfall id (for price/legalities)
     private String currentScryfallId;
@@ -333,6 +333,12 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         super.init();
         this.clearWidgets();
 
+        Button infoButton = Button.builder(Component.literal("i"), b -> toggleInfoPanel())
+                .bounds(8, 8, INFO_SIZE, INFO_SIZE)
+                .tooltip(Tooltip.create(Component.literal(infoOpen ? "Hide info (Tab)" : "Show info (Tab)")))
+                .build();
+        addRenderableWidget(infoButton);
+
         if (!infoOpen) return;
 
         int panelX = 8;
@@ -362,10 +368,6 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
     @Override
     public boolean isPauseScreen() {
         return false;
-    }
-
-    private boolean isMouseOverInfo(double mx, double my) {
-        return mx >= infoX && mx <= (infoX + infoW) && my >= infoY && my <= (infoY + infoH);
     }
 
     private boolean isMouseOverTab(double mx, double my, int x, int width) {
@@ -866,12 +868,6 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         double mx = click.x();
         double my = click.y();
         int btn = click.button();
-
-        // Info button toggle
-        if (btn == 0 && isMouseOverInfo(mx, my)) {
-            toggleInfoPanel();
-            return true;
-        }
 
         // Handle panel tabs before any card, counter, or scrollbar hit regions.
         // This also keeps tab switching reliable if a text field currently owns focus.
@@ -1503,9 +1499,6 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
 
         m.popMatrix();
 
-        // Screen-space UI
-        drawInfoButton(ctx, mouseX, mouseY);
-
         // Always show mini counters HUD on the right.
         drawCountersHud(ctx, mouseX, mouseY);
 
@@ -1623,31 +1616,6 @@ public class CardLargeViewScreen extends LegacyScreen implements GuiCardFaceFlip
         }
     }
 
-
-    private void drawInfoButton(GuiGraphics ctx, int mouseX, int mouseY) {
-        infoX = 8;
-        infoY = 8;
-        infoW = INFO_SIZE;
-        infoH = INFO_SIZE;
-
-        boolean infoHover = isMouseOverInfo(mouseX, mouseY);
-        int border = infoHover ? 0xFF70E0FF : 0xFF404040;
-        int bg = infoOpen ? 0xCC1A1A1A : 0xAA101010;
-
-        ctx.fill(infoX - 1, infoY - 1, infoX + INFO_SIZE + 1, infoY + INFO_SIZE + 1, border);
-        ctx.fill(infoX, infoY, infoX + INFO_SIZE, infoY + INFO_SIZE, bg);
-
-        ctx.drawString(this.font, "i",
-                infoX + (INFO_SIZE - this.font.width("i")) / 2,
-                infoY + (INFO_SIZE - this.font.lineHeight) / 2,
-                0xFFFFFFFF, false);
-
-        if (infoHover) {
-            ctx.setTooltipForNextFrame(this.font,
-                    Component.literal(infoOpen ? "Hide info (Tab)" : "Show info (Tab)"),
-                    mouseX, mouseY);
-        }
-    }
 
     private static float clamp01(float v) {
         return v < 0f ? 0f : (v > 1f ? 1f : v);
