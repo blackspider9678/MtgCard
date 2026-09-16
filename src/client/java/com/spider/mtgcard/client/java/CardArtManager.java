@@ -3,6 +3,7 @@ package com.spider.mtgcard.client.java;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.spider.mtgcard.client.compat.flashback.FlashbackArtBridge;
+import com.spider.mtgcard.config.MtgcardConfig;
 import com.spider.mtgcard.shared.CardArtCommon;
 import com.spider.mtgcard.shared.MtgCardPaths;
 import com.spider.mtgcard.util.ArtImageStorage;
@@ -432,6 +433,11 @@ public final class CardArtManager {
         return mc.getSingleplayerServer() != null && mc.getCurrentServer() == null;
     }
 
+    private static boolean usePersistentArtCache() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc == null || mc.getCurrentServer() == null || MtgcardConfig.cacheMultiplayerArt();
+    }
+
     private static void loadIndex() {
         var file = indexFile();
         if (file == null) return;
@@ -534,6 +540,11 @@ public final class CardArtManager {
         IO.submit(() -> {
             try {
                 if (generation != sessionGeneration) return;
+                if (!usePersistentArtCache()) {
+                    enqueueRequest(game, artKey, sourceUrl, artKey + ".webp",
+                            CardArtCommon.encodeFallbackKeys(fallbackKeys), "");
+                    return;
+                }
                 Path file = resolveMainCachedFile(game, artKey, fallbackKeys);
                 if (generation != sessionGeneration) return;
 
@@ -636,6 +647,10 @@ public final class CardArtManager {
         IO.submit(() -> {
             try {
                 if (generation != sessionGeneration) return;
+                if (!usePersistentArtCache()) {
+                    enqueueRequest(game, artKey, "", artKey + ".webp", "", safeSetCode);
+                    return;
+                }
                 Path file = resolveCustomCachedFile(game, artKey, safeSetCode);
                 if (generation != sessionGeneration) return;
 
@@ -757,13 +772,15 @@ public final class CardArtManager {
         }
         if (!RECEIVING.add(textureKey)) return;
         String setCode = ART_SET_INDEX.get(textureKey);
-        Path destination = setCode == null || setCode.isBlank()
-                ? mainArtCacheDir(safeGame) : customArtDir(safeGame, setCode);
+        boolean persist = usePersistentArtCache();
+        Path destination = persist
+                ? (setCode == null || setCode.isBlank() ? mainArtCacheDir(safeGame) : customArtDir(safeGame, setCode))
+                : null;
         long generation = sessionGeneration;
         IO.submit(() -> {
             try {
                 if (generation == sessionGeneration)
-                    storeArtBytes(safeGame, artKey, setCode, imgBytes, destination, generation);
+                    storeArtBytes(safeGame, artKey, setCode, imgBytes, destination, generation, persist);
             } finally {
                 if (generation == sessionGeneration) {
                     RECEIVING.remove(textureKey);
@@ -779,16 +796,13 @@ public final class CardArtManager {
         String textureKey = scopedArtKey(safeGame, artKey);
         IN_FLIGHT.remove(textureKey);
 
-        storeArtBytes(safeGame, artKey, setCode, imgBytes);
-    }
-
-    private static void storeArtBytes(String game, String artKey, String setCode, byte[] imgBytes) {
         Path destination = setCode == null || setCode.isBlank()
-                ? mainArtCacheDir(game) : customArtDir(game, setCode);
-        storeArtBytes(game, artKey, setCode, imgBytes, destination, sessionGeneration);
+                ? mainArtCacheDir(safeGame) : customArtDir(safeGame, setCode);
+        storeArtBytes(safeGame, artKey, setCode, imgBytes, destination, sessionGeneration, true);
     }
 
-    private static void storeArtBytes(String game, String artKey, String setCode, byte[] imgBytes, Path destination, long generation) {
+    private static void storeArtBytes(String game, String artKey, String setCode, byte[] imgBytes, Path destination,
+                                      long generation, boolean persist) {
         if (artKey == null || artKey.isBlank() || imgBytes == null || imgBytes.length == 0) {
             return;
         }
@@ -803,6 +817,13 @@ public final class CardArtManager {
         String safeSetCode = setCode == null || setCode.isBlank() ? "" : MtgCardPaths.sanitizeSetFolder(setCode);
         if (!safeSetCode.isBlank()) {
             ART_SET_INDEX.put(textureKey, safeSetCode);
+        }
+
+        if (!persist) {
+            if (generation == sessionGeneration && LOADING.add(textureKey)) {
+                PENDING_DISK_LOADS.add(new PendingDiskLoad(textureKey, null, imgBytes));
+            }
+            return;
         }
 
         try {
