@@ -6,6 +6,8 @@ import com.spider.mtgcard.client.compat.MtgGuiScaleHelper;
 import com.spider.mtgcard.db.search.ScryfallSyntax;
 import com.spider.mtgcard.net.CustomCardPackets;
 import com.spider.mtgcard.util.Cockatrice;
+import com.spider.mtgcard.util.CustomImportSort;
+import com.spider.mtgcard.util.CustomImportLayout;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
 import com.spider.mtgcard.client.compat.GuiGraphics;
@@ -189,7 +191,8 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
     private volatile boolean manualUiActive = false;
 
 
-    private int gridX1() { return 10; }
+    private int previewPanelWidth() { return CustomImportLayout.columns(panelX, BOX).previewWidth(); }
+    private int gridX1() { return CustomImportLayout.columns(panelX, BOX).gridLeft(); }
     private int gridY1() { return GRID_TOP; }
     private int gridX2() { return panelX - 12; }
     private int gridY2() { return this.height - 40; } // stops hover over bottom bar too
@@ -434,9 +437,9 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
         if (mx < gridX1() || mx > gridX2() || my < gridY1() || my > gridY2()) return -1;
 
         final int maxX = panelX - 12;
-        int usableW = maxX - 10;
+        int usableW = maxX - gridX1();
         int cols = Math.max(1, (usableW + GAP) / (BOX + GAP));
-        int x0 = 10;
+        int x0 = gridX1();
         int y0 = GRID_TOP - scrollY;
 
         for (int viewIndex = 0; viewIndex < visibleEntryIndexes.size(); viewIndex++) {
@@ -468,9 +471,52 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
             visibleEntryIndexes.add(i);
         }
 
+        sortVisibleEntries();
         hoveredIndex = -1;
         updateSearchClearButtonState();
         updateMaxScroll();
+    }
+
+    private void sortVisibleEntries() {
+        var keys = new HashMap<Integer, CustomImportSort.Key>();
+        for (int index : visibleEntryIndexes) {
+            Entry entry = entries.get(index);
+            keys.put(index, new CustomImportSort.Key(index, nz(entry.sourceFileName).isBlank() ? entry.fileName : entry.sourceFileName, entry.meta.name,
+                    entry.meta.manaCost, entry.meta.typeLine, nz(entry.meta.collectorNumber).isBlank() ? entry.meta.id : entry.meta.collectorNumber, entry.meta.set));
+        }
+        var comparator = CustomImportSort.comparator(sortMode);
+        visibleEntryIndexes.sort((a, b) -> comparator.compare(keys.get(a), keys.get(b)));
+    }
+
+    private boolean handleImportSortClick(double mx, double my) {
+        if (!importSortMenuOpen || importSortBtn == null) return false;
+        int x = importSortBtn.getX(), y = importSortBtn.getY() + importSortBtn.getHeight() + 2;
+        int height = CustomImportSort.Mode.values().length * IMPORT_SORT_ROW_H;
+        if (mx >= x && mx < x + importSortBtn.getWidth() && my >= y && my < y + height) {
+            sortMode = CustomImportSort.Mode.values()[(int) (my - y) / IMPORT_SORT_ROW_H];
+            importSortBtn.setMessage(Component.literal("Sort: " + sortMode.label));
+            importSortMenuOpen = false;
+            scrollY = 0;
+            rebuildVisibleEntries();
+            return true;
+        }
+        if (!importSortBtn.isMouseOver(mx, my)) importSortMenuOpen = false;
+        return false;
+    }
+
+    private void renderImportSortMenu(GuiGraphics ctx, int mx, int my) {
+        if (!importSortMenuOpen || importSortBtn == null) return;
+        int x = importSortBtn.getX(), y = importSortBtn.getY() + importSortBtn.getHeight() + 2;
+        int width = importSortBtn.getWidth();
+        var modes = CustomImportSort.Mode.values();
+        ctx.fill(x - 1, y - 1, x + width + 1, y + modes.length * IMPORT_SORT_ROW_H + 1, 0xFFE0E0E0);
+        ctx.fill(x, y, x + width, y + modes.length * IMPORT_SORT_ROW_H, 0xFF151515);
+        for (int i = 0; i < modes.length; i++) {
+            int rowY = y + i * IMPORT_SORT_ROW_H;
+            boolean hovered = mx >= x && mx < x + width && my >= rowY && my < rowY + IMPORT_SORT_ROW_H;
+            if (hovered || sortMode == modes[i]) ctx.fill(x, rowY, x + width, rowY + IMPORT_SORT_ROW_H, hovered ? 0xFF555555 : 0xFF303030);
+            ctx.drawString(this.font, modes[i].label, x + 5, rowY + 5, 0xFFFFFFFF, false);
+        }
     }
 
     private Predicate<Entry> buildImportSearchPredicate(String rawQuery) {
@@ -793,6 +839,13 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
     private final List<Entry> entries = new ArrayList<>();
     private final List<Integer> visibleEntryIndexes = new ArrayList<>();
     private int selected = -1;
+    private CustomImportSort.Mode sortMode = CustomImportSort.Mode.CARDS_ADDED;
+    private Button importSortBtn;
+    private boolean importSortMenuOpen;
+    private static final int IMPORT_SORT_ROW_H = 18;
+    private Button largePreviewFlipBtn;
+    private Entry largePreviewSelection;
+    private boolean largePreviewBack;
     private EditBox searchBox;
     private Button searchClearBtn;
     private String searchQuery = "";
@@ -819,9 +872,9 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
     private static final int UI_YELLOW = 0xFFFFE070;
 
     // Gallery layout + scroll
-    private static final int BOX = 96;          // thumbnail box (w)
-    private static final int BOX_H = 134;       // thumbnail box (h)
-    private static final int GAP = 8;
+    private static final int BOX = 64;          // thumbnail box (w)
+    private static final int BOX_H = 90;       // thumbnail box (h)
+    private static final int GAP = 6;
 
     private static final int THUMB_SCALE = 10;
     private static final String CLEAR_GLYPH = "\u00D7";
@@ -876,7 +929,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
     // ---- Lifecycle ----
     @Override
     protected void init() {
-        if (MtgGuiScaleHelper.applyFixedGuiScale(this, 2)) return;
+        if (MtgGuiScaleHelper.applyAutoFitGuiScale(this, 4, 600, 300)) return;
 
         panelW = Math.max(220, Math.min(260, (int)(this.width * 0.22)));
         panelX = this.width - panelW - 10;
@@ -908,17 +961,98 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
         addRenderableWidget(clearLinkBtn);
 
         buildSearchWidgets();
+        buildLargePreviewWidgets();
         buildEditorWidgets();
         syncEditorFromSelected();
         rebuildVisibleEntries();
+    }
+
+    private void buildLargePreviewWidgets() {
+        int width = previewPanelWidth();
+        largePreviewFlipBtn = Button.builder(Component.literal("Flip Card"), b -> flipLargePreviewSelection()).bounds(18, GRID_TOP + 18, Math.max(1, width - 16), 18).build();
+        largePreviewFlipBtn.visible = width > 0;
+        largePreviewFlipBtn.active = false;
+        addRenderableWidget(largePreviewFlipBtn);
+    }
+
+    private void flipLargePreviewSelection() {
+        if (selected < 0 || selected >= entries.size()) return;
+        Entry current = entries.get(selected);
+        Entry partner = linkedPreviewPartner(current);
+        if (partner != null) {
+            clearEditorFocus();
+            selected = current.link.partnerIndex;
+            largePreviewSelection = partner;
+            largePreviewBack = false;
+            syncEditorFromSelected();
+            int columns = Math.max(1, (gridX2() - gridX1() + GAP) / (BOX + GAP));
+            scrollY = CustomImportLayout.scrollToEntry(visibleEntryIndexes.indexOf(selected), columns,
+                    BOX_H + GAP, Math.max(1, gridY2() - gridY1()), scrollY, maxScrollY);
+            hoveredIndex = -1;
+        } else if (current.imgBack != null && current.imgBack.length > 0) {
+            largePreviewSelection = current;
+            largePreviewBack = !largePreviewBack;
+        }
+    }
+
+    private Entry linkedPreviewPartner(Entry entry) {
+        if (entry.link == null) return null;
+        int index = entry.link.partnerIndex;
+        return index >= 0 && index < entries.size() && entries.get(index) != entry ? entries.get(index) : null;
+    }
+
+    private void drawLargePreview(GuiGraphics ctx) {
+        int width = previewPanelWidth();
+        if (width <= 0) return;
+        int top = GRID_TOP - 2, bottom = gridY2();
+        ctx.fill(8, top, 10 + width, bottom, 0xDD101010);
+        ctx.fill(8, top, 10 + width, top + 1, 0xFF404040);
+        ctx.fill(9 + width, top, 10 + width, bottom, 0xFF404040);
+        ctx.drawString(this.font, "Selected Card", 18, GRID_TOP + 3, 0xFFEFEFEF, false);
+        Entry entry = selected >= 0 && selected < entries.size() ? entries.get(selected) : null;
+        if (entry != largePreviewSelection) {
+            largePreviewSelection = entry;
+            largePreviewBack = false;
+        }
+        Entry partner = entry == null ? null : linkedPreviewPartner(entry);
+        boolean hasBack = entry != null && entry.imgBack != null && entry.imgBack.length > 0;
+        largePreviewFlipBtn.active = hasBack || partner != null;
+        if (!largePreviewFlipBtn.active) largePreviewBack = false;
+        if (entry == null) {
+            ctx.drawString(this.font, "Select a card", 18, GRID_TOP + 48, 0xFFAAAAAA, false);
+            return;
+        }
+        Entry imageEntry = largePreviewBack && !hasBack && partner != null ? partner : entry;
+        boolean backImage = largePreviewBack && hasBack;
+        ensurePreviewTexture(imageEntry, backImage);
+        int availableHeight = Math.max(1, bottom - (GRID_TOP + 48) - 30);
+        int drawW = Math.min(Math.max(1, width - 16), Math.max(1, availableHeight * PREVIEW_TEX_W / PREVIEW_TEX_H));
+        int drawH = Math.max(1, drawW * PREVIEW_TEX_H / PREVIEW_TEX_W);
+        int x = 10 + (width - drawW) / 2;
+        int y = GRID_TOP + 44 + (availableHeight - drawH) / 2;
+        if (imageEntry.previewId != null && !imageEntry.previewBuilding && imageEntry.previewWantsBack == backImage) {
+            ctx.blit(RenderPipelines.GUI_TEXTURED, imageEntry.previewId, x, y, 0f, 0f, drawW, drawH, PREVIEW_TEX_W, PREVIEW_TEX_H, PREVIEW_TEX_W, PREVIEW_TEX_H);
+        } else {
+            ctx.drawString(this.font, "Loading...", 18, y + drawH / 2, 0xFFAAAAAA, false);
+        }
+        String imageName = backImage && !nz(entry.meta.backName).isBlank() ? entry.meta.backName : safeName(imageEntry);
+        var nameLines = this.font.split(Component.literal(imageName), Math.max(1, width - 16));
+        for (int i = 0; i < Math.min(2, nameLines.size()); i++) {
+            ctx.drawString(this.font, nameLines.get(i), 18, bottom - 24 + i * this.font.lineHeight, 0xFFEFEFEF, false);
+        }
     }
 
     private void buildSearchWidgets() {
         final int headerY = 22;
         final int fieldH = 16;
         final int clearW = 16;
-        final int labelRight = 10 + this.font.width("Images added: " + entries.size());
-        final int leftX = Math.max(140, labelRight + 14);
+        final int sortW = Math.min(160, Math.max(100, panelX / 3));
+        final int leftX = 10 + sortW + 8;
+        importSortMenuOpen = false;
+        importSortBtn = Button.builder(Component.literal("Sort: " + sortMode.label), b -> {
+            importSortMenuOpen = !importSortMenuOpen;
+        }).bounds(10, headerY, sortW, fieldH).build();
+        addRenderableWidget(importSortBtn);
         final int clearX = panelX - 18;
         final int searchW = Math.max(70, clearX - 2 - leftX);
 
@@ -1013,7 +1147,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
         ctx.fill(0, 0, this.width, this.height, 0xB0000000);
 
         // --- Define "window" for the grid (left column only) ---
-        final int gridX1 = 10;
+        final int gridX1 = gridX1();
         final int gridY1 = GRID_TOP;
         final int gridX2 = panelX - 12;
         final int gridY2 = this.height - 40;
@@ -1022,9 +1156,9 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
         ctx.enableScissor(gridX1, gridY1, gridX2, gridY2);
         {
             final int maxX = panelX - 12;
-            int usableW = maxX - 10;
+            int usableW = maxX - gridX1();
             int cols = Math.max(1, (usableW + GAP) / (BOX + GAP));
-            int x0 = 10;
+            int x0 = gridX1();
             int y0 = GRID_TOP - scrollY;
 
             hoveredIndex = -1;
@@ -1106,13 +1240,15 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
         ctx.fill(gridX1, GRID_TOP,     gridX2, GRID_TOP + 6, 0x40000000);
 
 
+        drawLargePreview(ctx);
+
         // --- Banner text (on top of the window)
-        ctx.drawString(this.font,
-                "Drag any Magic Set Editor export file, folder, or card images here",
-                10, 10, 0xFFEFEFEF, true);
-        ctx.drawString(this.font,
-                "Images added: " + entries.size(),
-                10, 26, 0xFFB0FFB0, true);
+        String imageCount = "Images added: " + entries.size();
+        int countX = Math.max(10, panelX - 18 - this.font.width(imageCount));
+        String dropHint = this.font.plainSubstrByWidth(
+                "Drag any Magic Set Editor export file, folder, or card images here", Math.max(0, countX - 20));
+        ctx.drawString(this.font, dropHint, 10, 10, 0xFFEFEFEF, true);
+        ctx.drawString(this.font, imageCount, countX, 10, 0xFFB0FFB0, true);
 
         // --- Link mode hint (placed visibly under the banner, not covered)
         renderLinkHint(ctx);
@@ -1128,6 +1264,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
         drawGridScrollbar(ctx);
 
         super.render(ctx, mouseX, mouseY, delta);
+        renderImportSortMenu(ctx, mouseX, mouseY);
     }
 
     // FRONT/BACK badge text for a thumbnail
@@ -1268,6 +1405,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
     // ---- Input ----
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean bl) {
+        if (handleImportSortClick(click.x(), click.y())) return true;
         double mx = click.x();
         double my = click.y();
 
@@ -1284,7 +1422,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
         if (super.mouseClicked(click, bl)) return true;
 
         // 3) Only allow grid selection inside the visible grid "window"
-        final int gridX1 = 10;
+        final int gridX1 = gridX1();
         final int gridY1 = GRID_TOP;
         final int gridX2 = panelX - 12;
         final int gridY2 = this.height - 40;
@@ -1294,9 +1432,9 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
         }
 
         final int maxX = panelX - 12;
-        int usableW = maxX - 10;
+        int usableW = maxX - gridX1();
         int cols = Math.max(1, (usableW + GAP) / (BOX + GAP));
-        int x0 = 10;
+        int x0 = gridX1();
         int y0 = GRID_TOP - scrollY;
 
         for (int viewIndex = 0; viewIndex < visibleEntryIndexes.size(); viewIndex++) {
@@ -1339,6 +1477,9 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
         if (textF != null && textF.isMouseOver(mouseX, mouseY) && textF.mouseScrolled(mouseX, mouseY, horizontal, vertical)) {
             return true;
         }
+        if (mouseX < gridX1() || mouseX > gridX2() || mouseY < gridY1() || mouseY > gridY2()) {
+            return super.mouseScrolled(mouseX, mouseY, horizontal, vertical);
+        }
         int old = scrollY;
         scrollY -= (int)(vertical * 24);
         clampScroll();
@@ -1362,11 +1503,11 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
 
     private void updateMaxScroll() {
         final int maxX = panelX - 12;
-        int usableW = maxX - 10;
+        int usableW = maxX - gridX1();
         int cols = Math.max(1, (usableW + GAP) / (BOX + GAP));
         int rows = (int)Math.ceil(visibleEntryIndexes.size() / (double)cols);
         int contentH = rows * (BOX_H + GAP);
-        int viewportH = this.height - GRID_TOP - 12;
+        int viewportH = Math.max(1, gridY2() - gridY1());
         maxScrollY = Math.max(0, contentH - viewportH);
         clampScroll();
     }
@@ -1935,6 +2076,11 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
                     int tw = ni.getWidth(), th = ni.getHeight();
                     if (minecraft != null) {
                         minecraft.execute(() -> {
+                            if (minecraft.gui.screen() != this) {
+                                ni.close();
+                                e.previewBuilding = false;
+                                return;
+                            }
                             try {
                                 var tm = minecraft.getTextureManager();
                                 if (e.previewId != null) tm.release(e.previewId);
@@ -3780,6 +3926,7 @@ public final class CustomImportScreen extends com.spider.mtgcard.client.compat.L
     public boolean keyPressed(KeyEvent key) {
         // Allow Esc to cancel link mode globally
         int kc = kiKeyCode(key);
+        if (kc == 256 && importSortMenuOpen) { importSortMenuOpen = false; return true; }
         if (kc == 256 /* ESC */ && linkPendingMode != LinkMode.NONE) {
             linkPendingMode = LinkMode.NONE;
             return true;
