@@ -559,9 +559,9 @@
   "guide.mtgcard.card_store.b_break_flush": "If the store is broken while printing, all remaining cards are flushed out the front.",
 
   "guide.mtgcard.card_store.h_import": "Deck Import",
-  "guide.mtgcard.card_store.b_drag_drop": "Drag and drop .txt or .csv deck files into the screen to import directly into your cart.",
-  "guide.mtgcard.card_store.b_txt_format": "TXT format supports lines like: 1x Card Name (SET) 123",
-  "guide.mtgcard.card_store.b_csv_format": "CSV format supports header-based columns, or common sheet layouts that include set code and collector number.",
+  "guide.mtgcard.card_store.b_drag_drop": "Use Import Deck to select .txt or .csv files, or drop them onto either tab. The Cart opens automatically and fills as small batches resolve, with import progress shown above.",
+  "guide.mtgcard.card_store.b_txt_format": "TXT accepts card names, quantities such as 4 Card Name or 4x Card Name, and exact printings such as 1 Card Name (SET) 123. Missing printing details use the newest released match; missing quantities use 1.",
+  "guide.mtgcard.card_store.b_csv_format": "CSV accepts name, quantity/count, set/edition, and collector/card number headers, including quoted names. Printing details are optional when a card name is supplied. Existing spreadsheet layouts are also supported.",
 
   "guide.mtgcard.commands.title": "Commands",
 

@@ -227,15 +227,25 @@ public final class DeckControlPackets {
                     if (!(ctx.player() instanceof ServerPlayer sp)) return;
                     ServerLevel world = (ServerLevel) sp.level();
                     var be = world.getBlockEntity(payload.pos());
-                    if (!(be instanceof DeckControlBlockEntity dc)) return;
+                    if (!(be instanceof DeckControlBlockEntity dc)) {
+                        com.spider.mtgcard.Mtgcard.LOGGER.warn(
+                                "[DeckControl] GUI action {} targeted {} in {}, but no controller was found",
+                                payload.actionId(), payload.pos(), world.dimension());
+                        return;
+                    }
 
-                    DeckControlActionRegistry.run(
+                    boolean accepted = DeckControlActionRegistry.run(
                             payload.actionId(),
                             sp,
                             dc,
                             payload.value(),
                             payload.playerInventorySlot()
                     );
+                    if (!accepted) {
+                        com.spider.mtgcard.Mtgcard.LOGGER.warn(
+                                "[DeckControl] Rejected GUI action {} at {} (selected game: {}, linked: {})",
+                                payload.actionId(), payload.pos(), dc.getSelectedGame(), dc.hasLinkedDeckbox());
+                    }
                 })
         );
 

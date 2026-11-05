@@ -16,6 +16,10 @@ public final class FabricLoader {
         return INSTANCE;
     }
 
+    public boolean isModLoaded(String modId) {
+        return net.neoforged.fml.ModList.get().isLoaded(modId);
+    }
+
     public Path getConfigDir() {
         return FMLPaths.CONFIGDIR.get();
     }

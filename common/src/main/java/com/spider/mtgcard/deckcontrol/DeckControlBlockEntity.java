@@ -59,7 +59,11 @@ public class DeckControlBlockEntity extends BlockEntity implements ExtendedMenuP
     public void setPeekActive(boolean v) { peekActive = v; setChanged(); syncSelf(); }
 
     private String selectedGame = TcgGameRegistry.MTG;
-    public String getSelectedGame() { return selectedGame; }
+    public String getSelectedGame() {
+        // Use the same fallback as the menu property sent to the client. A saved
+        // game may no longer be registered after an add-on is removed.
+        return TcgGameRegistry.gameId(TcgGameRegistry.gameIndex(selectedGame));
+    }
     public void setSelectedGame(String game) {
         String normalized = TcgGameRegistry.normalizeGameId(game);
         if (normalized.isBlank()) normalized = TcgGameRegistry.MTG;

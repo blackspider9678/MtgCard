@@ -469,13 +469,18 @@ public final class CardStorePackets {
     public record ImportDeckC2S(BlockPos pos, String game, int lineCount, List<Line> lines) implements CustomPacketPayload {
         public static final Type<ImportDeckC2S> ID = new Type<>(Identifier.fromNamespaceAndPath("mtgcard", "cardstore_import_deck"));
 
-        public record Line(String game, String set, String cn, int qty) {
+        public record Line(String game, String name, String set, String cn, int qty) {
+            public Line(String game, String set, String cn, int qty) {
+                this(game, "", set, cn, qty);
+            }
+
             public Line(String set, String cn, int qty) {
-                this(TcgGameRegistry.MTG, set, cn, qty);
+                this(TcgGameRegistry.MTG, "", set, cn, qty);
             }
 
             public Line {
                 game = sanitizeGame(game);
+                name = name == null ? "" : name.trim();
                 set = set == null ? "" : set.trim();
                 cn = cn == null ? "" : cn.trim();
                 qty = Math.max(1, qty);
@@ -489,6 +494,7 @@ public final class CardStorePackets {
                         ByteBufCodecs.VAR_INT, ImportDeckC2S::lineCount,
                         StreamCodec.composite(
                                 ByteBufCodecs.STRING_UTF8, Line::game,
+                                ByteBufCodecs.STRING_UTF8, Line::name,
                                 ByteBufCodecs.STRING_UTF8, Line::set,
                                 ByteBufCodecs.STRING_UTF8, Line::cn,
                                 ByteBufCodecs.VAR_INT, Line::qty,
@@ -700,12 +706,28 @@ public final class CardStorePackets {
 
                 ArrayList<CompletableFuture<ImportDeckS2C.Entry>> futures = new ArrayList<>();
 
+                // One collection request warms the exact-printing cache for the batch,
+                // instead of spending an HTTP request (and throttle interval) per line.
+                // Other languages keep their exact language/fallback resolution path.
+                String language = com.spider.mtgcard.config.MtgcardConfig.get().Card_Language;
+                CompletableFuture<?> batchReady = CompletableFuture.completedFuture(null);
+                if (payload.lines().size() > 1 && (language == null || language.isBlank() || "en".equalsIgnoreCase(language.trim()))) {
+                    ArrayList<ScryfallCardSearchFetch.Hit> hits = new ArrayList<>();
+                    for (var line : payload.lines()) {
+                        if (line.set().matches("[A-Za-z0-9]{2,12}") && !line.cn().isBlank()) {
+                            hits.add(new ScryfallCardSearchFetch.Hit("", line.set(), line.cn()));
+                        }
+                    }
+                    batchReady = ScryfallExactFetch.fetchCollectionBySetCollectorAsync(world, hits)
+                            .exceptionally(error -> List.of());
+                }
+
                 for (var line : payload.lines()) {
                     final String set = (line.set() == null ? "" : line.set().trim());
                     final String cn  = (line.cn() == null  ? "" : line.cn().trim());
                     final int qty    = Math.max(1, line.qty());
 
-                    if (set.isBlank() || cn.isBlank()) continue;
+                    if (line.name().isBlank() && (set.isBlank() || cn.isBlank())) continue;
 
                     CompletableFuture<ImportDeckS2C.Entry> fCustom =
                             CompletableFuture.supplyAsync(() -> {
@@ -715,7 +737,7 @@ public final class CardStorePackets {
                                     com.spider.mtgcard.content.pack.custom.CustomCardStore.CardMeta meta = null;
                                     for (var m : customStore.all()) {
                                         if (m == null) continue;
-                                        if (m.id != null && m.id.equalsIgnoreCase(cn)) {
+                                        if (!cn.isBlank() && m.id != null && m.id.equalsIgnoreCase(cn)) {
                                             meta = m;
                                             break;
                                         }
@@ -745,7 +767,7 @@ public final class CardStorePackets {
                             });
 
                     CompletableFuture<ImportDeckS2C.Entry> fScry =
-                            ScryfallExactFetch.fetchBySetCollectorAsync(world, set.toLowerCase(Locale.ROOT), cn)
+                            batchReady.thenCompose(ignored -> ScryfallDeckImportFetch.fetchAsync(world, line.name(), set, cn))
                                     .thenApply(model -> {
                                         if (model == null) return null;
 
@@ -786,7 +808,7 @@ public final class CardStorePackets {
                             boolean ok = !out.isEmpty();
                             String msg = ok
                                     ? ("Imported " + out.size() + " resolved lines.")
-                                    : "Imported 0 lines (no matches). Check set/cn values.";
+                                    : "Imported 0 lines (no matches). Check card names and printing details.";
 
                             ServerPlayNetworking.send(player,
                                     new ImportDeckS2C(payload.pos(), game, ok, msg, out));

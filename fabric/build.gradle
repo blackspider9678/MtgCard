@@ -9,6 +9,7 @@ base {
 
 loom {
     splitEnvironmentSourceSets()
+    runs { client { programArg '--offlineDeveloperMode' } }
 
     mods {
         "${rootProject.mod_id}" {

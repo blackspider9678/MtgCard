@@ -445,6 +445,7 @@ public final class CardDBSession implements CardDBView {
         if (intakeAll.isEmpty()) return false;
 
         ArrayList<ItemStack> original = new ArrayList<>(intakeAll);
+        java.util.LinkedHashMap<String, ItemStack> grouped = new java.util.LinkedHashMap<>();
         intakeAll.clear();
 
         boolean changed = false;
@@ -453,10 +454,23 @@ public final class CardDBSession implements CardDBView {
                 changed = true;
                 continue;
             }
-            if (!addToGroupedStorage(stack)) {
+            long count = CardDatabaseCards.databaseCount(stack);
+            ItemStack storedCopy = CardDatabaseCards.copyForDatabase(stack, count);
+            String key = CardDatabaseCards.databaseKey(storedCopy);
+            if (count <= 0L || key.isBlank()) {
+                changed = true;
+                continue;
+            }
+            ItemStack existing = grouped.get(key);
+            if (existing == null) {
+                grouped.put(key, storedCopy);
+            } else {
+                CardDatabaseCards.setDatabaseCount(existing, CardDatabaseCards.saturatedAdd(CardDatabaseCards.databaseCount(existing), count));
                 changed = true;
             }
         }
+
+        intakeAll.addAll(grouped.values());
 
         if (original.size() != intakeAll.size()) return true;
         for (int i = 0; i < original.size(); i++) {

@@ -5,6 +5,7 @@ import com.spider.mtgcard.api.CardStoreProviderRegistry;
 import com.spider.mtgcard.api.TcgGameRegistry;
 import com.spider.mtgcard.cardstore.CardStorePackets;
 import com.spider.mtgcard.cardstore.CardStoreScreenHandler;
+import com.spider.mtgcard.cardstore.DeckImportProgress;
 import com.spider.mtgcard.client.compat.LegacyContainerScreen;
 import com.spider.mtgcard.client.compat.MtgGuiScaleHelper;
 import com.spider.mtgcard.client.input.GuiCardFaceFlipHandler;
@@ -32,8 +33,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandler> implements GuiCardFaceFlipHandler {
 
@@ -249,6 +248,8 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     }
 
     private Button sortBtn;
+    private Button importDeckBtn;
+    private boolean filePickerOpen;
 
     // --- Sort dropdown state ---
     private boolean sortMenuOpen = false;
@@ -261,6 +262,15 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     private int nextArrivalIndex = 0;
 
     private SortMode sortMode = SortMode.SCRYFALL_ORDER; // default
+    private SortMode cartSortMode = SortMode.SCRYFALL_ORDER;
+
+    private SortMode activeSortMode() {
+        return tab == Tab.CART ? cartSortMode : sortMode;
+    }
+
+    private String sortLabel(SortMode mode) {
+        return tab == Tab.CART && mode == SortMode.SCRYFALL_ORDER ? "Added Order" : mode.label;
+    }
 
     private enum SortMode {
         SCRYFALL_ORDER("Scryfall Order"),
@@ -275,7 +285,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     }
 
     private Component sortButtonText() {
-        return Component.literal(usesCompactLayout() ? "Sort" : "Sort: " + sortMode.label);
+        return Component.literal(usesCompactLayout() ? "Sort" : "Sort: " + sortLabel(activeSortMode()));
     }
 
     private int computeGridCapacity() {
@@ -410,6 +420,13 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     private void setSortMode(SortMode mode) {
         if (mode == null) return;
+        if (tab == Tab.CART) {
+            cartSortMode = mode;
+            sortCart();
+            if (sortBtn != null) sortBtn.setMessage(sortButtonText());
+            closeSortMenu();
+            return;
+        }
         if (sortMode == mode) {
             closeSortMenu();
             return;
@@ -433,8 +450,28 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     private void sortGrid() {
         if (grid.isEmpty()) return;
 
-        grid.sort((a, b) -> {
-            switch (sortMode) {
+        grid.sort(printingComparator(sortMode));
+
+        // keep selection sane after resort
+        if (selectedIndex < 0 && !grid.isEmpty()) selectedIndex = 0;
+        if (selectedIndex >= grid.size()) selectedIndex = grid.size() - 1;
+
+        if (tab == Tab.STORE && hasValidSelection()) {
+            var sel = grid.get(selectedIndex);
+            preview = sel.stack;
+            selectedPriceItems = sel.priceItems;
+            previewFace = 0;
+            previewTex = null;
+            resolvedSet = sel.set;
+            resolvedCn = sel.cn;
+        }
+
+        if (addToCartBtn != null) addToCartBtn.active = hasValidSelection();
+    }
+
+    private java.util.Comparator<PrintEntry> printingComparator(SortMode mode) {
+        return (a, b) -> {
+            switch (mode) {
                 case SCRYFALL_ORDER -> {
                     return Integer.compare(a.arrival, b.arrival);
                 }
@@ -479,23 +516,36 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
                 }
             }
             return 0;
-        });
+        };
+    }
 
-        // keep selection sane after resort
-        if (selectedIndex < 0 && !grid.isEmpty()) selectedIndex = 0;
-        if (selectedIndex >= grid.size()) selectedIndex = grid.size() - 1;
-
-        if (hasValidSelection()) {
-            var sel = grid.get(selectedIndex);
-            preview = sel.stack;
-            selectedPriceItems = sel.priceItems;
-            previewFace = 0;
-            previewTex = null;
-            resolvedSet = sel.set;
-            resolvedCn  = sel.cn;
+    private void sortCart() {
+        CartLine selected = selectedCartIndex >= 0 && selectedCartIndex < cart.size()
+                ? cart.get(selectedCartIndex) : null;
+        var keys = new java.util.IdentityHashMap<CartLine, PrintEntry>();
+        for (var line : cart) {
+            keys.put(line, new PrintEntry(line.game, line.set, line.cn, line.stack, line.priceItems, line.arrival));
         }
+        var comparator = printingComparator(cartSortMode);
+        cart.sort((a, b) -> comparator.compare(keys.get(a), keys.get(b)));
+        selectedCartIndex = selected == null ? -1 : cart.indexOf(selected);
+        clampCartScroll();
+    }
 
-        if (addToCartBtn != null) addToCartBtn.active = hasValidSelection();
+    private void refreshTabPreview() {
+        preview = ItemStack.EMPTY;
+        selectedPriceItems = 0;
+        if (tab == Tab.STORE && hasValidSelection()) {
+            var entry = grid.get(selectedIndex);
+            preview = entry.stack;
+            selectedPriceItems = entry.priceItems;
+        } else if (tab == Tab.CART && selectedCartIndex >= 0 && selectedCartIndex < cart.size()) {
+            var entry = cart.get(selectedCartIndex);
+            preview = entry.stack;
+            selectedPriceItems = entry.priceItems;
+        }
+        previewFace = 0;
+        previewTex = null;
     }
 
 
@@ -820,6 +870,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
         this.addRenderableWidget(Button.builder(Component.literal("Store"), b -> {
             tab = Tab.STORE;
+            refreshTabPreview();
             closeSortMenu();
             updateWidgetVisibility();
         }).bounds(cursorX, tabY, tabW, tabH).build());
@@ -836,8 +887,15 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
         this.addRenderableWidget(Button.builder(Component.literal("Cart"), b -> {
             tab = Tab.CART;
+            refreshTabPreview();
+            closeSortMenu();
             updateWidgetVisibility();
         }).bounds(cursorX, tabY, tabW, tabH).build());
+
+        int importW = ui(72);
+        importDeckBtn = this.addRenderableWidget(Button.builder(
+                Component.literal("Import Deck"), b -> openDeckFilePicker()
+        ).bounds(topX + topW - ui(4) - importW, tabY, importW, tabH).build());
 
         // --- NOW that leftX/leftY exist, compute previewBox coords ---
         int sortX = previewBoxX() + ui(6);
@@ -884,6 +942,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         int buyY   = btnY - (btnH + ui(6));
 
         buyCartBtn = this.addRenderableWidget(Button.builder(Component.literal("Buy"), btn -> {
+            importStatus = "";
             if (cart.isEmpty()) { status = "Cart is empty."; return; }
             if (!canAffordCart()) { status = "You can't afford this cart."; return; }
 
@@ -914,6 +973,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
 
         clearCartBtn = this.addRenderableWidget(Button.builder(Component.literal("Clear Cart"), btn -> {
+            importStatus = "";
             cart.clear();
             selectedCartIndex = -1;
             cartScrollPx = 0;
@@ -985,7 +1045,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         if (buyCartBtn == null) return;
         if (tab != Tab.CART) return;
 
-        buyCartBtn.active = !cart.isEmpty() && canAffordCart();
+        buyCartBtn.active = !isImportingDeck() && !cart.isEmpty() && canAffordCart();
     }
 
     /**
@@ -1041,14 +1101,14 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             int iy1 = iy0 + sortMenuItemH();
 
             boolean hovered = (i == sortMenuHover);
-            boolean selected = (vals[i] == sortMode);
+            boolean selected = (vals[i] == activeSortMode());
 
             if (hovered) ctx.fill(x + 1, iy0, x + w - 1, iy1, 0x33FFFFFF);
             if (selected) ctx.fill(x + 1, iy0, x + w - 1, iy1, 0x2200FFFF);
 
             ctx.drawString(
                     this.font,
-                    Component.literal(vals[i].label),
+                    Component.literal(sortLabel(vals[i])),
                     x + ui(6),
                     iy0 + ui(5),
                     0xFFFFFFFF,
@@ -1058,15 +1118,18 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
     }
 
     private void updateWidgetVisibility() {
+        if (importDeckBtn != null) importDeckBtn.active = !filePickerOpen && !isImportingDeck();
         boolean store = (tab == Tab.STORE);
         boolean cartTab = (tab == Tab.CART);
 
-        if (sortBtn != null) sortBtn.visible = (tab == Tab.STORE);
-        if (flipPreviewBtn != null) {
-            flipPreviewBtn.visible = store;
-            flipPreviewBtn.active = store && GuiCardFaceFlipper.isDoubleFaced(preview);
+        if (sortBtn != null) {
+            sortBtn.visible = true;
+            sortBtn.setMessage(sortButtonText());
         }
-        if (tab != Tab.STORE) closeSortMenu();
+        if (flipPreviewBtn != null) {
+            flipPreviewBtn.visible = true;
+            flipPreviewBtn.active = GuiCardFaceFlipper.isDoubleFaced(preview);
+        }
         if (!store) closeGameMenu();
 
         if (searchField != null) searchField.setVisible(store);
@@ -1082,8 +1145,8 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         if (buyCartBtn != null) buyCartBtn.visible = cartTab;
         if (clearCartBtn != null) clearCartBtn.visible = cartTab;
 
-        if (buyCartBtn != null) buyCartBtn.active = cartTab && !cart.isEmpty() && canAffordCart();
-        if (clearCartBtn != null) clearCartBtn.active = cartTab && !cart.isEmpty();
+        if (buyCartBtn != null) buyCartBtn.active = cartTab && !isImportingDeck() && !cart.isEmpty() && canAffordCart();
+        if (clearCartBtn != null) clearCartBtn.active = cartTab && !isImportingDeck() && !cart.isEmpty();
     }
 
     private void adjustCartQty(int idx, int delta) {
@@ -1413,13 +1476,9 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         // auto-select first arriving card
         if (selectedIndex < 0 && !grid.isEmpty()) {
             selectedIndex = 0;
-            var sel = grid.get(0);
-            preview = sel.stack;
-            selectedPriceItems = sel.priceItems;
-            previewFace = 0;
-            previewTex = null;
-            resolvedSet = sel.set;
-            resolvedCn = sel.cn;
+            if (tab == Tab.STORE) refreshTabPreview();
+            resolvedSet = grid.get(0).set;
+            resolvedCn = grid.get(0).cn;
             if (addToCartBtn != null) addToCartBtn.active = true;
             updateWidgetVisibility();
         }
@@ -1501,8 +1560,10 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
         refreshBuyEnabled();
 
-        if (status != null && !status.isBlank()) {
-            ctx.drawString(this.font, Component.literal(status), infoX + ui(6), infoY + ui(3), 0xFFFFFFFF, false);
+        String visibleStatus = (isImportingDeck() || tab == Tab.CART) && !importStatus.isBlank()
+                ? importStatus : status;
+        if (visibleStatus != null && !visibleStatus.isBlank()) {
+            ctx.drawString(this.font, Component.literal(visibleStatus), infoX + ui(6), infoY + ui(3), 0xFFFFFFFF, false);
         }
 
         drawDropHint(ctx);
@@ -1565,8 +1626,8 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         }
 
         // draw dropdown on top of everything
+        renderSortMenu(ctx, mouseX, mouseY);
         if (tab == Tab.STORE) {
-            renderSortMenu(ctx, mouseX, mouseY);
             if (gameMenuOpen) {
                 renderGameMenu(ctx, mouseX, mouseY, delta);
             }
@@ -1617,12 +1678,10 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         int boxW = previewBoxW();
         int boxH = previewBoxH();
 
-        // If STORE tab, reserve space for sort button at top
-        if (tab == Tab.STORE) {
-            int sortReserve = sortButtonH() * 2 + ui(8);
-            py += sortReserve;
-            boxH -= sortReserve;
-        }
+        // Both tabs have Sort and Flip Card above the preview.
+        int sortReserve = sortButtonH() * 2 + ui(8);
+        py += sortReserve;
+        boxH -= sortReserve;
 
         previewTex = CardArtManager.getOrRequestFace(preview, previewFace);
 
@@ -1709,6 +1768,26 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     private Button pageLabelBtn;
     private String status = "";
+    private DeckImportProgress<CardStorePackets.ImportDeckC2S.Line> deckImport;
+    private String importGame = "";
+    private String importStatus = "";
+
+    private boolean isImportingDeck() {
+        return deckImport != null && deckImport.isActive();
+    }
+
+    private void importNextBatch() {
+        importStatus = deckImport.message();
+        status = importStatus;
+        if (isImportingDeck()) {
+            var batch = deckImport.currentBatch();
+            var request = new CardStorePackets.ImportDeckC2S(
+                    menu.blockPos, importGame, batch.size(), batch);
+            // Match replies against the wire game, not the blank "All games" UI filter.
+            importGame = request.game();
+            ClientPlayNetworking.send(request);
+        }
+    }
     private String resolvedSet = "";
     private String resolvedCn = "";
 
@@ -1742,12 +1821,51 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         handleDeckDrop(paths);
     }
 
+    private void openDeckFilePicker() {
+        if (filePickerOpen || isImportingDeck() || this.minecraft == null) return;
+        var client = this.minecraft;
+        filePickerOpen = true;
+        updateWidgetVisibility();
+        com.spider.mtgcard.Mtgcard.LOGGER.info("[CardStore] Opening deck file picker");
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            List<Path> selected = List.of();
+            String error = null;
+            try {
+                selected = DeckFilePicker.open();
+                com.spider.mtgcard.Mtgcard.LOGGER.info("[CardStore] File picker selected {} file(s)", selected.size());
+            } catch (Exception e) {
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                com.spider.mtgcard.Mtgcard.LOGGER.error("[CardStore] Could not open deck file picker", e);
+                error = "Could not open deck picker. See the log for details.";
+            }
+            List<Path> paths = selected;
+            String failure = error;
+            client.execute(() -> {
+                filePickerOpen = false;
+                if (client.gui.screen() != this) return;
+                if (failure != null) {
+                    importStatus = "";
+                    status = failure;
+                } else if (!paths.isEmpty()) {
+                    handleDeckDrop(paths);
+                }
+                updateWidgetVisibility();
+            });
+        });
+    }
+
 
     public void handleDeckDrop(List<Path> paths) {
         if (paths == null || paths.isEmpty()) return;
+        if (isImportingDeck()) {
+            importStatus = "A deck is already importing; drop additional files when it finishes.";
+            tab = Tab.CART;
+            updateWidgetVisibility();
+            return;
+        }
+        importStatus = "";
 
         ArrayList<CardStorePackets.ImportDeckC2S.Line> all = new ArrayList<>();
-        int filesUsed = 0;
 
         for (Path p : paths) {
             try {
@@ -1761,7 +1879,6 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
                 if (!lines.isEmpty()) {
                     all.addAll(lines);
-                    filesUsed++;
                 }
             } catch (Exception e) {
                 status = "Import failed for " + p.getFileName() + ": " + e.getMessage();
@@ -1769,129 +1886,56 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         }
 
         if (all.isEmpty()) {
-            status = "No valid lines found (need set + collector number).";
+            status = "No cards found. Include a card name or set + collector number.";
             return;
         }
 
-        ClientPlayNetworking.send(new CardStorePackets.ImportDeckC2S(menu.blockPos, selectedGame, all.size(), all));
-        status = "Importing " + all.size() + " lines from " + filesUsed + " file(s)...";
+        deckImport = new DeckImportProgress<>(all);
+        importGame = selectedGame;
+        tab = Tab.CART;
+        closeSortMenu();
+        closeGameMenu();
+        updateWidgetVisibility();
+        importNextBatch();
     }
 
-    private static final Component DROP_HINT = Component.literal("Drag in .txt or .csv files");
+    private static final Component DROP_HINT = Component.literal("Drop .txt or .csv decks to add cards to Cart");
 
     private void drawDropHint(GuiGraphics ctx) {
         int pad = ui(6);
         int y = topY + ui(6);
 
         int w = this.font.width(DROP_HINT);
-        int x = (topX + topW) - pad - w;
+        int right = importDeckBtn == null ? topX + topW : importDeckBtn.getX();
+        int x = right - pad - w;
+        int tabsRight = topX + ui(CardStoreProviderRegistry.hasMultipleProviders() ? 220 : 144);
+        if (x < tabsRight) return; // Keep the header controls usable on compact layouts.
 
         // subtle shadow plate so it reads on bright backgrounds
         ctx.fill(x - ui(4), y - ui(2), x + w + ui(4), y + ui(10), 0x33202A33);
         ctx.drawString(this.font, DROP_HINT, x, y, TEXT_MUTED, false);
     }
 
-    private static final Pattern DECK_TXT =
-            // 1x Name (set) 217 [Type]
-            Pattern.compile("^\\s*(?:(\\d+)\\s*x?\\s+)?(.+?)\\s*\\(([^)]+)\\)\\s*([0-9A-Za-z]+).*?$");
-
     private List<CardStorePackets.ImportDeckC2S.Line> parseDeckTxt(String text) {
-        ArrayList<CardStorePackets.ImportDeckC2S.Line> out = new ArrayList<>();
-        if (text == null) return out;
-
-        for (String raw : text.split("\\R")) {
-            String line = raw.trim();
-            if (line.isEmpty()) continue;
-            if (line.startsWith("#") || line.startsWith("//")) continue;
-            if (line.toLowerCase(Locale.ROOT).contains("{nodeck}")) continue;
-
-            Matcher m = DECK_TXT.matcher(line);
-            if (!m.matches()) continue;
-
-            int qty = 1;
-            String qtyStr = m.group(1);
-            if (qtyStr != null && !qtyStr.isBlank()) {
-                try { qty = Math.max(1, Integer.parseInt(qtyStr)); } catch (Exception ignored) {}
-            }
-
-            String set = m.group(3) != null ? m.group(3).trim() : "";
-            String cn  = m.group(4) != null ? m.group(4).trim() : "";
-
-            if (set.isBlank() || cn.isBlank()) continue;
-
-            out.add(new CardStorePackets.ImportDeckC2S.Line(selectedGame, set, cn, qty));
-        }
-        return out;
+        return importLines(com.spider.mtgcard.cardstore.DeckListParser.parseTxt(text));
     }
 
-    /**
-     * CSV support:
-     * - If headers exist, try to find qty/name/set/cn columns.
-     * - Otherwise assume your sheet-style layout:
-     *     A=qty, B=name, C=set, I=collectorNumber (index 8)
-     */
-    private List<CardStorePackets.ImportDeckC2S.Line> parseDeckCsv(String csv) {
-        ArrayList<CardStorePackets.ImportDeckC2S.Line> out = new ArrayList<>();
-        if (csv == null || csv.isBlank()) return out;
+    private List<CardStorePackets.ImportDeckC2S.Line> parseDeckCsv(String text) {
+        return importLines(com.spider.mtgcard.cardstore.DeckListParser.parseCsv(text));
+    }
 
-        List<List<String>> rows = parseCsvRows(csv);
-        if (rows.isEmpty()) return out;
-
-        int startRow = 0;
-
-        // header detection
-        int qtyCol = -1, setCol = -1, cnCol = -1;
-        List<String> first = rows.get(0);
-        if (looksLikeHeader(first)) {
-            for (int i = 0; i < first.size(); i++) {
-                String h = first.get(i).trim().toLowerCase(Locale.ROOT);
-                if (h.equals("qty") || h.equals("quantity") || h.equals("count")) qtyCol = i;
-                if (h.equals("set") || h.equals("setcode") || h.equals("set_code")) setCol = i;
-                if (h.equals("cn") || h.equals("collector") || h.equals("collector_number") || h.equals("collectornumber")) cnCol = i;
-            }
-            startRow = 1;
-        }
-
-        for (int r = startRow; r < rows.size(); r++) {
-            List<String> row = rows.get(r);
-            if (row.isEmpty()) continue;
-
-            int qty = 1;
-            String set = "";
-            String cn = "";
-
-            if (qtyCol >= 0 && qtyCol < row.size()) qty = parseIntOrOne(row.get(qtyCol));
-            if (setCol >= 0 && setCol < row.size()) set = safe(row.get(setCol));
-            if (cnCol  >= 0 && cnCol  < row.size()) cn  = safe(row.get(cnCol));
-
-            // fallback to your spreadsheet layout if no header mapping worked
-            if (set.isBlank()) {
-                if (row.size() > 3) set = safe(row.get(3)); // D = set code
-                else if (row.size() > 2) set = safe(row.get(2)); // legacy
-            }// C
-            if (cn.isBlank()) {
-                if (row.size() > 8) cn = safe(row.get(8));                      // I
-                else if (row.size() > 3) cn = safe(row.get(3));                 // sometimes D
-            }
-            if (qtyCol < 0 && row.size() > 0) qty = parseIntOrOne(row.get(0));  // A
-
-            if (set.isBlank() || cn.isBlank()) continue;
-
-            out.add(new CardStorePackets.ImportDeckC2S.Line(selectedGame, set, cn, Math.max(1, qty)));
-        }
-
-        return out;
+    private List<CardStorePackets.ImportDeckC2S.Line> importLines(List<com.spider.mtgcard.cardstore.DeckListParser.Entry> entries) {
+        return entries.stream().map(e -> new CardStorePackets.ImportDeckC2S.Line(
+                selectedGame, e.name(), e.set(), e.collectorNumber(), e.quantity())).toList();
     }
 
     public void onImportDeckResult(CardStorePackets.ImportDeckS2C p) {
         if (!p.pos().equals(menu.blockPos)) return;
-        if (!sameGame(p.game())) return;
+        if (!isImportingDeck() || !importGame.equals(p.game())) return;
 
-        status = p.message();
-
-        if (!p.ok() || p.entries() == null || p.entries().isEmpty()) return;
-
-        for (var e : p.entries()) {
+        boolean added = p.ok() && !p.entries().isEmpty();
+        List<CardStorePackets.ImportDeckS2C.Entry> entries = added ? p.entries() : List.of();
+        for (var e : entries) {
             // merge into cart by game/set/cn
             boolean merged = false;
             for (var line : cart) {
@@ -1907,7 +1951,9 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             }
         }
 
-        clampCartScroll();
+        sortCart();
+        deckImport.completeBatch(Math.min(entries.size(), deckImport.currentBatch().size()));
+        importNextBatch();
         updateWidgetVisibility();
     }
 
@@ -1917,11 +1963,6 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         super.removed();
     }
 
-    private static int parseIntOrOne(String s) {
-        try { return Math.max(1, Integer.parseInt(s.trim())); }
-        catch (Exception ignored) { return 1; }
-    }
-
     private long lastSearchSendMs = 0;
 
     private boolean canSendSearchNow() {
@@ -1929,62 +1970,6 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         if (now - lastSearchSendMs < 500) return false; // 0.5s debounce
         lastSearchSendMs = now;
         return true;
-    }
-
-    private static String safe(String s) {
-        return s == null ? "" : s.trim();
-    }
-
-    private static boolean looksLikeHeader(List<String> row) {
-        if (row == null || row.isEmpty()) return false;
-        String joined = String.join(",", row).toLowerCase(Locale.ROOT);
-        return joined.contains("qty") || joined.contains("quantity") || joined.contains("set") || joined.contains("collector");
-    }
-
-    /** Simple CSV parser (handles quotes). */
-    private static List<List<String>> parseCsvRows(String csv) {
-        ArrayList<List<String>> rows = new ArrayList<>();
-        ArrayList<String> curRow = new ArrayList<>();
-        StringBuilder field = new StringBuilder();
-        boolean inQuotes = false;
-
-        for (int i = 0; i < csv.length(); i++) {
-            char c = csv.charAt(i);
-
-            if (c == '"') {
-                if (inQuotes && i + 1 < csv.length() && csv.charAt(i + 1) == '"') {
-                    field.append('"'); // escaped quote
-                    i++;
-                } else {
-                    inQuotes = !inQuotes;
-                }
-                continue;
-            }
-
-            if (!inQuotes && (c == ',')) {
-                curRow.add(field.toString());
-                field.setLength(0);
-                continue;
-            }
-
-            if (!inQuotes && (c == '\n' || c == '\r')) {
-                if (c == '\r' && i + 1 < csv.length() && csv.charAt(i + 1) == '\n') i++;
-                curRow.add(field.toString());
-                field.setLength(0);
-                // skip empty trailing row
-                if (!(curRow.size() == 1 && curRow.get(0).isBlank())) rows.add(curRow);
-                curRow = new ArrayList<>();
-                continue;
-            }
-
-            field.append(c);
-        }
-
-        // last field/row
-        curRow.add(field.toString());
-        if (!(curRow.size() == 1 && curRow.get(0).isBlank())) rows.add(curRow);
-
-        return rows;
     }
 
     private boolean flipPreviewFace() {
@@ -2063,8 +2048,10 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
 
     // --- cart state (client-side) ---
     private final java.util.ArrayList<CartLine> cart = new java.util.ArrayList<>();
+    private int nextCartArrival;
 
-    private static class CartLine {
+    private class CartLine {
+        final int arrival = nextCartArrival++;
         final String game;
         final String set;
         final String cn;
@@ -2150,6 +2137,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
         icon.setCount(1);
 
         cart.add(new CartLine(sel.game, sel.set, sel.cn, icon, sel.priceItems, 1));
+        sortCart();
         status = "Added to cart (" + cart.size() + " items)";
     }
 

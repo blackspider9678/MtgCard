@@ -84,6 +84,7 @@ public final class CardStackBuilders {
         // Mirror Scryfall-style fields so UI/search behaves consistently
         if (displayName != null) meta.putString("name", displayName);
         if (m.manaCost != null) meta.putString("mana_cost", m.manaCost);
+        meta.putInt("mana_value", ManaValues.manaValueFromCost(m.manaCost));
         if (m.typeLine != null) meta.putString("type_line", m.typeLine);
         if (m.oracleText != null) meta.putString("oracle_text", m.oracleText);
         if (m.power != null) meta.putString("power", m.power);

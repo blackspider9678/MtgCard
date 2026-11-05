@@ -169,7 +169,7 @@ public final class ScryfallExactFetch {
         });
     }
 
-    private static void rememberCollection(List<ScryfallModels.Card> cards) {
+    static void rememberCollection(List<ScryfallModels.Card> cards) {
         for (var card : cards) {
             // Only reuse the actual returned language; a collection result must not
             // bypass the configured language/fallback lookup for a different language.

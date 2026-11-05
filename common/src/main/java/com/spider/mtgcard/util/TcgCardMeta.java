@@ -72,7 +72,9 @@ public final class TcgCardMeta {
         String loyalty = firstString(tcg, mtg, "loyalty");
         if (loyalty.isBlank()) loyalty = firstFaceString(tcg, mtg, "loyalty");
 
-        int manaValue = firstInt(tcg, mtg, "mana_value", "mv", "cmc");
+        Integer storedManaValue = firstIntFrom(tcg, "mana_value", "mv", "cmc");
+        if (storedManaValue == null) storedManaValue = firstIntFrom(mtg, "mana_value", "mv", "cmc");
+        int manaValue = storedManaValue == null ? ManaValues.manaValueFromCost(manaCost) : storedManaValue;
         boolean tokenLike = firstBoolean(tcg, mtg, "is_token_like", "token_like", "is_token", "token");
         boolean legendary = firstBoolean(tcg, mtg, "is_legendary", "legendary");
 
