@@ -17,6 +17,10 @@ import java.util.Optional;
 
 public final class DiceTextureCache {
     private static final Map<Key, TextureRef> CACHE = new HashMap<>();
+    private static final Map<DiceAppearance, TextureRef> FACE_CACHE = new HashMap<>();
+    private static final Map<FaceKey, TextureRef> NUMBERED_FACE_CACHE = new HashMap<>();
+    private static final Map<FaceKey, TextureRef> D4_FACE_CACHE = new HashMap<>();
+    private record FaceKey(DiceAppearance appearance, int number) {}
     private static int nextId = 0;
 
     public record TextureRef(Identifier id, int width, int height) {}
@@ -25,6 +29,125 @@ public final class DiceTextureCache {
         DiceAppearance safe = appearance == null ? DiceAppearance.DEFAULT : appearance;
         Key key = new Key(sides, safe);
         return CACHE.computeIfAbsent(key, DiceTextureCache::buildTexture);
+    }
+
+    public static TextureRef getBlankFaceTexture(DiceAppearance appearance) {
+        DiceAppearance safe = appearance == null ? DiceAppearance.DEFAULT : appearance;
+        return FACE_CACHE.computeIfAbsent(safe, DiceTextureCache::renderBlankFace);
+    }
+
+    public static TextureRef getNumberedFaceTexture(DiceAppearance appearance, int number) {
+        DiceAppearance safe = appearance == null ? DiceAppearance.DEFAULT : appearance;
+        return NUMBERED_FACE_CACHE.computeIfAbsent(new FaceKey(safe, Math.clamp(number, 1, 100)), DiceTextureCache::renderNumberedFace);
+    }
+
+    public static TextureRef getD4FaceTexture(DiceAppearance appearance, int number) {
+        DiceAppearance safe = appearance == null ? DiceAppearance.DEFAULT : appearance;
+        return D4_FACE_CACHE.computeIfAbsent(new FaceKey(safe, Math.clamp(number, 1, 4)), DiceTextureCache::renderD4Face);
+    }
+
+    private static TextureRef renderD4Face(FaceKey key) {
+        DiceAppearance appearance = key.appearance();
+        int size = 64;
+        NativeImage out = new NativeImage(size, size, true);
+        for (int y = 0; y < size; y++) for (int x = 0; x < size; x++) {
+            boolean border = x < 3 || y < 3 || x >= size - 3 || y >= size - 3;
+            int color = border ? appearance.borderColor() : gradientColor(appearance, x, y, size, size);
+            out.setPixel(x, y, argb(255, color));
+        }
+        int[][] labels = {{2,3,4},{1,4,3},{1,2,4},{1,3,2}};
+        int[] face = labels[key.number() - 1];
+        drawDigitAt(out, face[0], appearance.textColor(), 2, 32, 12, 0f);
+        drawDigitAt(out, face[1], appearance.textColor(), 2, 14, 49, -120f);
+        drawDigitAt(out, face[2], appearance.textColor(), 2, 50, 49, 120f);
+        return register("d4_face_" + key.number(), out);
+    }
+
+    private static void drawDigitAt(NativeImage image, int digit, int rgb, int scale, int centerX, int centerY, float angleDegrees) {
+        String[] rows = DIGITS[digit];
+        double angle = Math.toRadians(angleDegrees);
+        double cos = Math.cos(angle), sin = Math.sin(angle);
+        for (int row=0; row<7; row++) for (int col=0; col<5; col++) if (rows[row].charAt(col)=='1') {
+            for (int py=0; py<scale; py++) for (int px=0; px<scale; px++) {
+                double localX = col * scale + px + 0.5 - 2.5 * scale;
+                double localY = row * scale + py + 0.5 - 3.5 * scale;
+                int x = (int)Math.round(centerX + localX * cos - localY * sin);
+                int y = (int)Math.round(centerY + localX * sin + localY * cos);
+                if (x >= 0 && x < image.getWidth() && y >= 0 && y < image.getHeight())
+                    image.setPixel(x, y, argb(255, rgb));
+            }
+        }
+    }
+
+    private static TextureRef renderNumberedFace(FaceKey key) {
+        return renderNumberedFace(key, 6);
+    }
+
+    private static TextureRef renderNumberedFace(FaceKey key, int digitScale) {
+        DiceAppearance appearance = key.appearance();
+        int size = 64;
+        NativeImage out = new NativeImage(size, size, true);
+        PatternStencil pattern = readPattern(appearance.bannerPattern());
+        Bounds bounds = new Bounds(0, 0, size - 1, size - 1);
+        for (int y = 0; y < size; y++) for (int x = 0; x < size; x++) {
+            boolean border = x < 3 || y < 3 || x >= size - 3 || y >= size - 3;
+            int color = border ? appearance.borderColor() : gradientColor(appearance, x, y, size, size);
+            if (!border && pattern != null) color = applyPattern(color, appearance.bannerColor(), pattern, x, y, bounds);
+            out.setPixel(x, y, argb(255, color));
+        }
+        if (pattern != null) pattern.close();
+        drawNumber(out, key.number(), appearance.textColor(), digitScale);
+        return register("dice_face_" + key.number(), out);
+    }
+
+    private static final String[][] DIGITS = {
+            {"01110","10001","10011","10101","11001","10001","01110"},
+            {"00100","01100","00100","00100","00100","00100","01110"},
+            {"01110","10001","00001","00010","00100","01000","11111"},
+            {"11110","00001","00001","01110","00001","00001","11110"},
+            {"00010","00110","01010","10010","11111","00010","00010"},
+            {"11111","10000","10000","11110","00001","00001","11110"},
+            {"01110","10000","10000","11110","10001","10001","01110"}
+            ,{"11111","00001","00010","00100","01000","01000","01000"}
+            ,{"01110","10001","10001","01110","10001","10001","01110"}
+            ,{"01110","10001","10001","01111","00001","00001","01110"}
+    };
+
+    private static void drawDigit(NativeImage image, int digit, int rgb, int scale) {
+        String[] rows = DIGITS[digit];
+        int startX = (image.getWidth() - 5 * scale) / 2, startY = (image.getHeight() - 7 * scale) / 2;
+        for (int row = 0; row < 7; row++) for (int col = 0; col < 5; col++) {
+            if (rows[row].charAt(col) != '1') continue;
+            for (int py = 0; py < scale; py++) for (int px = 0; px < scale; px++)
+                image.setPixel(startX + col * scale + px, startY + row * scale + py, argb(255, rgb));
+        }
+    }
+
+    private static void drawNumber(NativeImage image, int number, int rgb, int preferredScale) {
+        String text=Integer.toString(number);
+        int scale=Math.min(preferredScale, text.length()>=3?2:3);
+        int glyphWidth=5*scale, spacing=scale, total=text.length()*glyphWidth+(text.length()-1)*spacing;
+        int startX=(image.getWidth()-total)/2, startY=(image.getHeight()-7*scale)/2;
+        for(int i=0;i<text.length();i++){
+            int digit=text.charAt(i)-'0';String[] rows=DIGITS[digit];int ox=startX+i*(glyphWidth+spacing);
+            for(int row=0;row<7;row++)for(int col=0;col<5;col++)if(rows[row].charAt(col)=='1')
+                for(int py=0;py<scale;py++)for(int px=0;px<scale;px++)image.setPixel(ox+col*scale+px,startY+row*scale+py,argb(255,rgb));
+        }
+    }
+
+    private static TextureRef renderBlankFace(DiceAppearance appearance) {
+        int size = 64;
+        NativeImage out = new NativeImage(size, size, true);
+        PatternStencil pattern = readPattern(appearance.bannerPattern());
+        Bounds bounds = new Bounds(0, 0, size - 1, size - 1);
+        for (int y = 0; y < size; y++) for (int x = 0; x < size; x++) {
+            boolean border = x < 3 || y < 3 || x >= size - 3 || y >= size - 3;
+            int color = border ? appearance.borderColor() : gradientColor(appearance, x, y, size, size);
+            if (!border && pattern != null) color = applyPattern(color, appearance.bannerColor(), pattern, x, y, bounds);
+            out.setPixel(x, y, argb(255, color));
+        }
+        if (pattern != null) pattern.close();
+        return register("dice_face", out);
     }
 
     private static TextureRef buildTexture(Key key) {

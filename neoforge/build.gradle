@@ -33,10 +33,12 @@ def commonClientJava = fileTree('../common/src/client/java') {
     include 'com/spider/mtgcard/client/content/pack/custom/ClientCardIndex.java'
     include 'com/spider/mtgcard/client/deckcontrol/DeckControlEntityRenderer.java'
     include 'com/spider/mtgcard/client/display/CardDisplayEntityRenderer.java'
+    include 'com/spider/mtgcard/client/dice/DiceEntityRenderer.java'
     include 'com/spider/mtgcard/client/displayblock/**'
     include 'com/spider/mtgcard/client/gui/CardDatabaseScreen.java'
     include 'com/spider/mtgcard/client/gui/CardSlotArtRenderer.java'
     include 'com/spider/mtgcard/client/gui/CardStoreScreen.java'
+    include 'com/spider/mtgcard/client/gui/DeckFilePicker.java'
     include 'com/spider/mtgcard/client/gui/CustomImportScreen.java'
     include 'com/spider/mtgcard/client/gui/DeckControlScreen.java'
     include 'com/spider/mtgcard/client/gui/DeckboxScreen.java'
@@ -93,6 +95,8 @@ neoForge {
         }
         client {
             client()
+            // Dev launches use a dummy token; do not call authenticated account services.
+            programArguments.add('--offlineDeveloperMode')
             gameDirectory = file('runs/client')
         }
         server {

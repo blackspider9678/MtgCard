@@ -730,10 +730,19 @@ public final class GuideBookScreen extends LegacyScreen {
 
     private static String installedAddons() {
         List<String> installed = new ArrayList<>();
-        if (FabricLoader.getInstance().isModLoaded("pokemon_tcg_addon")) installed.add("Pokémon");
-        if (FabricLoader.getInstance().isModLoaded("riftbound_tcg")) installed.add("Riftbound");
-        if (FabricLoader.getInstance().isModLoaded("lorcana_addon")) installed.add("Lorcana");
+        if (isModLoaded("pokemon_tcg_addon")) installed.add("Pokémon");
+        if (isModLoaded("riftbound_tcg")) installed.add("Riftbound");
+        if (isModLoaded("lorcana_addon")) installed.add("Lorcana");
         return installed.isEmpty() ? "None" : String.join(", ", installed);
+    }
+
+    private static boolean isModLoaded(String modId) {
+        try {
+            Object loader = FabricLoader.getInstance();
+            return (Boolean) loader.getClass().getMethod("isModLoaded", String.class).invoke(loader, modId);
+        } catch (ReflectiveOperationException ignored) {
+            return false;
+        }
     }
 
     private static String configChoiceLabel(String key, String value) {

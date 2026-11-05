@@ -10,6 +10,13 @@ base {
 loom {
     splitEnvironmentSourceSets()
 
+    runs {
+        client {
+            // Dev launches use a dummy token; do not call authenticated account services.
+            programArg '--offlineDeveloperMode'
+        }
+    }
+
     mods {
         "${rootProject.mod_id}" {
             sourceSet sourceSets.main
