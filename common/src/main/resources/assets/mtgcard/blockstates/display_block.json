@@ -1,0 +1,91 @@
+{
+  "variants": {
+    "facing=north,shape=single": { "model": "mtgcard:block/display_block" },
+
+    "facing=north,shape=horizontal_left":   { "model": "mtgcard:block/display_block_horizontal_left" },
+    "facing=north,shape=horizontal_middle": { "model": "mtgcard:block/display_block_horizontal_middle" },
+    "facing=north,shape=horizontal_right":  { "model": "mtgcard:block/display_block_horizontal_right" },
+
+    "facing=north,shape=vertical_bottom": { "model": "mtgcard:block/display_block_vertical_bottom" },
+    "facing=north,shape=vertical_middle": { "model": "mtgcard:block/display_block_vertical_middle" },
+    "facing=north,shape=vertical_top":    { "model": "mtgcard:block/display_block_vertical_top" },
+
+    "facing=north,shape=corner_tl": { "model": "mtgcard:block/display_block_corner_tl" },
+    "facing=north,shape=corner_tr": { "model": "mtgcard:block/display_block_corner_tr" },
+    "facing=north,shape=corner_bl": { "model": "mtgcard:block/display_block_corner_bl" },
+    "facing=north,shape=corner_br": { "model": "mtgcard:block/display_block_corner_br" },
+
+    "facing=north,shape=side_top":    { "model": "mtgcard:block/display_block_side_top" },
+    "facing=north,shape=side_bottom": { "model": "mtgcard:block/display_block_side_bottom" },
+    "facing=north,shape=side_left":   { "model": "mtgcard:block/display_block_side_left" },
+    "facing=north,shape=side_right":  { "model": "mtgcard:block/display_block_side_right" },
+
+    "facing=north,shape=middle": { "model": "mtgcard:block/display_block_middle" },
+
+    "facing=east,shape=single": { "model": "mtgcard:block/display_block", "y": 90 },
+
+    "facing=east,shape=horizontal_left":   { "model": "mtgcard:block/display_block_horizontal_left", "y": 90 },
+    "facing=east,shape=horizontal_middle": { "model": "mtgcard:block/display_block_horizontal_middle", "y": 90 },
+    "facing=east,shape=horizontal_right":  { "model": "mtgcard:block/display_block_horizontal_right", "y": 90 },
+
+    "facing=east,shape=vertical_bottom": { "model": "mtgcard:block/display_block_vertical_bottom", "y": 90 },
+    "facing=east,shape=vertical_middle": { "model": "mtgcard:block/display_block_vertical_middle", "y": 90 },
+    "facing=east,shape=vertical_top":    { "model": "mtgcard:block/display_block_vertical_top", "y": 90 },
+
+    "facing=east,shape=corner_tl": { "model": "mtgcard:block/display_block_corner_tl", "y": 90 },
+    "facing=east,shape=corner_tr": { "model": "mtgcard:block/display_block_corner_tr", "y": 90 },
+    "facing=east,shape=corner_bl": { "model": "mtgcard:block/display_block_corner_bl", "y": 90 },
+    "facing=east,shape=corner_br": { "model": "mtgcard:block/display_block_corner_br", "y": 90 },
+
+    "facing=east,shape=side_top":    { "model": "mtgcard:block/display_block_side_top", "y": 90 },
+    "facing=east,shape=side_bottom": { "model": "mtgcard:block/display_block_side_bottom", "y": 90 },
+    "facing=east,shape=side_left":   { "model": "mtgcard:block/display_block_side_left", "y": 90 },
+    "facing=east,shape=side_right":  { "model": "mtgcard:block/display_block_side_right", "y": 90 },
+
+    "facing=east,shape=middle": { "model": "mtgcard:block/display_block_middle", "y": 90 },
+
+    "facing=south,shape=single": { "model": "mtgcard:block/display_block", "y": 180 },
+
+    "facing=south,shape=horizontal_left":   { "model": "mtgcard:block/display_block_horizontal_left", "y": 180},
+    "facing=south,shape=horizontal_middle": { "model": "mtgcard:block/display_block_horizontal_middle", "y": 180 },
+    "facing=south,shape=horizontal_right":  { "model": "mtgcard:block/display_block_horizontal_right", "y": 180 },
+
+    "facing=south,shape=vertical_bottom": { "model": "mtgcard:block/display_block_vertical_bottom", "y": 180 },
+    "facing=south,shape=vertical_middle": { "model": "mtgcard:block/display_block_vertical_middle", "y": 180 },
+    "facing=south,shape=vertical_top":    { "model": "mtgcard:block/display_block_vertical_top", "y": 180 },
+
+    "facing=south,shape=corner_tl": { "model": "mtgcard:block/display_block_corner_tl", "y": 180 },
+    "facing=south,shape=corner_tr": { "model": "mtgcard:block/display_block_corner_tr", "y": 180 },
+    "facing=south,shape=corner_bl": { "model": "mtgcard:block/display_block_corner_bl", "y": 180 },
+    "facing=south,shape=corner_br": { "model": "mtgcard:block/display_block_corner_br", "y": 180},
+
+    "facing=south,shape=side_top":    { "model": "mtgcard:block/display_block_side_top", "y": 180 },
+    "facing=south,shape=side_bottom": { "model": "mtgcard:block/display_block_side_bottom", "y": 180 },
+    "facing=south,shape=side_left":   { "model": "mtgcard:block/display_block_side_left", "y": 180 },
+    "facing=south,shape=side_right":  { "model": "mtgcard:block/display_block_side_right", "y": 180 },
+
+    "facing=south,shape=middle": { "model": "mtgcard:block/display_block_middle", "y": 180 },
+
+    "facing=west,shape=single": { "model": "mtgcard:block/display_block", "y": 270 },
+
+    "facing=west,shape=horizontal_left":   { "model": "mtgcard:block/display_block_horizontal_left", "y": 270},
+    "facing=west,shape=horizontal_middle": { "model": "mtgcard:block/display_block_horizontal_middle", "y": 270 },
+    "facing=west,shape=horizontal_right":  { "model": "mtgcard:block/display_block_horizontal_right", "y": 270 },
+
+    "facing=west,shape=vertical_bottom": { "model": "mtgcard:block/display_block_vertical_bottom", "y": 270 },
+    "facing=west,shape=vertical_middle": { "model": "mtgcard:block/display_block_vertical_middle", "y": 270 },
+    "facing=west,shape=vertical_top":    { "model": "mtgcard:block/display_block_vertical_top", "y": 270 },
+
+    "facing=west,shape=corner_tl": { "model": "mtgcard:block/display_block_corner_tl", "y": 270 },
+    "facing=west,shape=corner_tr": { "model": "mtgcard:block/display_block_corner_tr", "y": 270 },
+    "facing=west,shape=corner_bl": { "model": "mtgcard:block/display_block_corner_bl", "y": 270 },
+    "facing=west,shape=corner_br": { "model": "mtgcard:block/display_block_corner_br", "y": 270},
+
+    "facing=west,shape=side_top":    { "model": "mtgcard:block/display_block_side_top", "y": 270 },
+    "facing=west,shape=side_bottom": { "model": "mtgcard:block/display_block_side_bottom", "y": 270 },
+    "facing=west,shape=side_left":   { "model": "mtgcard:block/display_block_side_left", "y": 270 },
+    "facing=west,shape=side_right":  { "model": "mtgcard:block/display_block_side_right", "y": 270 },
+
+    "facing=west,shape=middle": { "model": "mtgcard:block/display_block_middle", "y": 270 }
+  }
+}

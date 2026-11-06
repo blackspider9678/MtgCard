@@ -209,7 +209,7 @@ public final class DeckControlPackets {
             if (!(context.player() instanceof ServerPlayer player)) {
                 return;
             }
-            ServerLevel world = player.level();
+            ServerLevel world = (ServerLevel) player.level();
             if (!(world.getBlockEntity(payload.pos()) instanceof DeckControlBlockEntity dc)) {
                 return;
             }
@@ -309,7 +309,7 @@ public final class DeckControlPackets {
             if (!(context.player() instanceof ServerPlayer player)) {
                 return;
             }
-            ServerLevel world = player.level();
+            ServerLevel world = (ServerLevel) player.level();
             if (!(world.getBlockEntity(payload.pos()) instanceof DeckControlBlockEntity dc)) {
                 return;
             }

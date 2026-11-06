@@ -15,7 +15,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 
 import java.lang.reflect.Constructor;
@@ -75,24 +75,25 @@ public final class NeoForgeClientPayloadHandlers {
 
     private static void artChunk(ArtPackets.ArtChunk payload) {
         final String key = payload.artKey();
+        final String scopedKey = payload.game() + ":" + key;
         if (key == null || key.isBlank()) {
             return;
         }
 
-        IncomingArt acc = INCOMING_ART.get(key);
+        IncomingArt acc = INCOMING_ART.get(scopedKey);
         if (acc == null || acc.total != payload.total()) {
             acc = new IncomingArt(payload.total());
-            INCOMING_ART.put(key, acc);
+            INCOMING_ART.put(scopedKey, acc);
         }
 
         boolean done = acc.add(payload.index(), payload.data());
         if (done) {
-            INCOMING_ART.remove(key);
+            INCOMING_ART.remove(scopedKey);
             invokeStaticIfPresent(
                     "com.spider.mtgcard.client.java.CardArtManager",
                     "onArtResponse",
-                    new Class<?>[] { String.class, byte[].class },
-                    key,
+                    new Class<?>[] { String.class, String.class, byte[].class },
+                    payload.game(), key,
                     acc.join()
             );
         }
@@ -102,7 +103,7 @@ public final class NeoForgeClientPayloadHandlers {
         invokeStaticIfPresent(
                 "com.spider.mtgcard.client.guidebook.GuideBookClient",
                 "open",
-                new Class<?>[] { Identifier.class },
+                new Class<?>[] { ResourceLocation.class },
                 new Object[] { null }
         );
     }
@@ -145,7 +146,7 @@ public final class NeoForgeClientPayloadHandlers {
 
     private static void syncLife(LifePointPackets.SyncLifePayload payload) {
         LifePointClientState.onSync(payload.pos(), payload.state());
-        Screen screen = Minecraft.getInstance().gui.screen();
+        Screen screen = Minecraft.getInstance().screen;
         if (screen == null) {
             return;
         }
@@ -198,14 +199,14 @@ public final class NeoForgeClientPayloadHandlers {
             Constructor<?> ctor = screenClass.getConstructor(ItemStack.class, int.class, int.class);
             Object screen = ctor.newInstance(payload.stack(), -1, payload.entityId());
             if (screen instanceof Screen clientScreen) {
-                Minecraft.getInstance().setScreenAndShow(clientScreen);
+                Minecraft.getInstance().setScreen(clientScreen);
             }
         } catch (ReflectiveOperationException ignored) {
         }
     }
 
     private static void deckboxTabNames(DeckboxTabNamesPayload payload) {
-        Screen screen = Minecraft.getInstance().gui.screen();
+        Screen screen = Minecraft.getInstance().screen;
         if (screen == null) {
             return;
         }
@@ -226,19 +227,7 @@ public final class NeoForgeClientPayloadHandlers {
     }
 
     private static void customArtReady(CustomCardPackets.CustomArtReady payload) {
-        String key = payload.artKey();
-        invokeStaticIfPresent(
-                "com.spider.mtgcard.client.java.CardArtManager",
-                "invalidateArtKey",
-                new Class<?>[] { String.class },
-                key
-        );
-        invokeStaticIfPresent(
-                "com.spider.mtgcard.client.java.CardArtManager",
-                "tryLoadNow",
-                new Class<?>[] { String.class },
-                key
-        );
+        com.spider.mtgcard.client.java.CardArtManager.refreshWorldArt(payload.artKey(), payload.setCode());
     }
 
     private static List<ClientCardIndex.WireMeta> toClientList(List<CustomCardPackets.WireMeta> entries) {
@@ -320,7 +309,7 @@ public final class NeoForgeClientPayloadHandlers {
     }
 
     private static void refreshCurrentScreen() {
-        Screen screen = Minecraft.getInstance().gui.screen();
+        Screen screen = Minecraft.getInstance().screen;
         if (screen == null) {
             return;
         }
@@ -332,7 +321,7 @@ public final class NeoForgeClientPayloadHandlers {
     }
 
     private static void invokeOnCurrentScreen(String methodName, Class<?> argType, Object arg) {
-        Screen screen = Minecraft.getInstance().gui.screen();
+        Screen screen = Minecraft.getInstance().screen;
         if (screen == null) {
             return;
         }

@@ -1,0 +1,23 @@
+{
+    "type":  "minecraft:crafting_shaped",
+    "pattern":  [
+                    "PGP",
+                    "GCG",
+                    "PGP"
+                ],
+    "key":  {
+                "P":  {
+                          "item":  "minecraft:cherry_planks"
+                      },
+                "G":  {
+                          "item":  "minecraft:gold_ingot"
+                      },
+                "C":  {
+                          "tag":  "c:chests"
+                      }
+            },
+    "result":  {
+                   "id":  "mtgcard:cherry_deckbox",
+                   "count":  1
+               }
+}

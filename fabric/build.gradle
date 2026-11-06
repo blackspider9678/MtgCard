@@ -9,6 +9,8 @@ base {
 
 loom {
     splitEnvironmentSourceSets()
+    // 1.21.1 uses the legacy dev user type to skip authenticated profile-key requests.
+    runs { client { programArgs "--userType", "legacy" } }
 
     mods {
         "${rootProject.mod_id}" {
@@ -37,9 +39,10 @@ dependencies {
     implementation("com.electronwill.night-config:toml:3.6.7")
 
     minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
-    implementation "net.fabricmc:fabric-loader:${rootProject.loader_version}"
-    implementation "net.fabricmc.fabric-api:fabric-api:${rootProject.fabric_api_version}"
-    compileOnly "mezz.jei:jei-${rootProject.jei_minecraft_version}-fabric-api:${rootProject.jei_version}"
+    mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:${rootProject.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${rootProject.fabric_api_version}"
+    modCompileOnly "mezz.jei:jei-${rootProject.jei_minecraft_version}-fabric-api:${rootProject.jei_version}"
 
     include("org.sejda.imageio:webp-imageio:0.1.6")
     include("com.electronwill.night-config:core:3.6.7")
@@ -49,7 +52,7 @@ dependencies {
 processResources {
     inputs.property 'version', rootProject.version
     inputs.property 'minecraft_version', rootProject.minecraft_version
-    inputs.property 'minecraft_version_range', rootProject.minecraft_version_range
+    inputs.property 'fabric_minecraft_version_range', rootProject.fabric_minecraft_version_range
     inputs.property 'loader_version', rootProject.loader_version
     inputs.property 'fabric_api_version', rootProject.fabric_api_version
     inputs.property 'fabric_api_version_range', rootProject.fabric_api_version_range
@@ -58,7 +61,7 @@ processResources {
     filesMatching('fabric.mod.json') {
         expand 'version': rootProject.version,
                 'minecraft_version': rootProject.minecraft_version,
-                'minecraft_version_range': rootProject.minecraft_version_range,
+                'minecraft_version_range': rootProject.fabric_minecraft_version_range,
                 'loader_version': rootProject.loader_version,
                 'fabric_api_version': rootProject.fabric_api_version,
                 'fabric_api_version_range': rootProject.fabric_api_version_range

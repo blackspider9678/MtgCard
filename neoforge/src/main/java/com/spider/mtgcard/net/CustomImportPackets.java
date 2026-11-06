@@ -5,12 +5,12 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload.Type;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 public final class CustomImportPackets {
-    public static final Identifier OPEN_GUI_ID = Identifier.fromNamespaceAndPath("mtgcard", "open_custom_import_gui");
+    public static final ResourceLocation OPEN_GUI_ID = ResourceLocation.fromNamespaceAndPath("mtgcard", "open_custom_import_gui");
 
     public record OpenImportGui() implements CustomPacketPayload {
         public static final Type<OpenImportGui> ID = new Type<>(OPEN_GUI_ID);

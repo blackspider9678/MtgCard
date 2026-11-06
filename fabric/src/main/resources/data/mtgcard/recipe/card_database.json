@@ -1,0 +1,26 @@
+{
+    "type":  "minecraft:crafting_shaped",
+    "pattern":  [
+                    "BQB",
+                    "LCL",
+                    "BQB"
+                ],
+    "key":  {
+                "B":  {
+                          "item":  "minecraft:bookshelf"
+                      },
+                "Q":  {
+                          "item":  "minecraft:quartz"
+                      },
+                "L":  {
+                          "item":  "minecraft:lectern"
+                      },
+                "C":  {
+                          "item":  "minecraft:comparator"
+                      }
+            },
+    "result":  {
+                   "id":  "mtgcard:card_database",
+                   "count":  1
+               }
+}

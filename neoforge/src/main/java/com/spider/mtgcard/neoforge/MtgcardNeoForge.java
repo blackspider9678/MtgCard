@@ -44,6 +44,7 @@ public final class MtgcardNeoForge {
         modBus.addListener(ModPayloads::registerPayloads);
         ModDispenserBehaviors.init();
         GuideBook.init();
+        com.spider.mtgcard.api.BuiltinSleeves.init();
 
         NeoForge.EVENT_BUS.addListener(MtgRootCommand::register);
         NeoForge.EVENT_BUS.addListener(MtgcardNeoForge::onPlayerLoggedIn);
@@ -51,7 +52,7 @@ public final class MtgcardNeoForge {
         NeoForge.EVENT_BUS.addListener(MtgcardNeoForge::onServerTick);
         NeoForge.EVENT_BUS.addListener(MtgcardNeoForge::onLevelTick);
 
-        if (FMLEnvironment.getDist() == Dist.CLIENT) {
+        if (FMLEnvironment.dist == Dist.CLIENT) {
             com.spider.mtgcard.client.MtgcardNeoForgeClient.register(modBus);
         }
     }

@@ -26,10 +26,7 @@ subprojects {
         def targetJavaVersion = rootProject.java_version.toInteger()
 
         java {
-            def javaVersion = JavaVersion.toVersion(targetJavaVersion)
-            if (JavaVersion.current() < javaVersion) {
-                toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
-            }
+            toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
             withSourcesJar()
         }
 
@@ -38,6 +35,17 @@ subprojects {
             it.options.compilerArgs.addAll(['-Xmaxerrs', '1000'])
             if (targetJavaVersion >= 10 || JavaVersion.current().isJava10Compatible()) {
                 it.options.release.set(targetJavaVersion)
+            }
+        }
+
+        tasks.withType(JavaExec).configureEach {
+            javaLauncher.set(project.javaToolchains.launcherFor {
+                languageVersion = JavaLanguageVersion.of(targetJavaVersion)
+            })
+            // IntelliJ's delegated Application runner explicitly sets executable
+            // to the IDE SDK. Resolve it last so Minecraft still uses our toolchain.
+            doFirst {
+                executable = javaLauncher.get().executablePath.asFile.absolutePath
             }
         }
 

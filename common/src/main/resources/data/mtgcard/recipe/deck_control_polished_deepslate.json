@@ -1,0 +1,26 @@
+{
+    "type":  "minecraft:crafting_shaped",
+    "pattern":  [
+                    " S ",
+                    "ICI",
+                    "SNS"
+                ],
+    "key":  {
+                "I":  {
+                          "item":  "minecraft:iron_ingot"
+                      },
+                "C":  {
+                          "item":  "minecraft:comparator"
+                      },
+                "S":  {
+                          "item":  "minecraft:polished_deepslate"
+                      },
+                "N":  {
+                          "item":  "minecraft:netherrack"
+                      }
+            },
+    "result":  {
+                   "id":  "mtgcard:deck_control_polished_deepslate",
+                   "count":  1
+               }
+}

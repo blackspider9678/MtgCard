@@ -1,0 +1,14 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "mtgcard:item/card"
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "mtgcard:sleeved_card": 1
+      },
+      "model": "mtgcard:item/sleeved_card"
+    }
+  ]
+}

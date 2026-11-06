@@ -1,0 +1,20 @@
+{
+    "type":  "minecraft:crafting_shaped",
+    "pattern":  [
+                    "###",
+                    "#B#",
+                    "###"
+                ],
+    "key":  {
+                "#":  {
+                          "item":  "minecraft:paper"
+                      },
+                "B":  {
+                          "item":  "minecraft:bundle"
+                      }
+            },
+    "result":  {
+                   "id":  "mtgcard:mtg_pack",
+                   "count":  1
+               }
+}

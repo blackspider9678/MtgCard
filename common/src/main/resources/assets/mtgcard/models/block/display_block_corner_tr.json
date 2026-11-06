@@ -1,0 +1,79 @@
+{
+  "credit": "Made with Blockbench; exported for Java 1.21.1",
+  "textures": {
+    "0": "mtgcard:block/display_block_corner_four",
+    "1": "mtgcard:block/nine_screen_back",
+    "particle": "mtgcard:block/display_block_corner_four"
+  },
+  "elements": [
+    {
+      "from": [
+        0,
+        0,
+        0
+      ],
+      "to": [
+        16,
+        16,
+        16
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0.0,
+            0.0,
+            4.0,
+            4.0
+          ],
+          "texture": "#0"
+        },
+        "east": {
+          "uv": [
+            0.0,
+            4.0,
+            4.0,
+            8.0
+          ],
+          "texture": "#0"
+        },
+        "south": {
+          "uv": [
+            0.0,
+            0.0,
+            5.333333,
+            5.333333
+          ],
+          "texture": "#1"
+        },
+        "west": {
+          "uv": [
+            4.0,
+            4.0,
+            8.0,
+            8.0
+          ],
+          "texture": "#0"
+        },
+        "up": {
+          "uv": [
+            4.0,
+            12.0,
+            0.0,
+            8.0
+          ],
+          "texture": "#0"
+        },
+        "down": {
+          "uv": [
+            12.0,
+            0.0,
+            8.0,
+            4.0
+          ],
+          "texture": "#0"
+        }
+      }
+    }
+  ],
+  "display": {}
+}

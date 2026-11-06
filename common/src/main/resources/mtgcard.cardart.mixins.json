@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.spider.mtgcard.client.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "CardContainerArtMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

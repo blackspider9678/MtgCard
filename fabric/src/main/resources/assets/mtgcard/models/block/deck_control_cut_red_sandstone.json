@@ -1,0 +1,7 @@
+{
+  "parent": "mtgcard:block/deck_control_base_solid",
+  "textures": {
+    "stone": "minecraft:block/cut_red_sandstone",
+    "particle": "minecraft:block/cut_red_sandstone"
+  }
+}

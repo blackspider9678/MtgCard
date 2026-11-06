@@ -1,0 +1,14 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "mtgcard:item/d8_dice"
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "mtgcard:customized_dice": 1
+      },
+      "model": "mtgcard:item/customized_dice"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+    "type":  "minecraft:crafting_shaped",
+    "pattern":  [
+                    "DBD",
+                    "SHS",
+                    "DBD"
+                ],
+    "key":  {
+                "D":  {
+                          "item":  "minecraft:deepslate_bricks"
+                      },
+                "B":  {
+                          "item":  "minecraft:bone_block"
+                      },
+                "S":  {
+                          "item":  "minecraft:soul_sand"
+                      },
+                "H":  {
+                          "item":  "minecraft:hopper"
+                      }
+            },
+    "result":  {
+                   "id":  "mtgcard:graveyard",
+                   "count":  1
+               }
+}
