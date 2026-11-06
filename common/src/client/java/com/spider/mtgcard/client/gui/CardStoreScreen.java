@@ -703,6 +703,8 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
             int bgRight = Math.max(cx + 1, cellRight - Math.max(1, pad / 2));
             int bgBottom = Math.max(cy + 1, cy + rowH - Math.max(1, pad / 2));
             ctx.fill(cx, cy, bgRight, bgBottom, bg);
+            int tileW = bgRight - cx;
+            int tileH = bgBottom - cy;
 
             ItemStack s = grid.get(i).stack;
             var tex = CardArtManager.getOrRequestFace(s, 0);
@@ -721,8 +723,8 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
                     drawW = (int) (drawH * aspect);
                 }
 
-                int dx = cx + (cellW - drawW) / 2;
-                int dy = cy + (rowH - drawH) / 2;
+                int dx = cx + (tileW - drawW) / 2;
+                int dy = cy + (tileH - drawH) / 2;
 
                 float sx = (float) drawW / (float) texW;
                 float sy = (float) drawH / (float) texH;
@@ -742,7 +744,7 @@ public class CardStoreScreen extends LegacyContainerScreen<CardStoreScreenHandle
                 );
                 m.popMatrix();
             } else {
-                ctx.renderItem(s, cx + pad, cy + pad);
+                ctx.renderItem(s, cx + (tileW - 16) / 2, cy + (tileH - 16) / 2);
             }
         }
     }

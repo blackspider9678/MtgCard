@@ -47,23 +47,20 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
 
     public DisplayBlockEntityRenderer(BlockEntityRendererProvider.Context ctx) {}
 
-    // Z layers (screen local space). Bigger = closer to camera.
-    private static final float Z_BG_FILL      = 0.0000f;
-    private static final float Z_BG_BORDER    = 0.0002f;
-
-    private static final float Z_PIP          = 0.0006f;
-
-    // was 0.0010 / 0.0012
-    private static final float Z_ICON         = 0.0011f;
-
-    private static final float Z_CMD_CIRCLES  = 0.0016f;
-    private static final float Z_CMD_TEXT     = 0.0020f;
-
-    private static final float Z_COUNTER_ICON = 0.0018f;
-    private static final float Z_COUNTER_TEXT = 0.0022f;
-
-    private static final float Z_LIFE_TEXT    = 0.0026f;
-    private static final float Z_NAME_TEXT    = 0.0029f;
+    // Keep depth planes far enough apart for queued geometry and font batches.
+    // Binary-exact spacing avoids nearly coplanar outlines, fills and text.
+    private static final float LAYER_DEPTH = 1f / 256f;
+    private static final float Z_BG_FILL = 0f;
+    private static final float Z_BG_BORDER = LAYER_DEPTH;
+    private static final float Z_PIP = LAYER_DEPTH * 2;
+    private static final float Z_ICON = LAYER_DEPTH * 3;
+    private static final float Z_CMD_CIRCLES = LAYER_DEPTH * 4;
+    private static final float Z_CMD_FILL = LAYER_DEPTH * 5;
+    private static final float Z_CMD_TEXT = LAYER_DEPTH * 6;
+    private static final float Z_COUNTER_ICON = LAYER_DEPTH * 4;
+    private static final float Z_COUNTER_TEXT = LAYER_DEPTH * 6;
+    private static final float Z_LIFE_TEXT = LAYER_DEPTH * 8;
+    private static final float Z_NAME_TEXT = LAYER_DEPTH * 9;
 
     private final Map<String, Identifier> recolorIdCache = new HashMap<>();
     private final Map<String, net.minecraft.client.renderer.texture.AbstractTexture> recolorTexCache = new HashMap<>();
@@ -1107,7 +1104,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
 
         matrices.pushPose();
         // tiny push toward camera in screen-local space
-        matrices.translate(0f, 0f, 0.0010f);
+        // Icon depth is defined by Z_ICON above.
 
         // Draw the icon quad
         queue.submitCustomGeometry(
@@ -1187,7 +1184,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
                         // Outline
                         drawFilledCircle(mat, vc, cx, cy, Z_CMD_CIRCLES, outline, outlineCol);
                         // Fill
-                        drawFilledCircle(mat, vc, cx, cy, Z_CMD_CIRCLES + 0.0001f, fr, fill);
+                        drawFilledCircle(mat, vc, cx, cy, Z_CMD_FILL, fr, fill);
                     }
             );
 
@@ -1343,7 +1340,7 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
 
         matrices.pushPose();
         // tiny push toward camera in screen-local space
-        matrices.translate(0f, 0f, 0.0010f);
+        // Icon depth is defined by Z_ICON above.
 
         // Draw the icon quad
         queue.submitCustomGeometry(
@@ -1374,32 +1371,20 @@ public class DisplayBlockEntityRenderer implements BlockEntityRenderer<DisplayBl
         int g  = (argb >>> 8) & 0xFF;
         int b  = (argb) & 0xFF;
 
-        // Triangle fan
-        final int segments = 18; // smooth enough, still cheap
-
-        // Center
-        vc.addVertex(mat, cx, cy, z)
-                .setColor(rr, g, b, a)
-                .setUv(0.5f, 0.5f)
-                .setOverlay(OverlayTexture.NO_OVERLAY)
-                .setLight(FULL_BRIGHT)
-                .setNormal(0f, 0f, 1f);
-
-        for (int i = 0; i <= segments; i++) {
-            double ang = (Math.PI * 2.0) * (i / (double) segments);
-            float x = cx + (float) (Math.cos(ang) * r);
-            float y = cy + (float) (Math.sin(ang) * r);
-
-            // UVs don't matter much because WHITE is solid, but keep valid range
-            float u = 0.5f + (x - cx) / (r * 2f);
-            float v = 0.5f + (y - cy) / (r * 2f);
-
-            vc.addVertex(mat, x, y, z)
-                    .setColor(rr, g, b, a)
-                    .setUv(u, v)
-                    .setOverlay(OverlayTexture.NO_OVERLAY)
-                    .setLight(FULL_BRIGHT)
-                    .setNormal(0f, 0f, 1f);
+        // entityCutout uses QUADS. Encode each fan triangle as
+        // a degenerate quad so adjacent wedges cannot form stray rectangles.
+        final int segments = 18;
+        for (int i = 0; i < segments; i++) {
+            double a0 = Math.PI * 2.0 * i / segments;
+            double a1 = Math.PI * 2.0 * (i + 1) / segments;
+            float x0 = cx + (float) Math.cos(a0) * r;
+            float y0 = cy + (float) Math.sin(a0) * r;
+            float x1 = cx + (float) Math.cos(a1) * r;
+            float y1 = cy + (float) Math.sin(a1) * r;
+            put(vc, mat, cx, cy, z, 0.5f, 0.5f, FULL_BRIGHT, OverlayTexture.NO_OVERLAY, rr, g, b, a);
+            put(vc, mat, x0, y0, z, 0.5f, 0.5f, FULL_BRIGHT, OverlayTexture.NO_OVERLAY, rr, g, b, a);
+            put(vc, mat, x1, y1, z, 0.5f, 0.5f, FULL_BRIGHT, OverlayTexture.NO_OVERLAY, rr, g, b, a);
+            put(vc, mat, cx, cy, z, 0.5f, 0.5f, FULL_BRIGHT, OverlayTexture.NO_OVERLAY, rr, g, b, a);
         }
     }
 
